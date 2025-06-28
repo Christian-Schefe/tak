@@ -1,0 +1,13 @@
+#play-options {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+}
+
+#play-options a {
+    text-decoration: none;
+    color: var(--clr-surface-a50);
+    transition: color 0.2s ease;
+}
