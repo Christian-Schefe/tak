@@ -23,9 +23,7 @@ const FAVICON: Asset = asset!("/assets/favicon.ico");
 const MAIN_CSS: Asset = asset!("/assets/styling/main.css");
 
 fn main() {
-    //launch(App);
-    crate::tak::test_tak_game();
-    crate::tak::test_read_tak_game();
+    launch(App);
 }
 
 #[component]

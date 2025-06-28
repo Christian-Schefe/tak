@@ -8,7 +8,13 @@ const NAVBAR_CSS: Asset = asset!("/assets/styling/navbar.css");
 pub fn Navbar() -> Element {
     rsx! {
         document::Link { rel: "stylesheet", href: NAVBAR_CSS }
-
+        div {
+            id: "navbar-top",
+            div {
+                id: "navbar-logo",
+                "Tak"
+            }
+        }
         div {
             id: "navbar-content",
             Outlet::<Route> {}
