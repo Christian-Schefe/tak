@@ -5,6 +5,7 @@ pub struct TakGame {
     pub current_player: Player,
     pub actions: Vec<TakAction>,
     pub hands: [TakHand; 2],
+    id_counter: usize,
 }
 
 pub type TakResult<T> = Result<T, TakInvalidAction>;
@@ -166,6 +167,12 @@ impl TakCoord {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+pub struct IDStone {
+    pub id: usize,
+    pub player: Player,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Player {
     White,
     Black,
@@ -191,13 +198,13 @@ pub type TakTile = Option<TakTower>;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct TakTower {
-    top_type: TakPieceType,
-    composition: Vec<Player>,
+    pub top_type: TakPieceType,
+    pub composition: Vec<IDStone>,
 }
 
 impl TakTower {
     pub fn controlling_player(&self) -> Player {
-        self.composition[self.composition.len() - 1]
+        self.composition[self.composition.len() - 1].player
     }
 
     pub fn height(&self) -> usize {
@@ -353,6 +360,7 @@ impl TakGame {
             current_player: Player::White,
             actions: Vec::new(),
             hands: [TakHand::new(size), TakHand::new(size)],
+            id_counter: 0,
         }
     }
 
@@ -462,11 +470,19 @@ impl TakGame {
         };
         let tile = self.try_get_tile(position)?;
         if let None = tile {
-            self.get_hand_mut(player).try_take_stone()?;
+            if *piece_type == TakPieceType::Capstone {
+                self.get_hand_mut(player).try_take_capstone()?;
+            } else {
+                self.get_hand_mut(player).try_take_stone()?;
+            }
             *self.get_tile_mut(position) = Some(TakTower {
                 top_type: *piece_type,
-                composition: vec![player],
+                composition: vec![IDStone {
+                    player,
+                    id: self.id_counter,
+                }],
             });
+            self.id_counter += 1;
         } else {
             return Err(TakInvalidAction::TileOccupied);
         }

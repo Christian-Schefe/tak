@@ -4,6 +4,7 @@ use dioxus::core_macro::{component, rsx};
 use dioxus::dioxus_core::Element;
 use dioxus::logger::tracing;
 use dioxus::prelude::*;
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone)]
@@ -13,7 +14,7 @@ pub struct TakBoardState {
     pub move_selection: Signal<Option<MoveSelection>>,
     pub selected_piece_type: Signal<TakPieceType>,
     pub size: Signal<usize>,
-    pub pieces: Signal<Vec<TakPieceState>>,
+    pub pieces: Signal<HashMap<usize, TakPieceState>>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -32,7 +33,7 @@ impl TakBoardState {
             move_selection: Signal::new(None),
             selected_piece_type: Signal::new(TakPieceType::Flat),
             size: Signal::new(size),
-            pieces: Signal::new(vec![]),
+            pieces: Signal::new(HashMap::new()),
         }
     }
 
@@ -48,6 +49,40 @@ impl TakBoardState {
         let game_lock = self.game.lock().unwrap();
         let new_player = game_lock.current_player;
         self.player.set(new_player);
+        let pieces = &mut self.pieces.write();
+        for y in 0..game_lock.size {
+            for x in 0..game_lock.size {
+                let pos = TakCoord::new(x, y);
+                if let Ok(tower) = game_lock.try_get_tower(&pos) {
+                    let height = tower.height();
+                    for i in 0..height {
+                        let stone = tower.composition[i];
+                        let new_piece_type = if i == height - 1 {
+                            tower.top_type
+                        } else {
+                            TakPieceType::Flat
+                        };
+                        if let Some(piece) = pieces.get_mut(&stone.id) {
+                            piece.position = pos;
+                            piece.stack_height = i;
+                            piece.piece_type = new_piece_type;
+                            piece.player = stone.player;
+                        } else {
+                            pieces.insert(
+                                stone.id,
+                                TakPieceState {
+                                    id: stone.id,
+                                    player: stone.player,
+                                    piece_type: new_piece_type,
+                                    position: pos,
+                                    stack_height: i,
+                                },
+                            );
+                        }
+                    }
+                }
+            }
+        }
     }
 
     pub fn is_empty_tile(&self, pos: TakCoord) -> bool {
@@ -60,36 +95,22 @@ impl TakBoardState {
             position: pos,
             piece_type,
         };
-        {
-            let mut game_lock = self.game.lock().unwrap();
-            game_lock.try_play_action(tak_move)?;
-            let placed_piece = game_lock.try_get_tower(&pos)?;
-            let pieces = &mut self.pieces.write();
-            let new_piece = TakPieceState {
-                id: pieces.len(),
-                player: placed_piece.controlling_player(),
-                piece_type,
-                position: pos,
-                stack_height: 0,
-            };
-            pieces.push(new_piece);
+        let mut game_lock = self.game.lock().unwrap();
+        let res = game_lock.try_play_action(tak_move);
+        drop(game_lock);
+        if res.is_ok() {
+            self.on_game_update();
         }
-        self.on_game_update();
-        Ok(())
+        res
     }
 
     pub fn try_do_move(&mut self, pos: TakCoord) -> Option<TakFeedback> {
         let _ = self.add_to_move_selection(pos);
-        tracing::info!(
-            "Move selection after click: {:?}",
-            self.move_selection.read()
-        );
         self.try_do_move_action()
     }
 
     fn try_do_move_action(&mut self) -> Option<TakFeedback> {
         let move_action = self.move_selection.read().clone()?;
-        tracing::info!("Checking move action: {:?}", move_action);
         let drop_sum = move_action.drops.iter().sum::<usize>();
         if drop_sum < move_action.count {
             return None;
@@ -97,7 +118,6 @@ impl TakBoardState {
             self.move_selection.write().take();
             return None;
         }
-        tracing::info!("Trying to do move action: {:?}", move_action);
         let action_from = move_action.position;
         let action_take = move_action.count - move_action.drops.first().unwrap_or(&0);
         let action_direction = move_action.direction?;
@@ -116,47 +136,11 @@ impl TakBoardState {
         let mut game_lock = self.game.lock().unwrap();
         let res = game_lock.try_play_action(action);
         drop(game_lock);
+        self.move_selection.write().take();
         if res.is_ok() {
-            self.update_moved_pieces(action_from, action_direction, action_drops);
             self.on_game_update();
         }
-        self.move_selection.write().take();
         Some(res)
-    }
-
-    fn update_moved_pieces(&mut self, from: TakCoord, direction: Direction, drops: Vec<usize>) {
-        let mut pieces = self.pieces.write();
-        let positions = (0..drops.len())
-            .rev()
-            .map(|x| {
-                let pos = from.offset_by(&direction, x + 1).unwrap();
-                let stack_height = pieces
-                    .iter()
-                    .filter(|piece| piece.position == pos)
-                    .map(|piece| piece.stack_height + 1)
-                    .max()
-                    .unwrap_or(0);
-                tracing::info!(
-                    "Position for drop {}: {:?}, stack height: {}",
-                    x,
-                    pos,
-                    stack_height
-                );
-                (x, pos, stack_height)
-            })
-            .collect::<Vec<_>>();
-        let mut moved_pieces = pieces
-            .iter_mut()
-            .filter(|piece| piece.position == from)
-            .collect::<Vec<_>>();
-        moved_pieces.sort_by_key(|x| x.stack_height);
-        for (i, pos, stack_height) in positions {
-            for j in (0..drops[i]).rev() {
-                let piece = moved_pieces.pop().unwrap();
-                piece.position = pos;
-                piece.stack_height = stack_height + j;
-            }
-        }
     }
 
     fn add_to_move_selection(&mut self, pos: TakCoord) -> Option<()> {
@@ -233,7 +217,7 @@ pub struct TakPieceState {
 
 #[component]
 pub fn TakBoard() -> Element {
-    let state = use_context_provider(|| TakBoardState::new(5));
+    let mut state = use_context_provider(|| TakBoardState::new(5));
     let state_clone = state.clone();
 
     let make_on_tile_click = move |i: usize, j: usize| {
@@ -255,15 +239,33 @@ pub fn TakBoard() -> Element {
     };
 
     let pieces_lock = state.pieces.read();
-    let pieces_rendered = pieces_lock.iter().map(|piece| {
+    let pieces_rendered = (0..pieces_lock.len()).map(|id| {
         rsx! {
             TakPiece {
-                id: piece.id,
+                key: "{id}",
+                id: id,
             }
         }
     });
 
     let size = state.size.read();
+
+    let selected_tiles = use_memo(move || {
+        state
+            .move_selection
+            .read()
+            .as_ref()
+            .map(|x| {
+                let mut positions = vec![x.position];
+                if let Some(dir) = x.direction {
+                    for i in 1..x.drops.len() {
+                        positions.push(x.position.offset_by(&dir, i).unwrap());
+                    }
+                }
+                positions
+            })
+            .unwrap_or(vec![])
+    });
 
     rsx! {
         div {
@@ -279,6 +281,11 @@ pub fn TakBoard() -> Element {
                                 "tak-tile tak-tile-light"
                             } else {
                                 "tak-tile tak-tile-dark"
+                            },
+                            class: if selected_tiles.read().contains(&TakCoord::new(i, j)) {
+                                "tak-tile-selected"
+                            } else {
+                                ""
                             },
                             if j == 0 {
                                 div {
@@ -298,6 +305,45 @@ pub fn TakBoard() -> Element {
                 {pieces_rendered}
             }
             {format!("{:?} to move", state.player.read())}
+            div {
+                class: "tak-piece-selector",
+                button {
+                    class: "piece-selector",
+                    class: if *state.selected_piece_type.read() == TakPieceType::Flat {
+                        "piece-selector-current"
+                    } else {
+                        ""
+                    },
+                    onclick: move |_| {
+                        state.selected_piece_type.set(TakPieceType::Flat);
+                    },
+                    "F"
+                }
+                button {
+                    class: "piece-selector",
+                    class: if *state.selected_piece_type.read() == TakPieceType::Wall {
+                        "piece-selector-current"
+                    } else {
+                        ""
+                    },
+                    onclick: move |_| {
+                        state.selected_piece_type.set(TakPieceType::Wall);
+                    },
+                    "W"
+                }
+                button {
+                    class: "piece-selector",
+                    class: if *state.selected_piece_type.read() == TakPieceType::Capstone {
+                        "piece-selector-current"
+                    } else {
+                        ""
+                    },
+                    onclick: move |_| {
+                        state.selected_piece_type.set(TakPieceType::Capstone);
+                    },
+                    "C"
+                }
+            }
         }
     }
 }

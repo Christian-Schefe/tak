@@ -7,21 +7,26 @@ use dioxus::prelude::*;
 #[component]
 pub fn TakPiece(id: usize) -> Element {
     let board = use_context::<TakBoardState>();
-    let piece = &board.pieces.read()[id];
+    let pieces = board.pieces.read();
+    let piece = pieces.get(&id).unwrap();
     let size = *board.size.read();
 
     let actual_data = use_memo(move || {
         let pieces = board.pieces.read();
-        let piece = &pieces[id];
+        let piece = pieces.get(&id).unwrap();
         let mut position = piece.position;
         let mut height = piece.stack_height;
         if let Some(move_selection) = &*board.move_selection.read() {
             if move_selection.position == piece.position {
                 let pieces_at_pos = pieces
                     .iter()
-                    .filter(|p| p.position == piece.position)
+                    .filter(|(_, p)| p.position == piece.position)
                     .collect::<Vec<_>>();
-                let this_stack_height = pieces_at_pos.iter().map(|p| p.stack_height).max().unwrap();
+                let this_stack_height = pieces_at_pos
+                    .iter()
+                    .map(|(_, p)| p.stack_height)
+                    .max()
+                    .unwrap();
                 tracing::info!(
                     "Calculating actual position for piece {} at position {:?} with {} piece tower with stack height {}, move count {}",
                     id, piece.position, pieces_at_pos.len(), this_stack_height, move_selection.count
@@ -42,8 +47,8 @@ pub fn TakPiece(id: usize) -> Element {
                                 position = position.offset_by(&dir, i).unwrap();
                                 height = pieces
                                     .iter()
-                                    .filter(|p| p.position == position)
-                                    .map(|p| p.stack_height + 1)
+                                    .filter(|(_, p)| p.position == position)
+                                    .map(|(_, p)| p.stack_height + 1)
                                     .max()
                                     .unwrap_or(0)
                                     + height_offset;
@@ -64,14 +69,17 @@ pub fn TakPiece(id: usize) -> Element {
             class: "tak-piece tak-piece-height-{actual_stack_height}",
             style: format!("width: {}%; height: {}%; transform: translate({}%, calc({}% - {}px)); z-index: {}", 100f32 / size as f32, 100f32 / size as f32, actual_pos.x * 100, (size - actual_pos.y - 1) * 100, actual_stack_height * 10, actual_stack_height),
             div {
-                class: format!("tak-piece-inner scale-in tak-piece-inner-{} tak-piece-inner-{}", match piece.piece_type {
-                    TakPieceType::Flat => "flat",
-                    TakPieceType::Wall => "wall",
-                    TakPieceType::Capstone => "cap",
-                }, match piece.player {
-                    Player::White => "light",
-                    Player::Black => "dark",
-                }),
+                class: "tak-piece-wrapper",
+                div {
+                    class: format!("tak-piece-inner tak-piece-inner-{} tak-piece-inner-{}", match piece.piece_type {
+                        TakPieceType::Flat => "flat",
+                        TakPieceType::Wall => "wall",
+                        TakPieceType::Capstone => "cap",
+                    }, match piece.player {
+                        Player::White => "light",
+                        Player::Black => "dark",
+                    }),
+                }
             }
         }
     }
