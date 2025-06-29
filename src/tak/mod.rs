@@ -4,13 +4,165 @@ pub struct TakGame {
     pub board: Vec<TakTile>,
     pub current_player: Player,
     pub actions: Vec<TakAction>,
+    pub hands: [TakHand; 2],
+}
+
+pub type TakResult<T> = Result<T, TakInvalidAction>;
+pub type TakFeedback = Result<(), TakInvalidAction>;
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum TakInvalidAction {
+    NoRemainingStones,
+    NoRemainingCapstones,
+    InvalidPosition,
+    TileOccupied,
+    TileEmpty,
+    NotYourPiece,
+    InvalidAction,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct TakHand {
-    player: Player,
     stones: usize,
     capstones: usize,
+}
+
+impl TakHand {
+    pub fn new(size: usize) -> Self {
+        TakHand {
+            stones: match size {
+                3 => 10,
+                4 => 15,
+                5 => 21,
+                6 => 30,
+                7 => 40,
+                8 => 50,
+                _ => panic!("Invalid Tak board size"),
+            },
+            capstones: match size {
+                3 => 0,
+                4 => 0,
+                5 => 1,
+                6 => 1,
+                7 => 2,
+                8 => 2,
+                _ => panic!("Invalid Tak board size"),
+            },
+        }
+    }
+
+    pub fn try_take_stone(&mut self) -> TakFeedback {
+        if self.stones > 0 {
+            self.stones -= 1;
+            Ok(())
+        } else {
+            Err(TakInvalidAction::NoRemainingStones)
+        }
+    }
+
+    pub fn try_take_capstone(&mut self) -> TakFeedback {
+        if self.capstones > 0 {
+            self.capstones -= 1;
+            Ok(())
+        } else {
+            Err(TakInvalidAction::NoRemainingCapstones)
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TakCoord {
+    pub x: usize,
+    pub y: usize,
+}
+
+impl TakCoord {
+    pub fn new(x: usize, y: usize) -> Self {
+        TakCoord { x, y }
+    }
+
+    pub fn validate(&self, size: usize) -> TakFeedback {
+        if self.x < size && self.y < size {
+            Ok(())
+        } else {
+            Err(TakInvalidAction::InvalidPosition)
+        }
+    }
+
+    fn try_get_positions(
+        &self,
+        direction: &Direction,
+        times: usize,
+        size: usize,
+    ) -> Option<Vec<TakCoord>> {
+        match direction {
+            Direction::Left => {
+                if self.x >= times {
+                    Some(
+                        (1..=times)
+                            .map(|i| TakCoord::new(self.x - i, self.y))
+                            .collect(),
+                    )
+                } else {
+                    None
+                }
+            }
+            Direction::Right => {
+                if self.x + times < size {
+                    Some(
+                        (1..=times)
+                            .map(|i| TakCoord::new(self.x + i, self.y))
+                            .collect(),
+                    )
+                } else {
+                    None
+                }
+            }
+            Direction::Down => {
+                if self.y >= times {
+                    Some(
+                        (1..=times)
+                            .map(|i| TakCoord::new(self.x, self.y - i))
+                            .collect(),
+                    )
+                } else {
+                    None
+                }
+            }
+            Direction::Up => {
+                if self.y + times < size {
+                    Some(
+                        (1..=times)
+                            .map(|i| TakCoord::new(self.x, self.y + i))
+                            .collect(),
+                    )
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
+    pub fn offset_by(&self, direction: &Direction, times: usize) -> Option<TakCoord> {
+        match direction {
+            Direction::Left => {
+                if self.x >= times {
+                    Some(TakCoord::new(self.x.saturating_sub(times), self.y))
+                } else {
+                    None
+                }
+            }
+            Direction::Right => Some(TakCoord::new(self.x + times, self.y)),
+            Direction::Down => {
+                if self.y >= times {
+                    Some(TakCoord::new(self.x, self.y.saturating_sub(times)))
+                } else {
+                    None
+                }
+            }
+            Direction::Up => Some(TakCoord::new(self.x, self.y + times)),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -43,7 +195,17 @@ pub struct TakTower {
     composition: Vec<Player>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+impl TakTower {
+    pub fn controlling_player(&self) -> Player {
+        self.composition[self.composition.len() - 1]
+    }
+
+    pub fn height(&self) -> usize {
+        self.composition.len()
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Direction {
     Up,
     Down,
@@ -52,41 +214,25 @@ pub enum Direction {
 }
 
 impl Direction {
-    fn try_get_positions(
-        &self,
-        position: &(usize, usize),
-        times: usize,
-        size: usize,
-    ) -> Option<Vec<(usize, usize)>> {
-        match self {
-            Direction::Left => {
-                if position.0 >= times {
-                    Some((1..=times).map(|i| (position.0 - i, position.1)).collect())
-                } else {
-                    None
-                }
+    pub fn try_from_diff(a: &TakCoord, b: &TakCoord) -> Option<Direction> {
+        if a.x == b.x {
+            if a.y + 1 == b.y {
+                Some(Direction::Up)
+            } else if b.y + 1 == a.y {
+                Some(Direction::Down)
+            } else {
+                None
             }
-            Direction::Right => {
-                if position.0 + times < size {
-                    Some((1..=times).map(|i| (position.0 + i, position.1)).collect())
-                } else {
-                    None
-                }
+        } else if a.y == b.y {
+            if a.x + 1 == b.x {
+                Some(Direction::Right)
+            } else if b.x + 1 == a.x {
+                Some(Direction::Left)
+            } else {
+                None
             }
-            Direction::Down => {
-                if position.1 >= times {
-                    Some((1..=times).map(|i| (position.0, position.1 - i)).collect())
-                } else {
-                    None
-                }
-            }
-            Direction::Up => {
-                if position.1 + times < size {
-                    Some((1..=times).map(|i| (position.0, position.1 + i)).collect())
-                } else {
-                    None
-                }
-            }
+        } else {
+            None
         }
     }
 }
@@ -94,11 +240,11 @@ impl Direction {
 #[derive(Clone, Debug, PartialEq)]
 pub enum TakAction {
     PlacePiece {
-        position: (usize, usize),
+        position: TakCoord,
         piece_type: TakPieceType,
     },
     MovePiece {
-        from: (usize, usize),
+        from: TakCoord,
         direction: Direction,
         take: usize,
         drops: Vec<usize>,
@@ -117,8 +263,8 @@ impl TakAction {
                     TakPieceType::Wall => "S",
                     TakPieceType::Capstone => "C",
                 };
-                let file = (b'a' + position.0 as u8) as char;
-                let rank = position.1 + 1;
+                let file = (b'a' + position.x as u8) as char;
+                let rank = position.y + 1;
                 format!("{}{}{}", prefix, file, rank)
             }
             TakAction::MovePiece {
@@ -132,8 +278,8 @@ impl TakAction {
                 } else {
                     format!("{}", take)
                 };
-                let file = (b'a' + from.0 as u8) as char;
-                let rank = from.1 + 1;
+                let file = (b'a' + from.x as u8) as char;
+                let rank = from.y + 1;
                 let direction_str = match direction {
                     Direction::Up => "+",
                     Direction::Down => "-",
@@ -163,7 +309,7 @@ impl TakAction {
             let file = captures[2].chars().next()?.to_ascii_lowercase() as usize - 'a' as usize;
             let rank = captures[3].parse::<usize>().ok()? - 1;
             Some(TakAction::PlacePiece {
-                position: (file, rank),
+                position: TakCoord::new(file, rank),
                 piece_type,
             })
         } else if let Some(captures) = move_regex.captures(ptn) {
@@ -188,7 +334,7 @@ impl TakAction {
                 vec![take]
             };
             Some(TakAction::MovePiece {
-                from: (file, rank),
+                from: TakCoord::new(file, rank),
                 direction,
                 take,
                 drops,
@@ -206,6 +352,14 @@ impl TakGame {
             board: vec![None; size * size],
             current_player: Player::White,
             actions: Vec::new(),
+            hands: [TakHand::new(size), TakHand::new(size)],
+        }
+    }
+
+    fn get_hand_mut(&mut self, player: Player) -> &mut TakHand {
+        match player {
+            Player::White => &mut self.hands[0],
+            Player::Black => &mut self.hands[1],
         }
     }
 
@@ -218,7 +372,7 @@ impl TakGame {
         let mut game = Self::new(size);
         for action in actions {
             println!("{}", action.to_ptn());
-            if game.try_play_action(action).is_none() {
+            if game.try_play_action(action).is_err() {
                 game.debug_print();
                 return None; // Invalid action
             }
@@ -238,7 +392,7 @@ impl TakGame {
     pub fn debug_print(&self) {
         for y in (0..self.size).rev() {
             for x in 0..self.size {
-                let pos = (x, y);
+                let pos = TakCoord::new(x, y);
                 match self.get_tile(&pos) {
                     Some(tower) => {
                         print!("{:?}{:?} ", tower.top_type, tower.composition);
@@ -252,7 +406,7 @@ impl TakGame {
         }
     }
 
-    pub fn try_play_action(&mut self, action: TakAction) -> Option<()> {
+    pub fn try_play_action(&mut self, action: TakAction) -> TakFeedback {
         match &action {
             TakAction::PlacePiece {
                 position,
@@ -270,76 +424,67 @@ impl TakGame {
             Player::White => Player::Black,
             Player::Black => Player::White,
         };
-        Some(())
+        Ok(())
     }
 
-    pub fn validate_position(&self, position: &(usize, usize)) -> Option<()> {
-        if position.0 < self.size && position.1 < self.size {
-            Some(())
-        } else {
-            None
-        }
+    fn get_tile(&self, position: &TakCoord) -> &TakTile {
+        position.validate(self.size).unwrap();
+        &self.board[position.y * self.size + position.x]
     }
 
-    fn get_tile(&self, position: &(usize, usize)) -> &TakTile {
-        self.validate_position(position).unwrap();
-        &self.board[position.0 * self.size + position.1]
+    fn get_tile_mut(&mut self, position: &TakCoord) -> &mut TakTile {
+        position.validate(self.size).unwrap();
+        &mut self.board[position.y * self.size + position.x]
     }
 
-    fn get_tile_mut(&mut self, position: &(usize, usize)) -> &mut TakTile {
-        self.validate_position(position).unwrap();
-        &mut self.board[position.0 * self.size + position.1]
+    fn try_get_tile_mut(&mut self, position: &TakCoord) -> TakResult<&mut TakTile> {
+        position.validate(self.size)?;
+        Ok(&mut self.board[position.y * self.size + position.x])
     }
 
-    fn try_get_tile_mut(&mut self, position: &(usize, usize)) -> Option<&mut TakTile> {
-        self.validate_position(position)?;
-        Some(&mut self.board[position.0 * self.size + position.1])
+    pub fn try_get_tile(&self, position: &TakCoord) -> TakResult<&TakTile> {
+        position.validate(self.size)?;
+        Ok(&self.board[position.y * self.size + position.x])
     }
 
-    fn try_get_tile(&self, position: &(usize, usize)) -> Option<&TakTile> {
-        self.validate_position(position)?;
-        Some(&self.board[position.0 * self.size + position.1])
+    pub fn try_get_tower(&self, position: &TakCoord) -> TakResult<&TakTower> {
+        position.validate(self.size)?;
+        self.board[position.y * self.size + position.x]
+            .as_ref()
+            .ok_or(TakInvalidAction::TileEmpty)
     }
 
-    fn try_get_tower(&self, position: &(usize, usize)) -> Option<&TakTower> {
-        self.validate_position(position)?;
-        self.board[position.0 * self.size + position.1].as_ref()
-    }
-
-    fn try_place_piece(
-        &mut self,
-        position: &(usize, usize),
-        piece_type: &TakPieceType,
-    ) -> Option<()> {
+    fn try_place_piece(&mut self, position: &TakCoord, piece_type: &TakPieceType) -> TakFeedback {
         let player = if self.actions.len() >= 2 {
             self.current_player
         } else {
             self.current_player.opponent()
         };
-        let tile = self.try_get_tile_mut(position)?;
+        let tile = self.try_get_tile(position)?;
         if let None = tile {
-            *tile = Some(TakTower {
+            self.get_hand_mut(player).try_take_stone()?;
+            *self.get_tile_mut(position) = Some(TakTower {
                 top_type: *piece_type,
                 composition: vec![player],
             });
         } else {
-            return None;
+            return Err(TakInvalidAction::TileOccupied);
         }
-        Some(())
+        Ok(())
     }
 
     fn try_move_piece(
         &mut self,
-        from: &(usize, usize),
+        from: &TakCoord,
         direction: &Direction,
         take: usize,
         drops: &Vec<usize>,
-    ) -> Option<()> {
+    ) -> TakFeedback {
         let from_tower = self.try_get_tower(from)?;
         let from_top_type = from_tower.top_type;
         let from_composition_len = from_tower.composition.len();
-        if from_tower.composition[from_composition_len - 1] != self.current_player {
-            return None;
+        if from_tower.controlling_player() != self.current_player {
+            return Err(TakInvalidAction::NotYourPiece);
         }
 
         let drop_len = drops.len();
@@ -351,9 +496,11 @@ impl TakGame {
             || drop_sum != take
             || drops.iter().any(|&i| i < 1)
         {
-            return None;
+            return Err(TakInvalidAction::InvalidAction);
         }
-        let positions = direction.try_get_positions(from, drop_len, self.size)?;
+        let positions = from
+            .try_get_positions(direction, drop_len, self.size)
+            .ok_or(TakInvalidAction::InvalidAction)?;
         for i in 0..drop_len {
             if let Some(tower) = self.get_tile(&positions[i]) {
                 if tower.top_type != TakPieceType::Flat {
@@ -362,7 +509,7 @@ impl TakGame {
                         && drops[i] == 1
                         && i == drop_len - 1;
                     if !can_flatten {
-                        return None;
+                        return Err(TakInvalidAction::InvalidAction);
                     }
                 }
             }
@@ -401,7 +548,7 @@ impl TakGame {
             }
             drop_index += drops[i];
         }
-        Some(())
+        Ok(())
     }
 }
 
@@ -459,35 +606,36 @@ pub fn test_read_tak_game() {
 pub fn test_tak_game() {
     let mut game = TakGame::new(5);
     game.try_play_action(TakAction::PlacePiece {
-        position: (0, 0),
+        position: TakCoord::new(0, 0),
         piece_type: TakPieceType::Flat,
     })
     .unwrap();
     game.try_play_action(TakAction::PlacePiece {
-        position: (1, 1),
+        position: TakCoord::new(1, 1),
         piece_type: TakPieceType::Flat,
     })
     .unwrap();
     game.try_play_action(TakAction::MovePiece {
-        from: (1, 1),
+        from: TakCoord::new(1, 1),
         direction: Direction::Left,
         take: 1,
         drops: vec![1],
     })
     .unwrap();
     game.try_play_action(TakAction::MovePiece {
-        from: (0, 0),
+        from: TakCoord::new(0, 0),
         direction: Direction::Up,
         take: 1,
         drops: vec![1],
     })
     .unwrap();
     game.try_play_action(TakAction::PlacePiece {
-        position: (1, 1),
+        position: TakCoord::new(1, 1),
         piece_type: TakPieceType::Flat,
-    });
+    })
+    .unwrap();
     game.try_play_action(TakAction::MovePiece {
-        from: (0, 1),
+        from: TakCoord::new(0, 1),
         direction: Direction::Right,
         take: 2,
         drops: vec![1, 1],
