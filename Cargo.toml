@@ -10,6 +10,9 @@ edition = "2021"
 dioxus = { version = "0.6.0", features = ["router", "fullstack"] }
 dioxus-free-icons = { version = "0.9", features = ["font-awesome-solid"] }
 regex = "1.11.1"
+web-sys = "0.3.77"
+tokio = { version = "1.45.1", features = ["time"] }
+gloo = { version = "0.11.0", features = ["timers", "futures"] }
 
 [features]
 default = ["web"]

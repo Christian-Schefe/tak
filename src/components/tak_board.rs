@@ -1,15 +1,20 @@
 use crate::components::tak_piece::TakPiece;
-use crate::tak::{Direction, Player, TakAction, TakCoord, TakFeedback, TakGame, TakPieceType};
+use crate::components::Clock;
+use crate::tak::{
+    Direction, Player, TakAction, TakCoord, TakFeedback, TakGameAPI, TakPieceType, TimeMode,
+    TimedTakGame,
+};
 use dioxus::core_macro::{component, rsx};
 use dioxus::dioxus_core::Element;
 use dioxus::logger::tracing;
 use dioxus::prelude::*;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 #[derive(Clone)]
 pub struct TakBoardState {
-    game: Arc<Mutex<TakGame>>,
+    game: Arc<Mutex<TimedTakGame>>,
     pub player: Signal<Player>,
     pub move_selection: Signal<Option<MoveSelection>>,
     pub selected_piece_type: Signal<TakPieceType>,
@@ -27,8 +32,9 @@ pub struct MoveSelection {
 
 impl TakBoardState {
     pub fn new(size: usize) -> Self {
+        let time_mode = TimeMode::new(Duration::from_secs(300), Duration::from_secs(10));
         TakBoardState {
-            game: Arc::new(Mutex::new(TakGame::new(size))),
+            game: Arc::new(Mutex::new(TimedTakGame::new_game(size, time_mode))),
             player: Signal::new(Player::White),
             move_selection: Signal::new(None),
             selected_piece_type: Signal::new(TakPieceType::Flat),
@@ -37,23 +43,29 @@ impl TakBoardState {
         }
     }
 
+    pub fn get_time_remaining(&self, player: Player) -> Duration {
+        let game_lock = self.game.lock().unwrap();
+        game_lock.get_time_remaining(player)
+    }
+
     pub fn debug_board(&self) {
         let game_lock = self.game.lock().unwrap();
         tracing::info!("Current game state: {:?}", game_lock);
-        for action in game_lock.actions.iter() {
+        for action in game_lock.get_actions().iter() {
             tracing::info!("Action: {:?}", action);
         }
     }
 
     fn on_game_update(&mut self) {
         let game_lock = self.game.lock().unwrap();
-        let new_player = game_lock.current_player;
+        let new_player = game_lock.current_player();
         self.player.set(new_player);
         let pieces = &mut self.pieces.write();
-        for y in 0..game_lock.size {
-            for x in 0..game_lock.size {
+        let size = game_lock.size();
+        for y in 0..size {
+            for x in 0..size {
                 let pos = TakCoord::new(x, y);
-                if let Ok(tower) = game_lock.try_get_tower(&pos) {
+                if let Some(tower) = game_lock.try_get_tower(pos) {
                     let height = tower.height();
                     for i in 0..height {
                         let stone = tower.composition[i];
@@ -87,7 +99,7 @@ impl TakBoardState {
 
     pub fn is_empty_tile(&self, pos: TakCoord) -> bool {
         let game_lock = self.game.lock().unwrap();
-        game_lock.try_get_tile(&pos).is_ok_and(|x| x.is_none())
+        game_lock.try_get_tower(pos).is_none()
     }
 
     pub fn try_place_move(&mut self, pos: TakCoord, piece_type: TakPieceType) -> TakFeedback {
@@ -96,12 +108,12 @@ impl TakBoardState {
             piece_type,
         };
         let mut game_lock = self.game.lock().unwrap();
-        let res = game_lock.try_play_action(tak_move);
+        let res = game_lock.try_do_action(tak_move);
         drop(game_lock);
         if res.is_ok() {
             self.on_game_update();
         }
-        res
+        res.map(|_| ())
     }
 
     pub fn try_do_move(&mut self, pos: TakCoord) -> Option<TakFeedback> {
@@ -134,13 +146,13 @@ impl TakBoardState {
             drops: action_drops.clone(),
         };
         let mut game_lock = self.game.lock().unwrap();
-        let res = game_lock.try_play_action(action);
+        let res = game_lock.try_do_action(action);
         drop(game_lock);
         self.move_selection.write().take();
         if res.is_ok() {
             self.on_game_update();
         }
-        Some(res)
+        Some(res.map(|_| ()))
     }
 
     fn add_to_move_selection(&mut self, pos: TakCoord) -> Option<()> {
@@ -192,13 +204,13 @@ impl TakBoardState {
 
     fn try_select_for_move(&mut self, pos: TakCoord) -> Option<()> {
         let game = self.game.lock().unwrap();
-        let tower = game.try_get_tower(&pos).ok()?;
+        let tower = game.try_get_tower(pos)?;
         if tower.controlling_player() != *self.player.read() {
             return None;
         }
         self.move_selection.set(Some(MoveSelection {
             position: pos,
-            count: tower.height().min(game.size),
+            count: tower.height().min(game.size()),
             drops: vec![0],
             direction: None,
         }));
@@ -304,7 +316,9 @@ pub fn TakBoard() -> Element {
                 }
                 {pieces_rendered}
             }
-            {format!("{:?} to move", state.player.read())}
+            Clock {
+
+            }
             div {
                 class: "tak-piece-selector",
                 button {
@@ -344,6 +358,7 @@ pub fn TakBoard() -> Element {
                     "C"
                 }
             }
+            {format!("{:?} to move", state.player.read())}
         }
     }
 }

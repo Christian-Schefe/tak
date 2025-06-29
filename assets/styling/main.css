@@ -90,7 +90,7 @@ body {
 
 .tak-tile-label {
     position: absolute;
-    font-size: 15px;
+    font-size: 12px;
     font-weight: bold;
 }
 
@@ -105,19 +105,19 @@ body {
 }
 
 .tak-tile-light .tak-tile-label-rank {
-    color: var(--clr-board-dark);
+    color: var(--clr-piece-light);
 }
 
 .tak-tile-dark .tak-tile-label-rank {
-    color: var(--clr-board-light);
+    color: var(--clr-piece-light);
 }
 
 .tak-tile-light .tak-tile-label-file {
-    color: var(--clr-board-dark);
+    color: var(--clr-piece-light);
 }
 
 .tak-tile-dark .tak-tile-label-file {
-    color: var(--clr-board-light);
+    color: var(--clr-piece-light);
 }
 
 .tak-piece {
@@ -192,7 +192,7 @@ body {
 }
 
 .tak-piece-selector .piece-selector {
-    background-color: var(--clr-board-dark);
+    background-color: var(--clr-surface-a30);
     border: none;
     cursor: pointer;
     padding: 5px;
@@ -204,10 +204,37 @@ body {
     user-select: none;
 }
 
-.tak-piece-selector .piece-selector-current {
-    outline: 2px solid var(--clr-primary-a0);
-}
-
 .tak-piece-selector .piece-selector:active {
     background-color: var(--clr-surface-a50);
+}
+
+.tak-piece-selector .piece-selector-current {
+    background-color: var(--clr-primary-a0);
+}
+
+.tak-piece-selector .piece-selector-current:active {
+    background-color: var(--clr-primary-a30);
+}
+
+.clock-container {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.clock {
+    margin: 10px;
+    padding: 5px 10px;
+    border-radius: 5px;
+}
+
+.clock-light {
+    background-color: var(--clr-piece-light);
+    color: var(--clr-dark-a0);
+}
+
+.clock-dark {
+    background-color: var(--clr-piece-dark);
+    color: var(--clr-light-a0);
 }
