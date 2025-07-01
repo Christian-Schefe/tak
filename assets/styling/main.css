@@ -1,7 +1,12 @@
 :root {
+    --animation-speed: 200ms;
+
     /** Base colors */
     --clr-dark-a0: #000000;
     --clr-light-a0: #ffffff;
+
+    --clr-error-a0: #ff0000;
+    --clr-error-a10: #e8a01b;
 
     /** Theme primary colors */
     --clr-primary-a0: #4f94e8;
@@ -31,8 +36,6 @@
     --clr-board-dark: #818995;
     --clr-board-selected-light: #4f94e8;
     --clr-board-selected-dark: #3876c1;
-    /*--clr-board-light: #4f94e8;*/
-    /*--clr-board-dark: #d3ccc2;*/
     --clr-piece-light: #dee1e8;
     --clr-piece-dark: #4f525c;
 }
@@ -69,7 +72,7 @@ body {
     align-items: center;
     justify-content: center;
     aspect-ratio: 1;
-    transition: background-color 0.3s ease-in-out;
+    transition: background-color var(--animation-speed) ease-in-out;
 }
 
 .tak-tile-light {
@@ -124,20 +127,20 @@ body {
     position: absolute;
     pointer-events: none;
     filter: drop-shadow(0 5px 5px rgb(0, 0, 0, 0.1));
-    transition: transform 0.3s ease-in-out, filter 0.3s ease-in-out;
+    transition: transform var(--animation-speed) ease-in-out, filter var(--animation-speed) ease-in-out;
 }
 
 .tak-piece-wrapper {
     width: 100%;
     height: 100%;
-    animation: scaleIn 300ms ease-out forwards;
+    animation: scaleIn var(--animation-speed) ease-out forwards;
     display: flex;
     align-items: center;
     justify-content: center;
 }
 
 .tak-piece-inner {
-    transition: width 0.3s ease-in-out, height 0.3s ease-in-out, transform 0.3s ease-in-out;
+    transition: width var(--animation-speed) ease-in-out, height var(--animation-speed) ease-in-out, transform var(--animation-speed) ease-in-out;
 }
 
 .tak-piece-height-0 {

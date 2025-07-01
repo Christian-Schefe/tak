@@ -1,4 +1,4 @@
-use crate::components::TakBoard;
+use crate::components::{TakBoard, TakWebSocket};
 use crate::Route;
 use dioxus::prelude::*;
 
@@ -13,6 +13,7 @@ pub fn PlayComputer() -> Element {
             TakBoard {
 
             }
+            TakWebSocket {}
         }
     }
 }
