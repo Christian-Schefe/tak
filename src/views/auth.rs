@@ -213,27 +213,33 @@ fn do_login(
 #[server]
 async fn try_login(username: String, password: String) -> Result<LoginResult, ServerFnError> {
     use crate::server::auth::handle_try_login;
+    let user = handle_try_login(username, password).await?;
+
+    if let LoginResult::Success(user_id) = &user {
+        add_session(user_id.to_string()).await?;
+    }
+
+    println!("User login: {:?}", user);
+    Ok(user)
+}
+
+#[cfg(feature = "server")]
+async fn add_session(user_id: String) -> Result<(), ServerFnError> {
     use axum::http::StatusCode;
     use tower_cookies::Cookie;
     use uuid::Uuid;
-
-    let user = handle_try_login(username, password).await?;
 
     let store: axum::Extension<crate::server::auth::SessionStore> = extract().await?;
     let cookies: tower_cookies::Cookies = extract()
         .await
         .map_err(|e: (StatusCode, &str)| ServerFnError::new(e.1))?;
 
-    if let LoginResult::Success(user_id) = &user {
-        let session_id = Uuid::new_v4().to_string();
-        store
-            .lock()?
-            .insert(session_id.clone(), user_id.to_string());
-        cookies.add(Cookie::new("session_id", session_id));
-    }
-
-    println!("User login: {:?}", user);
-    Ok(user)
+    let session_id = Uuid::new_v4().to_string();
+    store
+        .lock()?
+        .insert(session_id.clone(), user_id.to_string());
+    cookies.add(Cookie::new("session_id", session_id));
+    Ok(())
 }
 
 pub fn do_logout(callback: impl FnOnce(Result<(), ServerFnError>) + Send + 'static) {
@@ -280,9 +286,14 @@ fn do_register(
 async fn register(username: String, password: String) -> Result<RegisterResult, ServerFnError> {
     use crate::server::auth::handle_register;
 
-    let user = handle_register(username, password).await?;
-    println!("User registration: {:?}", user);
-    Ok(user)
+    let res = handle_register(username, password).await?;
+    println!("User registration: {:?}", res);
+
+    if let RegisterResult::Success(user_id) = &res {
+        add_session(user_id.to_string()).await?;
+    }
+
+    Ok(res)
 }
 
 fn do_check_login(callback: impl FnOnce(Result<Option<String>, ServerFnError>) + Send + 'static) {
@@ -293,7 +304,7 @@ fn do_check_login(callback: impl FnOnce(Result<Option<String>, ServerFnError>) +
 }
 
 #[server]
-async fn check_login() -> Result<Option<String>, ServerFnError> {
+pub async fn check_login() -> Result<Option<String>, ServerFnError> {
     let user: Option<crate::server::auth::AuthenticatedUser> = extract().await.ok();
     Ok(user.map(|u| u.0))
 }

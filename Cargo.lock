@@ -6765,6 +6765,7 @@ dependencies = [
  "futures-util",
  "gloo",
  "headers",
+ "rand 0.8.5",
  "regex",
  "serde",
  "serde_json",

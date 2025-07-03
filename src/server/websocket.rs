@@ -1,10 +1,10 @@
-use axum::extract::{ConnectInfo, State};
+use axum::extract::ConnectInfo;
 use axum::{
     extract::ws::{Message, WebSocket, WebSocketUpgrade},
     response::IntoResponse,
+    Extension,
 };
-use futures_util::stream::SplitSink;
-use futures_util::{SinkExt, StreamExt};
+use futures_util::StreamExt;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::ops::ControlFlow;
@@ -13,22 +13,24 @@ use tokio::sync::Mutex;
 
 use crate::server::auth::AuthenticatedUser;
 use axum_extra::TypedHeader;
+use futures_util::stream::SplitSink;
+use crate::server::room::{PlayerId, Rooms};
 
-type PlayerId = String;
-
-struct PlayerSocket {
+pub struct PlayerSocket {
     sender: SplitSink<WebSocket, Message>,
 }
 
 #[derive(Clone)]
 pub struct SharedState {
-    players: Arc<Mutex<HashMap<PlayerId, PlayerSocket>>>,
+    pub players: Arc<Mutex<HashMap<PlayerId, PlayerSocket>>>,
+    pub rooms: Arc<Mutex<Rooms>>,
 }
 
 impl SharedState {
     pub fn new() -> Self {
         SharedState {
             players: Arc::new(Mutex::new(HashMap::new())),
+            rooms: Arc::new(Mutex::new(Rooms::new())),
         }
     }
 }
@@ -37,7 +39,7 @@ pub(crate) async fn ws_handler(
     ws: WebSocketUpgrade,
     user_agent: Option<TypedHeader<headers::UserAgent>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    State(state): State<SharedState>,
+    Extension(state): Extension<SharedState>,
     AuthenticatedUser(user_id): AuthenticatedUser,
 ) -> impl IntoResponse {
     let user_agent = if let Some(TypedHeader(user_agent)) = user_agent {
@@ -91,7 +93,7 @@ async fn handle_socket(
     player_guard.insert(player_id.clone(), PlayerSocket { sender });
     drop(player_guard);
 
-    let mut recv_task = tokio::spawn(async move {
+    let recv_task = tokio::spawn(async move {
         let mut cnt = 0;
         while let Some(Ok(msg)) = receiver.next().await {
             cnt += 1;

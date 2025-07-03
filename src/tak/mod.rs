@@ -8,7 +8,7 @@ pub use timed::*;
 pub struct TakGame {
     pub size: usize,
     pub board: Vec<TakTile>,
-    pub current_player: Player,
+    pub current_player: TakPlayer,
     pub actions: Vec<TakAction>,
     pub hands: [TakHand; 2],
     id_counter: usize,
@@ -18,7 +18,7 @@ pub struct TakGame {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum TakGameState {
     Ongoing,
-    Win(Player),
+    Win(TakPlayer),
     Draw,
 }
 
@@ -184,20 +184,20 @@ impl TakCoord {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct IDStone {
     pub id: usize,
-    pub player: Player,
+    pub player: TakPlayer,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Player {
+pub enum TakPlayer {
     White,
     Black,
 }
 
-impl Player {
-    pub fn opponent(&self) -> Player {
+impl TakPlayer {
+    pub fn opponent(&self) -> TakPlayer {
         match self {
-            Player::White => Player::Black,
-            Player::Black => Player::White,
+            TakPlayer::White => TakPlayer::Black,
+            TakPlayer::Black => TakPlayer::White,
         }
     }
 }
@@ -218,7 +218,7 @@ pub struct TakTower {
 }
 
 impl TakTower {
-    pub fn controlling_player(&self) -> Player {
+    pub fn controlling_player(&self) -> TakPlayer {
         self.composition[self.composition.len() - 1].player
     }
 
@@ -256,6 +256,15 @@ impl Direction {
         } else {
             None
         }
+    }
+
+    pub fn all() -> Vec<Direction> {
+        vec![
+            Direction::Up,
+            Direction::Down,
+            Direction::Left,
+            Direction::Right,
+        ]
     }
 }
 
@@ -387,8 +396,8 @@ impl TakGameAPI for TakGame {
         }?;
         self.actions.push(action);
         self.current_player = match self.current_player {
-            Player::White => Player::Black,
-            Player::Black => Player::White,
+            TakPlayer::White => TakPlayer::Black,
+            TakPlayer::Black => TakPlayer::White,
         };
         self.check_game_over();
         Ok(self.game_state)
@@ -398,7 +407,7 @@ impl TakGameAPI for TakGame {
         TakGame::new(size)
     }
 
-    fn current_player(&self) -> Player {
+    fn current_player(&self) -> TakPlayer {
         self.current_player
     }
 
@@ -420,7 +429,7 @@ impl TakGame {
         TakGame {
             size,
             board: vec![None; size * size],
-            current_player: Player::White,
+            current_player: TakPlayer::White,
             actions: Vec::new(),
             hands: [TakHand::new(size), TakHand::new(size)],
             id_counter: 0,
@@ -430,10 +439,10 @@ impl TakGame {
 
     fn check_game_over(&mut self) {}
 
-    fn get_hand_mut(&mut self, player: Player) -> &mut TakHand {
+    fn get_hand_mut(&mut self, player: TakPlayer) -> &mut TakHand {
         match player {
-            Player::White => &mut self.hands[0],
-            Player::Black => &mut self.hands[1],
+            TakPlayer::White => &mut self.hands[0],
+            TakPlayer::Black => &mut self.hands[1],
         }
     }
 
@@ -567,8 +576,8 @@ impl TakGame {
                 if tower.top_type != TakPieceType::Flat {
                     let can_flatten = tower.top_type == TakPieceType::Wall
                         && from_top_type == TakPieceType::Capstone
-                        && drops[i] == 1
-                        && i == drop_len - 1;
+                        && i == drop_len - 1
+                        && drops[i] == 1;
                     if !can_flatten {
                         return Err(TakInvalidAction::InvalidAction);
                     }

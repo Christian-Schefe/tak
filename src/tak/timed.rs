@@ -1,5 +1,5 @@
 use crate::tak::{
-    Player, TakAction, TakCoord, TakGame, TakGameAPI, TakGameState, TakInvalidAction, TakTower,
+    TakPlayer, TakAction, TakCoord, TakGame, TakGameAPI, TakGameState, TakInvalidAction, TakTower,
 };
 use std::time::Duration;
 
@@ -8,7 +8,7 @@ pub struct TimedTakGame {
     game: TakGame,
     time_mode: TimeMode,
     pub time_left: [Duration; 2],
-    last_action_time: CrossPlatformInstant,
+    last_action_time: Option<CrossPlatformInstant>,
 }
 
 #[derive(Clone, Debug)]
@@ -27,16 +27,19 @@ impl TimeMode {
 }
 
 impl TimedTakGame {
-    pub fn get_time_remaining(&self, player: Player) -> Duration {
+    pub fn get_time_remaining(&self, player: TakPlayer) -> Duration {
         let time_left = match player {
-            Player::White => self.time_left[0],
-            Player::Black => self.time_left[1],
+            TakPlayer::White => self.time_left[0],
+            TakPlayer::Black => self.time_left[1],
         };
         if player != self.game.current_player {
             return time_left;
         }
         let now = CrossPlatformInstant::now();
-        let elapsed = now.elapsed_since(self.last_action_time);
+        let elapsed = self
+            .last_action_time
+            .map(|t| now.elapsed_since(t))
+            .unwrap_or(0);
         time_left.saturating_sub(Duration::from_millis(elapsed))
     }
 }
@@ -48,11 +51,14 @@ impl TakGameAPI for TimedTakGame {
         let current_player = self.game.current_player;
         self.game.try_do_action(action)?;
         let now = CrossPlatformInstant::now();
-        let elapsed = now.elapsed_since(self.last_action_time);
-        self.last_action_time = now;
+        let elapsed = self
+            .last_action_time
+            .map(|t| now.elapsed_since(t))
+            .unwrap_or(0);
+        self.last_action_time = Some(now);
         let time_left = match current_player {
-            Player::White => &mut self.time_left[0],
-            Player::Black => &mut self.time_left[1],
+            TakPlayer::White => &mut self.time_left[0],
+            TakPlayer::Black => &mut self.time_left[1],
         };
         *time_left = time_left.saturating_sub(Duration::from_millis(elapsed));
         if time_left.is_zero() {
@@ -65,17 +71,16 @@ impl TakGameAPI for TimedTakGame {
 
     fn new_game(size: usize, settings: Self::Settings) -> Self {
         let game = TakGame::new(size);
-        let start_time = CrossPlatformInstant::now();
         let time_mode = settings;
         Self {
             game,
             time_left: [time_mode.time_limit, time_mode.time_limit],
-            last_action_time: start_time,
+            last_action_time: None,
             time_mode,
         }
     }
 
-    fn current_player(&self) -> Player {
+    fn current_player(&self) -> TakPlayer {
         self.game.current_player
     }
 

@@ -26,6 +26,7 @@ argon2 = "0.5"
 surrealdb = { version = "2.3.6", optional = true }
 thiserror = "2.0.12"
 tower-cookies = { version = "0.10.0", features = ["axum-core"], optional = true }
+rand = "0.8.5"
 
 [features]
 web = ["dioxus/web"]

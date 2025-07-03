@@ -1,24 +1,23 @@
-use crate::components::TakBoardState;
-use crate::tak::Player;
+use crate::tak::TakPlayer;
+use crate::views::TakBoardState;
 use dioxus::core_macro::component;
 use dioxus::prelude::*;
-use web_sys::js_sys::Date;
 
 #[component]
 pub fn Clock() -> Element {
     let board = use_context::<TakBoardState>();
-    let mut time_remaining_white = use_signal(|| None);
-    let mut time_remaining_black = use_signal(|| None);
-    to_owned![time_remaining_white, time_remaining_black];
+    let time_remaining_white = use_signal_sync(|| None);
+    let time_remaining_black = use_signal_sync(|| None);
 
-    let update_task: Coroutine<()> = use_coroutine(move |rx| {
+    let _update_task: Coroutine<()> = use_coroutine(move |_| {
+        let mut time_remaining_white = time_remaining_white.clone();
+        let mut time_remaining_black = time_remaining_black.clone();
         let board_clone = board.clone();
         async move {
             loop {
-                //tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                 gloo::timers::future::sleep(std::time::Duration::from_millis(100)).await;
-                time_remaining_white.set(Some(board_clone.get_time_remaining(Player::White)));
-                time_remaining_black.set(Some(board_clone.get_time_remaining(Player::Black)));
+                time_remaining_white.set(Some(board_clone.get_time_remaining(TakPlayer::White)));
+                time_remaining_black.set(Some(board_clone.get_time_remaining(TakPlayer::Black)));
             }
         }
     });
@@ -36,14 +35,4 @@ pub fn Clock() -> Element {
             }
         }
     }
-}
-
-fn current_time() -> String {
-    let now = Date::new_0();
-    format!(
-        "{:02}:{:02}:{:02}",
-        now.get_hours(),
-        now.get_minutes(),
-        now.get_seconds()
-    )
 }

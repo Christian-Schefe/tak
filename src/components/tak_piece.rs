@@ -1,7 +1,6 @@
-use crate::components::TakBoardState;
-use crate::tak::{Player, TakPieceType};
+use crate::tak::{TakPieceType, TakPlayer};
+use crate::views::TakBoardState;
 use dioxus::dioxus_core::Element;
-use dioxus::logger::tracing;
 use dioxus::prelude::*;
 
 #[component]
@@ -16,47 +15,52 @@ pub fn TakPiece(id: usize) -> Element {
         let piece = pieces.get(&id).unwrap();
         let mut position = piece.position;
         let mut height = piece.stack_height;
-        if let Some(move_selection) = &*board.move_selection.read() {
-            if move_selection.position == piece.position {
-                let pieces_at_pos = pieces
-                    .iter()
-                    .filter(|(_, p)| p.position == piece.position)
-                    .collect::<Vec<_>>();
-                let this_stack_height = pieces_at_pos
-                    .iter()
-                    .map(|(_, p)| p.stack_height)
-                    .max()
-                    .unwrap();
-                tracing::info!(
-                    "Calculating actual position for piece {} at position {:?} with {} piece tower with stack height {}, move count {}",
-                    id, piece.position, pieces_at_pos.len(), this_stack_height, move_selection.count
-                );
-                let first_dropped_height = this_stack_height + 1 - move_selection.count;
-                if first_dropped_height <= piece.stack_height {
-                    let drops_needed = piece.stack_height + 1 - first_dropped_height;
-                    let is_dropped = move_selection.drops.iter().sum::<usize>() >= drops_needed;
-                    if !is_dropped {
-                        height += 2;
-                    } else if let Some(dir) = move_selection.direction {
-                        let mut drop_count = 0;
-                        for i in 0..move_selection.drops.len() {
-                            drop_count += move_selection.drops[i];
-                            if drop_count >= drops_needed {
-                                let height_offset =
-                                    move_selection.drops[i] - (drop_count - drops_needed);
-                                position = position.offset_by(&dir, i).unwrap();
-                                height = pieces
-                                    .iter()
-                                    .filter(|(_, p)| p.position == position)
-                                    .map(|(_, p)| p.stack_height + 1)
-                                    .max()
-                                    .unwrap_or(0)
-                                    + height_offset;
-                                break;
-                            }
-                        }
-                    }
-                }
+
+        let Some(move_selection) = &*board.move_selection.read() else {
+            return (position, height);
+        };
+        if move_selection.position != piece.position {
+            return (position, height);
+        }
+
+        let this_stack_height = pieces
+            .iter()
+            .filter(|(_, p)| p.position == piece.position)
+            .map(|(_, p)| p.stack_height)
+            .max()
+            .unwrap();
+
+        let first_dropped_height = this_stack_height + 1 - move_selection.count;
+        if first_dropped_height > piece.stack_height {
+            return (position, height);
+        }
+        let drops_needed = piece.stack_height + 1 - first_dropped_height;
+
+        let Some(dir) = move_selection.direction else {
+            let is_dropped = move_selection.drops.iter().sum::<usize>() >= drops_needed;
+            return if !is_dropped {
+                (position, height + 2)
+            } else {
+                (position, height)
+            };
+        };
+
+        let mut drop_count = 0;
+        for i in 0..move_selection.drops.len() {
+            drop_count += move_selection.drops[i];
+            position = position.offset_by(&dir, 1).unwrap();
+            let tower_height = pieces
+                .iter()
+                .filter(|(_, p)| p.position == position)
+                .map(|(_, p)| p.stack_height + 1)
+                .max()
+                .unwrap_or(0);
+            if drop_count >= drops_needed {
+                let height_offset = move_selection.drops[i] - (drop_count - drops_needed) - 1;
+                height = tower_height + height_offset;
+                break;
+            } else {
+                height = tower_height + move_selection.drops[i] + (drops_needed - drop_count) + 1;
             }
         }
         (position, height)
@@ -76,8 +80,8 @@ pub fn TakPiece(id: usize) -> Element {
                         TakPieceType::Wall => "wall",
                         TakPieceType::Capstone => "cap",
                     }, match piece.player {
-                        Player::White => "light",
-                        Player::Black => "dark",
+                        TakPlayer::White => "light",
+                        TakPlayer::Black => "dark",
                     }),
                 }
             }

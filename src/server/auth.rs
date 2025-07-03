@@ -49,8 +49,6 @@ mod server {
         pub enum Error {
             #[error(transparent)]
             Db(surrealdb::Error),
-            #[error("invalid username or password")]
-            InvalidCredentials,
             #[error("internal server error: {0}")]
             InternalServerError(String),
             #[error("unauthorized")]
@@ -63,7 +61,6 @@ mod server {
             fn into_response(self) -> Response {
                 let status_code = match &self {
                     Self::Db(_) => StatusCode::INTERNAL_SERVER_ERROR,
-                    Self::InvalidCredentials => StatusCode::UNAUTHORIZED,
                     Self::InternalServerError(_) => StatusCode::INTERNAL_SERVER_ERROR,
                     Self::Unauthorized => StatusCode::UNAUTHORIZED,
                     Self::InvalidRequest(_) => StatusCode::BAD_REQUEST,
@@ -155,6 +152,13 @@ mod server {
         username: String,
         password: String,
     ) -> Result<RegisterResult, error::Error> {
+        if !validate_username(&username) {
+            return Ok(RegisterResult::ValidationError);
+        }
+        if !validate_password(&password) {
+            return Ok(RegisterResult::ValidationError);
+        }
+        
         let mut result = DB
             .query("SELECT * FROM type::table($table) WHERE username = type::string($username)")
             .bind(("table", "user"))
