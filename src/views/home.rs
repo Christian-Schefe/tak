@@ -1,5 +1,6 @@
 use crate::server::room::{
-    create_room, get_room, join_room, CreateRoomResponse, GetRoomResponse, JoinRoomResponse,
+    create_room, get_room, join_room, leave_room, CreateRoomResponse, GetRoomResponse,
+    JoinRoomResponse, LeaveRoomResponse,
 };
 use crate::Route;
 use dioxus::prelude::*;
@@ -10,7 +11,7 @@ const CSS: Asset = asset!("/assets/styling/home.css");
 pub fn Home() -> Element {
     let nav = use_navigator();
 
-    let room = use_server_future(|| get_room())?;
+    let mut room = use_server_future(|| get_room())?;
 
     use_effect(move || {
         match &*room.read() {
@@ -86,6 +87,23 @@ pub fn Home() -> Element {
         nav.push(Route::PlayComputer {});
     };
 
+    let on_click_leave = move |_| {
+        spawn(async move {
+            let res = leave_room().await;
+            match res {
+                Ok(LeaveRoomResponse::Unauthorized) => {
+                    nav.push(Route::Auth {});
+                }
+                Ok(_) => {
+                    room.restart();
+                }
+                Err(e) => {
+                    dioxus::logger::tracing::error!("Failed to leave room: {}", e);
+                }
+            }
+        });
+    };
+
     rsx! {
         document::Link { rel: "stylesheet", href: CSS }
         div {
@@ -97,22 +115,27 @@ pub fn Home() -> Element {
                     },
                     "Rejoin Room"
                 }
-            }
-            button {
-                onclick: on_click_create,
-                "Create Room"
-            }
-            button {
-                onclick: on_click_join,
-                disabled: !*join_valid.read(),
-                "Join Room"
-            }
-            input {
-                type: "text",
-                placeholder: "Enter room ID",
-                id: "room-id-input",
-                oninput: move |e| {
-                    room_id_input.set(e.value())
+                button {
+                    onclick: on_click_leave,
+                    "Leave Room"
+                }
+            } else {
+                button {
+                    onclick: on_click_create,
+                    "Create Room"
+                }
+                button {
+                    onclick: on_click_join,
+                    disabled: !*join_valid.read(),
+                    "Join Room"
+                }
+                input {
+                    type: "text",
+                    placeholder: "Enter room ID",
+                    id: "room-id-input",
+                    oninput: move |e| {
+                        room_id_input.set(e.value())
+                    }
                 }
             }
             button {

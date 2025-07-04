@@ -1,9 +1,7 @@
 use crate::components::tak_piece::TakPiece;
 use crate::components::Clock;
-use crate::tak::{
-    Direction, TakCoord, TakGameAPI, TakPieceType,
-};
-use crate::views::TakBoardState;
+use crate::tak::{Direction, TakCoord, TakGameAPI, TakPieceType};
+use crate::views::{PlayerInfo, PlayerType, TakBoardState};
 use dioxus::core_macro::{component, rsx};
 use dioxus::dioxus_core::Element;
 use dioxus::logger::tracing;
@@ -18,13 +16,19 @@ pub fn TakBoard() -> Element {
         let pos = TakCoord::new(i, j);
         let mut cloned_state = state_clone.clone();
         move |_| {
-            if !cloned_state
-                .local_players
-                .read()
-                .contains(&*cloned_state.player.read())
-            {
+            if !*cloned_state.has_started.read() {
                 return;
             }
+            let Some(PlayerInfo {
+                name: _,
+                player_type: PlayerType::Local,
+            }) = cloned_state
+                .player_info
+                .read()
+                .get(&*cloned_state.player.read())
+            else {
+                return;
+            };
             tracing::info!("Clicked on tile: {:?}", pos);
             if cloned_state.is_empty_tile(pos) && cloned_state.move_selection.read().is_none() {
                 let piece_type = *cloned_state.selected_piece_type.read();

@@ -176,14 +176,14 @@ pub fn Auth() -> Element {
                 button {
                     type: "submit",
                     class: "auth-button",
-                    onclick: move |e| {
+                    onclick: move |_| {
                         if show_login {
                             on_login(username.read().clone(), password.read().clone());
                         } else {
                             on_register(username.read().clone(), password.read().clone());
                         }
                     },
-                    disabled: {!show_login && !form_state.read().is_valid()},
+                    disabled: !show_login && !form_state.read().is_valid(),
                     {if show_login { "Login" } else { "Register" }}
                 }
                 button {
@@ -236,7 +236,8 @@ async fn add_session(user_id: String) -> Result<(), ServerFnError> {
 
     let session_id = Uuid::new_v4().to_string();
     store
-        .lock()?
+        .lock()
+        .await
         .insert(session_id.clone(), user_id.to_string());
     cookies.add(Cookie::new("session_id", session_id));
     Ok(())
@@ -263,7 +264,7 @@ pub async fn logout() -> Result<(), ServerFnError> {
         .map_err(|e: (StatusCode, &str)| ServerFnError::new(e.1))?;
 
     let session_id = Uuid::new_v4().to_string();
-    store.lock()?.remove(&session_id);
+    store.lock().await.remove(&session_id);
 
     cookies.remove(Cookie::from("session_id"));
 

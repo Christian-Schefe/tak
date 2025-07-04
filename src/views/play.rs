@@ -1,5 +1,5 @@
 use crate::components::{TakBoard, TakWebSocket};
-use crate::server::room::{get_room, GetRoomResponse};
+use crate::server::room::{get_players, get_room, GetPlayersResponse, GetRoomResponse};
 use crate::tak::{
     Direction, TakAction, TakCoord, TakFeedback, TakGameAPI, TakPieceType, TakPlayer, TimeMode,
     TimedTakGame,
@@ -14,20 +14,40 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum GameMessage {
+pub enum ClientGameMessage {
     Move(String),
 }
 
 #[derive(Clone)]
 pub struct TakBoardState {
     game: Arc<Mutex<TimedTakGame>>,
+    pub has_started: Signal<bool>,
     pub player: Signal<TakPlayer>,
-    pub local_players: Signal<Vec<TakPlayer>>,
+    pub player_info: Signal<HashMap<TakPlayer, PlayerInfo>>,
     pub move_selection: Signal<Option<MoveSelection>>,
     pub selected_piece_type: Signal<TakPieceType>,
     pub size: Signal<usize>,
     pub pieces: Signal<HashMap<usize, TakPieceState>>,
-    pub message_queue: Signal<Vec<GameMessage>>,
+    pub message_queue: Signal<Vec<ClientGameMessage>>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum PlayerType {
+    Local,
+    Remote,
+    Computer,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct PlayerInfo {
+    pub name: String,
+    pub player_type: PlayerType,
+}
+
+impl PlayerInfo {
+    pub fn new(name: String, player_type: PlayerType) -> Self {
+        PlayerInfo { name, player_type }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -39,18 +59,49 @@ pub struct MoveSelection {
 }
 
 impl TakBoardState {
-    pub fn new(size: usize, local_players: Vec<TakPlayer>) -> Self {
+    pub fn new(size: usize, player_info: HashMap<TakPlayer, PlayerInfo>) -> Self {
         let time_mode = TimeMode::new(Duration::from_secs(300), Duration::from_secs(10));
         TakBoardState {
             game: Arc::new(Mutex::new(TimedTakGame::new_game(size, time_mode))),
+            has_started: Signal::new(false),
             player: Signal::new(TakPlayer::White),
-            local_players: Signal::new(local_players),
+            player_info: Signal::new(player_info),
             move_selection: Signal::new(None),
             selected_piece_type: Signal::new(TakPieceType::Flat),
             size: Signal::new(size),
             pieces: Signal::new(HashMap::new()),
             message_queue: Signal::new(Vec::new()),
         }
+    }
+
+    pub fn start_game(&mut self) {
+        self.has_started.set(true);
+    }
+
+    pub async fn update_player_info(&mut self) {
+        let Ok(res) = get_players().await else {
+            tracing::error!("Failed to fetch player info");
+            return;
+        };
+        match res {
+            GetPlayersResponse::Success(players) => {
+                let mut map = self.player_info.write();
+                for (player, info) in players {
+                    map.insert(
+                        player,
+                        PlayerInfo {
+                            name: info.username,
+                            player_type: if info.is_local {
+                                PlayerType::Local
+                            } else {
+                                PlayerType::Remote
+                            },
+                        },
+                    );
+                }
+            }
+            _ => {}
+        };
     }
 
     pub fn with_game_readonly<R, F: FnOnce(&TimedTakGame) -> R>(&self, func: F) -> R {
@@ -75,7 +126,8 @@ impl TakBoardState {
 
     fn on_finish_move(&mut self, action: &TakAction) {
         self.on_game_update();
-        self.message_queue.push(GameMessage::Move(action.to_ptn()));
+        self.message_queue
+            .push(ClientGameMessage::Move(action.to_ptn()));
     }
 
     fn on_game_update(&mut self) {
@@ -277,7 +329,16 @@ const CSS: Asset = asset!("/assets/styling/computer.css");
 
 #[component]
 pub fn PlayComputer() -> Element {
-    use_context_provider(|| TakBoardState::new(5, vec![TakPlayer::White, TakPlayer::Black]));
+    let mut player_info = HashMap::new();
+    player_info.insert(
+        TakPlayer::White,
+        PlayerInfo::new("You".to_string(), PlayerType::Local),
+    );
+    player_info.insert(
+        TakPlayer::Black,
+        PlayerInfo::new("Computer".to_string(), PlayerType::Computer),
+    );
+    use_context_provider(|| TakBoardState::new(5, player_info));
     rsx! {
         document::Link { rel: "stylesheet", href: CSS }
         div {
@@ -292,7 +353,15 @@ pub fn PlayOnline() -> Element {
     let room = use_server_future(|| get_room())?;
     let nav = use_navigator();
 
-    use_context_provider(|| TakBoardState::new(5, vec![TakPlayer::White, TakPlayer::Black]));
+    let player_info = HashMap::new();
+    let board = use_context_provider(|| TakBoardState::new(5, player_info));
+
+    use_effect(move || {
+        let mut board = board.clone();
+        spawn(async move {
+            board.update_player_info().await;
+        });
+    });
 
     let room_id = use_memo(move || {
         if let Some(Ok(GetRoomResponse::Success(id))) = room.read().as_ref() {
@@ -316,7 +385,10 @@ pub fn PlayOnline() -> Element {
         document::Link { rel: "stylesheet", href: CSS }
         div {
             id: "play-computer",
-            if room_id.read().as_ref().is_some() {
+            if let Some(room) = room_id.read().as_ref() {
+                h2 {
+                    "Room ID: {room}"
+                }
                 TakBoard {
                 }
                 TakWebSocket {}

@@ -57,6 +57,7 @@ async fn main() {
     let router = axum::Router::new()
         .serve_dioxus_application(config, App)
         .route("/ws", axum::routing::any(server::websocket::ws_handler))
+        .route("/ws2", axum::routing::any(server::websocket::ws_test_handler))
         .layer(Extension(session_store))
         .layer(Extension(shared_state))
         .layer(CookieManagerLayer::new())

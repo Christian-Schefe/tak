@@ -4,43 +4,40 @@ use axum::{
     response::IntoResponse,
     Extension,
 };
-use futures_util::StreamExt;
-use std::collections::HashMap;
+use futures_util::{SinkExt, StreamExt};
 use std::net::SocketAddr;
-use std::ops::ControlFlow;
+use std::ops::DerefMut;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use crate::server::auth::AuthenticatedUser;
+use crate::server::auth::SessionStore;
+use crate::server::room::{PlayerId, Room, Rooms};
+use crate::tak::{TakAction, TakGameAPI};
+use crate::views::ClientGameMessage;
 use axum_extra::TypedHeader;
-use futures_util::stream::SplitSink;
-use crate::server::room::{PlayerId, Rooms};
+use futures_util::stream::{SplitSink, SplitStream};
 
 pub struct PlayerSocket {
-    sender: SplitSink<WebSocket, Message>,
+    pub sender: SplitSink<WebSocket, Message>,
 }
 
 #[derive(Clone)]
 pub struct SharedState {
-    pub players: Arc<Mutex<HashMap<PlayerId, PlayerSocket>>>,
     pub rooms: Arc<Mutex<Rooms>>,
 }
 
 impl SharedState {
     pub fn new() -> Self {
         SharedState {
-            players: Arc::new(Mutex::new(HashMap::new())),
             rooms: Arc::new(Mutex::new(Rooms::new())),
         }
     }
 }
 
-pub(crate) async fn ws_handler(
+pub(crate) async fn ws_test_handler(
     ws: WebSocketUpgrade,
     user_agent: Option<TypedHeader<headers::UserAgent>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    Extension(state): Extension<SharedState>,
-    AuthenticatedUser(user_id): AuthenticatedUser,
 ) -> impl IntoResponse {
     let user_agent = if let Some(TypedHeader(user_agent)) = user_agent {
         user_agent.to_string()
@@ -48,103 +45,162 @@ pub(crate) async fn ws_handler(
         String::from("Unknown browser")
     };
     println!("`{user_agent}` at {addr} connected.");
-    ws.on_upgrade(move |socket| handle_socket(socket, addr, user_id, state))
+    ws.on_upgrade(move |mut socket| async move {
+        println!("WebSocket connection established with {addr}");
+        while let Some(Ok(msg)) = socket.next().await {
+            match msg {
+                Message::Text(text) => {
+                    println!("Received text message: {text}");
+                    if socket.send(Message::Text(text)).await.is_err() {
+                        println!("Failed to echo text message back to {addr}");
+                    }
+                }
+                Message::Ping(_) => {
+                    println!("Received ping, sending pong...");
+                    if socket.send(Message::Pong(vec![])).await.is_err() {
+                        println!("Failed to send pong");
+                    }
+                }
+                _ => {}
+            }
+        }
+        println!("WebSocket connection with {addr} closed");
+    })
+}
+
+pub(crate) async fn ws_handler(
+    ws: WebSocketUpgrade,
+    user_agent: Option<TypedHeader<headers::UserAgent>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Extension(state): Extension<SharedState>,
+    Extension(store): Extension<SessionStore>,
+) -> impl IntoResponse {
+    let user_agent = if let Some(TypedHeader(user_agent)) = user_agent {
+        user_agent.to_string()
+    } else {
+        String::from("Unknown browser")
+    };
+    println!("`{user_agent}` at {addr} connected.");
+    ws.on_upgrade(move |socket| handle_socket(socket, store, addr, state))
 }
 
 async fn handle_socket(
     mut socket: WebSocket,
+    session_store: SessionStore,
     who: SocketAddr,
-    player_id: PlayerId,
     state: SharedState,
 ) {
+    let Some(Ok(msg)) = socket.next().await else {
+        println!("Unauthorized access from {who}");
+        let _ = socket.close().await;
+        return;
+    };
+    
+    let Message::Text(session_id) = msg else {
+        println!("Unauthorized access from {who} with non-text message: {msg:?}");
+        let _ = socket.close().await;
+        return;
+    };
+
+    let session_store = session_store.lock().await;
+    let Some(player_id) = session_store.get(&session_id) else {
+        println!("Unauthorized access from {who} with session_id {session_id}");
+        let _ = socket.close().await;
+        return;
+    };
+
     if socket.send(Message::Ping(vec![1, 2, 3])).await.is_ok() {
         println!("Pinged {who}...");
     } else {
         println!("Could not send ping {who}!");
+        let _ = socket.close().await;
         return;
     }
+    
+    let (mut sender, receiver) = socket.split();
 
-    if let Some(msg) = socket.recv().await {
-        if let Ok(msg) = msg {
-            if process_message(msg, who).is_break() {
-                return;
-            }
-        } else {
-            println!("client {who} abruptly disconnected");
-            return;
-        }
-    }
+    let rooms = state.rooms.lock().await;
+    let Some(room_id) = rooms.player_mapping.get(player_id) else {
+        let _ = sender.close().await;
+        return;
+    };
+    let Some(room) = rooms.rooms.get(room_id).cloned() else {
+        println!("Room {room_id} not found for player {player_id}");
+        let _ = sender.close().await;
+        return;
+    };
+    drop(rooms);
 
-    for i in 1..5 {
-        if socket
-            .send(Message::Text(format!("Hi {i} times!")))
-            .await
-            .is_err()
-        {
-            println!("client {who} abruptly disconnected");
-            return;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-    }
+    let mut room_guard = room.lock().await;
+    room_guard
+        .player_sockets
+        .insert(player_id.clone(), PlayerSocket { sender });
+    drop(room_guard);
 
-    let (sender, mut receiver) = socket.split();
-
-    let mut player_guard = state.players.lock().await;
-    player_guard.insert(player_id.clone(), PlayerSocket { sender });
-    drop(player_guard);
-
+    let recv_room = room.clone();
+    let recv_player = player_id.clone();
     let recv_task = tokio::spawn(async move {
-        let mut cnt = 0;
-        while let Some(Ok(msg)) = receiver.next().await {
-            cnt += 1;
-            // print message and break if instructed to do so
-            if process_message(msg, who).is_break() {
-                break;
-            }
-        }
-        cnt
+        room_receive_task(recv_room, receiver, recv_player).await;
     });
 
     let res = recv_task.await;
-
     match res {
-        Ok(b) => println!("Received {b} messages"),
+        Ok(_) => {}
         Err(b) => println!("Error receiving messages {b:?}"),
     }
 
-    let mut player_guard = state.players.lock().await;
-    player_guard.remove(&player_id);
-    drop(player_guard);
+    let mut room_guard = room.lock().await;
+    room_guard.player_sockets.remove(player_id);
+    drop(room_guard);
 
     println!("Websocket context {who} destroyed");
 }
 
-fn process_message(msg: Message, who: SocketAddr) -> ControlFlow<(), ()> {
-    match msg {
-        Message::Text(t) => {
-            println!(">>> {who} sent str: {t:?}");
+async fn on_room_receive_move(player: &PlayerId, room: &mut Room, action: &str) {
+    if let Some(action) = TakAction::from_ptn(action) {
+        let Some(opponent) = &room.opponent else {
+            println!("No opponent to play against");
+            return;
+        };
+        if let Err(e) = room.game.try_do_action(action.clone()) {
+            println!("Error processing action: {e:?}");
         }
-        Message::Binary(d) => {
-            println!(">>> {} sent {} bytes: {:?}", who, d.len(), d);
+        let other_player = if room.owner == *player {
+            opponent
+        } else {
+            &room.owner
+        };
+        let Some(socket) = room.player_sockets.get_mut(other_player) else {
+            println!("No socket found for player {other_player}");
+            return;
+        };
+        let msg = serde_json::to_string(&ClientGameMessage::Move(action.to_ptn())).unwrap();
+        if socket.sender.send(Message::Text(msg)).await.is_err() {
+            println!("Failed to send message to player {other_player}");
+        } else {
+            println!("Sent move action to player {other_player}: {action:?}");
         }
-        Message::Close(c) => {
-            if let Some(cf) = c {
-                println!(
-                    ">>> {} sent close with code {} and reason `{}`",
-                    who, cf.code, cf.reason
-                );
-            } else {
-                println!(">>> {who} somehow sent close message without CloseFrame");
-            }
-            return ControlFlow::Break(());
-        }
-
-        Message::Pong(v) => {
-            println!(">>> {who} sent pong with {v:?}");
-        }
-        Message::Ping(v) => {
-            println!(">>> {who} sent ping with {v:?}");
-        }
+    } else {
+        println!("Invalid action received: {action}");
     }
-    ControlFlow::Continue(())
+}
+
+async fn room_receive_task(
+    room: Arc<Mutex<Room>>,
+    mut receiver: SplitStream<WebSocket>,
+    player: PlayerId,
+) {
+    while let Some(Ok(msg)) = receiver.next().await {
+        if let Message::Text(msg) = &msg {
+            if let Ok(msg) = serde_json::from_str::<ClientGameMessage>(msg) {
+                match msg {
+                    ClientGameMessage::Move(action) => {
+                        let mut room_lock = room.lock().await;
+                        on_room_receive_move(&player, room_lock.deref_mut(), &action).await;
+                    }
+                }
+            }
+        }
+        println!(">>> {player} sent str: {msg:?}");
+    }
 }

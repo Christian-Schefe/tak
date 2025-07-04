@@ -1,6 +1,7 @@
 pub mod api;
 pub mod timed;
 
+use serde::{Deserialize, Serialize};
 pub use api::*;
 pub use timed::*;
 
@@ -187,7 +188,7 @@ pub struct IDStone {
     pub player: TakPlayer,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum TakPlayer {
     White,
     Black,

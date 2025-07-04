@@ -1,8 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
-
-pub type SessionStore = Arc<Mutex<HashMap<String, String>>>;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum RegisterResult {
@@ -22,7 +18,7 @@ pub use server::*;
 
 #[cfg(feature = "server")]
 mod server {
-    use crate::server::auth::{LoginResult, RegisterResult, SessionStore};
+    use crate::server::auth::{LoginResult, RegisterResult};
     use argon2::password_hash::rand_core::OsRng;
     use argon2::password_hash::SaltString;
     use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
@@ -31,14 +27,17 @@ mod server {
     use axum::{async_trait, Extension};
     use serde::{Deserialize, Serialize};
     use std::collections::HashMap;
-    use std::sync::{Arc, LazyLock, Mutex};
+    use std::sync::{Arc, LazyLock};
     use surrealdb::engine::remote::ws::{Client, Ws};
     use surrealdb::opt::auth::Root;
     use surrealdb::Surreal;
+    use tokio::sync::Mutex;
     use tower_cookies::Cookies;
     use uuid::Uuid;
 
-    mod error {
+    pub type SessionStore = Arc<Mutex<HashMap<String, String>>>;
+
+    pub mod error {
         use axum::http::StatusCode;
         use axum::response::IntoResponse;
         use axum::response::Response;
@@ -76,12 +75,12 @@ mod server {
         }
     }
 
-    static DB: LazyLock<Surreal<Client>> = LazyLock::new(Surreal::init);
+    pub static DB: LazyLock<Surreal<Client>> = LazyLock::new(Surreal::init);
 
     #[derive(Debug, Serialize, Deserialize)]
     pub struct User {
         pub user_id: String,
-        username: String,
+        pub username: String,
         password_hash: String,
     }
 
@@ -126,7 +125,7 @@ mod server {
 
             if let Some(cookie) = cookies.get("session_id") {
                 let session_id = cookie.value();
-                if let Some(user_id) = store.lock().unwrap().get(session_id) {
+                if let Some(user_id) = store.lock().await.get(session_id) {
                     return Ok(AuthenticatedUser(user_id.clone()));
                 }
             }
@@ -158,7 +157,7 @@ mod server {
         if !validate_password(&password) {
             return Ok(RegisterResult::ValidationError);
         }
-        
+
         let mut result = DB
             .query("SELECT * FROM type::table($table) WHERE username = type::string($username)")
             .bind(("table", "user"))

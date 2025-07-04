@@ -6,12 +6,31 @@ use futures_util::{SinkExt, StreamExt};
 use gloo::net::websocket::futures::WebSocket;
 use gloo::net::websocket::{Message, WebSocketError};
 use wasm_bindgen_futures::spawn_local;
+use web_sys::wasm_bindgen::JsCast;
+use web_sys::{window, HtmlDocument};
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
-enum ServerGameMessage {
-    Sync(String),
+pub enum ServerGameMessage {
     StartGame(usize),
     Move(String),
+}
+
+fn get_session_id_from_cookie() -> Option<String> {
+    let cookies = window()?
+        .document()?
+        .dyn_into::<HtmlDocument>()
+        .unwrap()
+        .cookie()
+        .ok()?;
+
+    for cookie in cookies.split(';') {
+        let trimmed = cookie.trim();
+        if let Some(value) = trimmed.strip_prefix("session_id=") {
+            return Some(value.to_string());
+        }
+    }
+
+    None
 }
 
 #[component]
@@ -20,17 +39,25 @@ pub fn TakWebSocket() -> Element {
 
     let board_clone = board.clone();
 
-    let handle_game_message = move |board: &mut TakBoardState, msg: ServerGameMessage| match msg {
-        ServerGameMessage::Sync(state) => {
-            dioxus::logger::tracing::info!("[WebSocket] Syncing game state: {state}");
-        }
-        ServerGameMessage::StartGame(size) => {
-            dioxus::logger::tracing::info!("[WebSocket] Starting game with size: {size}");
-        }
-        ServerGameMessage::Move(action) => {
-            dioxus::logger::tracing::info!("[WebSocket] Processing move action: {action}");
-            if let None = TakAction::from_ptn(&action).and_then(|x| board.try_do_action(&x).ok()) {
-                dioxus::logger::tracing::error!("[WebSocket] Invalid action received: {action}");
+    let handle_game_message = move |board: &mut TakBoardState, msg: ServerGameMessage| {
+        let mut board_clone = board.clone();
+        match msg {
+            ServerGameMessage::StartGame(size) => {
+                dioxus::logger::tracing::info!("[WebSocket] Starting game with size: {size}");
+                spawn_local(async move {
+                    board_clone.update_player_info().await;
+                    board_clone.start_game();
+                })
+            }
+            ServerGameMessage::Move(action) => {
+                dioxus::logger::tracing::info!("[WebSocket] Processing move action: {action}");
+                if let None =
+                    TakAction::from_ptn(&action).and_then(|x| board.try_do_action(&x).ok())
+                {
+                    dioxus::logger::tracing::error!(
+                        "[WebSocket] Invalid action received: {action}"
+                    );
+                }
             }
         }
     };
@@ -38,8 +65,14 @@ pub fn TakWebSocket() -> Element {
     let ws = use_coroutine(move |mut rx: UnboundedReceiver<Message>| {
         let mut board_clone = board_clone.clone();
         async move {
+            let Some(session_id) = get_session_id_from_cookie() else {
+                return;
+            };
             let url = "ws://localhost:8080/ws";
-            let ws = WebSocket::open(url).unwrap();
+            let Ok(mut ws) = WebSocket::open(url) else {
+                return;
+            };
+            let _ = ws.send(Message::Text(session_id)).await;
             let (mut write, mut read) = ws.split();
 
             spawn_local(async move {
