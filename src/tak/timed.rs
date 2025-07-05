@@ -1,5 +1,6 @@
+use crate::tak::ptn::{Ptn, PtnAttribute};
 use crate::tak::{
-    TakPlayer, TakAction, TakCoord, TakGame, TakGameAPI, TakGameState, TakInvalidAction, TakTower,
+    TakAction, TakCoord, TakGame, TakGameState, TakInvalidAction, TakPlayer, TakTower,
 };
 use std::time::Duration;
 
@@ -42,12 +43,8 @@ impl TimedTakGame {
             .unwrap_or(0);
         time_left.saturating_sub(Duration::from_millis(elapsed))
     }
-}
 
-impl TakGameAPI for TimedTakGame {
-    type Settings = TimeMode;
-
-    fn try_do_action(&mut self, action: TakAction) -> Result<TakGameState, TakInvalidAction> {
+    pub fn try_do_action(&mut self, action: TakAction) -> Result<TakGameState, TakInvalidAction> {
         let current_player = self.game.current_player;
         self.game.try_do_action(action)?;
         let now = CrossPlatformInstant::now();
@@ -69,7 +66,7 @@ impl TakGameAPI for TimedTakGame {
         Ok(self.game.game_state)
     }
 
-    fn new_game(size: usize, settings: Self::Settings) -> Self {
+    pub fn new_game(size: usize, settings: TimeMode) -> Self {
         let game = TakGame::new(size);
         let time_mode = settings;
         Self {
@@ -80,20 +77,33 @@ impl TakGameAPI for TimedTakGame {
         }
     }
 
-    fn current_player(&self) -> TakPlayer {
+    pub fn current_player(&self) -> TakPlayer {
         self.game.current_player
     }
 
-    fn size(&self) -> usize {
+    pub fn size(&self) -> usize {
         self.game.size
     }
 
-    fn get_actions(&self) -> &Vec<TakAction> {
+    pub fn get_actions(&self) -> &Vec<TakAction> {
         self.game.get_actions()
     }
 
-    fn try_get_tower(&self, pos: TakCoord) -> Option<&TakTower> {
+    pub fn try_get_tower(&self, pos: TakCoord) -> Option<&TakTower> {
         self.game.try_get_tower(pos)
+    }
+
+    pub fn update_from_ptn(&mut self, ptn: Ptn) -> Option<()> {
+        self.game.update_from_ptn(ptn)
+    }
+
+    pub fn to_ptn(&self) -> Ptn {
+        let mut ptn = self.game.to_ptn();
+        ptn.attributes.push(PtnAttribute::Clock(
+            self.time_mode.time_limit,
+            self.time_mode.time_increment,
+        ));
+        ptn
     }
 }
 

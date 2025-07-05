@@ -212,4 +212,8 @@ mod server {
             Ok(LoginResult::Success(user.user_id))
         }
     }
+
+    pub async fn handle_try_get_user(user_id: &String) -> Result<Option<User>, error::Error> {
+        Ok(DB.select(("user", user_id)).await?)
+    }
 }

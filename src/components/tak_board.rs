@@ -1,6 +1,6 @@
 use crate::components::tak_piece::TakPiece;
 use crate::components::Clock;
-use crate::tak::{Direction, TakCoord, TakGameAPI, TakPieceType};
+use crate::tak::{Direction, TakCoord, TakPieceType};
 use crate::views::{PlayerInfo, PlayerType, TakBoardState};
 use dioxus::core_macro::{component, rsx};
 use dioxus::dioxus_core::Element;
@@ -60,6 +60,16 @@ pub fn TakBoard() -> Element {
     let selected_tiles = use_memo(move || {
         let player = *state.player.read();
         let size = *state.size.read();
+        if !*state_clone.has_started.read() {
+            return vec![];
+        }
+        let Some(PlayerInfo {
+            name: _,
+            player_type: PlayerType::Local,
+        }) = state_clone.player_info.read().get(&player)
+        else {
+            return vec![];
+        };
         state_clone
             .move_selection
             .read()

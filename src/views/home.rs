@@ -59,7 +59,7 @@ pub fn Home() -> Element {
             return;
         }
         spawn(async move {
-            let res = join_room(room_id).await;
+            let res = join_room(room_id, false).await;
             match res {
                 Ok(JoinRoomResponse::Unauthorized) => {
                     nav.push(Route::Auth {});

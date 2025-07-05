@@ -1,14 +1,15 @@
 use crate::components::{TakBoard, TakWebSocket};
 use crate::server::room::{get_players, get_room, GetPlayersResponse, GetRoomResponse};
+use crate::tak::ptn::Ptn;
 use crate::tak::{
-    Direction, TakAction, TakCoord, TakFeedback, TakGameAPI, TakPieceType, TakPlayer, TimeMode,
-    TimedTakGame,
+    Direction, TakAction, TakCoord, TakFeedback, TakPieceType, TakPlayer, TimeMode, TimedTakGame,
 };
+use crate::views::get_session_id;
 use crate::Route;
 use dioxus::logger::tracing;
 use dioxus::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ops::Deref;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
@@ -74,8 +75,29 @@ impl TakBoardState {
         }
     }
 
-    pub fn start_game(&mut self) {
-        self.has_started.set(true);
+    pub fn set_game_from_ptn(&mut self, ptn: String) -> Option<()> {
+        tracing::info!("from ptn str: {:?}", ptn);
+        let ptn = Ptn::from_str(&ptn)?;
+        tracing::info!("ptn: {:?}", ptn);
+        let mut game_lock = self.game.lock().unwrap();
+        game_lock.update_from_ptn(ptn)?;
+        tracing::info!("game updated");
+        drop(game_lock);
+        self.on_game_update();
+        Some(())
+    }
+
+    pub fn reset_game(&mut self) {
+        let time_mode = TimeMode::new(Duration::from_secs(300), Duration::from_secs(10));
+        let mut game_lock = self.game.lock().unwrap();
+        *game_lock = TimedTakGame::new_game(*self.size.read(), time_mode);
+        drop(game_lock);
+        self.has_started.set(false);
+        self.player.set(TakPlayer::White);
+        self.move_selection.set(None);
+        self.selected_piece_type.set(TakPieceType::Flat);
+        self.pieces.set(HashMap::new());
+        self.on_game_update();
     }
 
     pub async fn update_player_info(&mut self) {
@@ -116,14 +138,6 @@ impl TakBoardState {
         game_lock.get_time_remaining(player)
     }
 
-    pub fn debug_board(&self) {
-        let game_lock = self.game.lock().unwrap();
-        tracing::info!("Current game state: {:?}", game_lock);
-        for action in game_lock.get_actions().iter() {
-            tracing::info!("Action: {:?}", action);
-        }
-    }
-
     fn on_finish_move(&mut self, action: &TakAction) {
         self.on_game_update();
         self.message_queue
@@ -135,16 +149,21 @@ impl TakBoardState {
         let new_player = game_lock.current_player();
         self.player.set(new_player);
         let mut pieces = self.pieces.write();
+        let mut unused_pieces = pieces.keys().cloned().collect::<HashSet<_>>();
         let size = game_lock.size();
         for y in 0..size {
             for x in 0..size {
-                Self::on_update_square(&game_lock, &mut pieces, y, x);
+                Self::on_update_square(&game_lock, &mut unused_pieces, &mut pieces, y, x);
             }
+        }
+        for id in unused_pieces {
+            pieces.remove(&id);
         }
     }
 
     fn on_update_square(
         game_lock: &MutexGuard<TimedTakGame>,
+        unused_pieces: &mut HashSet<usize>,
         pieces: &mut Write<HashMap<usize, TakPieceState>>,
         y: usize,
         x: usize,
@@ -164,6 +183,7 @@ impl TakBoardState {
                     piece.stack_height = i;
                     piece.piece_type = new_piece_type;
                     piece.player = stone.player;
+                    unused_pieces.remove(&stone.id);
                 } else {
                     let new_stone = TakPieceState {
                         player: stone.player,
@@ -351,6 +371,8 @@ pub fn PlayComputer() -> Element {
 #[component]
 pub fn PlayOnline() -> Element {
     let room = use_server_future(|| get_room())?;
+    let session_id = use_server_future(|| get_session_id())?;
+
     let nav = use_navigator();
 
     let player_info = HashMap::new();
@@ -391,7 +413,11 @@ pub fn PlayOnline() -> Element {
                 }
                 TakBoard {
                 }
-                TakWebSocket {}
+                if let Some(Ok(Some(session_id))) = session_id.read().as_ref() {
+                    TakWebSocket {session_id}
+                } else {
+                    {format!("{:?}", session_id.read())}
+                }
             } else {
                 h1 { "No room found or not connected." }
             }

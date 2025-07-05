@@ -1,8 +1,8 @@
-pub mod api;
+pub mod ptn;
 pub mod timed;
 
+use crate::tak::ptn::Ptn;
 use serde::{Deserialize, Serialize};
-pub use api::*;
 pub use timed::*;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -201,6 +201,9 @@ impl TakPlayer {
             TakPlayer::Black => TakPlayer::White,
         }
     }
+    pub fn all() -> Vec<TakPlayer> {
+        vec![TakPlayer::White, TakPlayer::Black]
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -327,6 +330,7 @@ impl TakAction {
             }
         }
     }
+
     pub fn from_ptn(ptn: &str) -> Option<Self> {
         let place_regex = regex::Regex::new(r"^([SC]?)([a-z])([1-9])$").unwrap();
         let move_regex = regex::Regex::new(r"^([1-9]?)([a-z])([1-9])([+-<>])([1-9]*)\*?$").unwrap();
@@ -377,9 +381,20 @@ impl TakAction {
     }
 }
 
-impl TakGameAPI for TakGame {
-    type Settings = ();
-    fn try_do_action(&mut self, action: TakAction) -> Result<TakGameState, TakInvalidAction> {
+impl TakGame {
+    pub fn new(size: usize) -> Self {
+        TakGame {
+            size,
+            board: vec![None; size * size],
+            current_player: TakPlayer::White,
+            actions: Vec::new(),
+            hands: [TakHand::new(size), TakHand::new(size)],
+            id_counter: 0,
+            game_state: TakGameState::Ongoing,
+        }
+    }
+
+    pub fn try_do_action(&mut self, action: TakAction) -> Result<TakGameState, TakInvalidAction> {
         if self.game_state != TakGameState::Ongoing {
             return Err(TakInvalidAction::GameOver);
         }
@@ -404,38 +419,39 @@ impl TakGameAPI for TakGame {
         Ok(self.game_state)
     }
 
-    fn new_game(size: usize, _: ()) -> Self {
+    pub fn new_game(size: usize, _: ()) -> Self {
         TakGame::new(size)
     }
 
-    fn current_player(&self) -> TakPlayer {
+    pub fn current_player(&self) -> TakPlayer {
         self.current_player
     }
 
-    fn size(&self) -> usize {
+    pub fn size(&self) -> usize {
         self.size
     }
 
-    fn get_actions(&self) -> &Vec<TakAction> {
+    pub fn get_actions(&self) -> &Vec<TakAction> {
         &self.actions
     }
 
-    fn try_get_tower(&self, pos: TakCoord) -> Option<&TakTower> {
+    pub fn try_get_tower(&self, pos: TakCoord) -> Option<&TakTower> {
         self.try_get_tile(&pos).ok()?.as_ref()
     }
-}
 
-impl TakGame {
-    pub fn new(size: usize) -> Self {
-        TakGame {
-            size,
-            board: vec![None; size * size],
-            current_player: TakPlayer::White,
-            actions: Vec::new(),
-            hands: [TakHand::new(size), TakHand::new(size)],
-            id_counter: 0,
-            game_state: TakGameState::Ongoing,
+    pub fn update_from_ptn(&mut self, ptn: Ptn) -> Option<()> {
+        let actions = ptn
+            .turns
+            .iter()
+            .flat_map(|actions| actions.iter().map(|x| TakAction::from_ptn(x)))
+            .collect::<Option<Vec<_>>>()?;
+        let size = ptn.get_size()?;
+        let mut game = Self::new(size);
+        for action in actions {
+            game.try_do_action(action).ok()?;
         }
+        *self = game;
+        Some(())
     }
 
     fn check_game_over(&mut self) {}
@@ -447,30 +463,14 @@ impl TakGame {
         }
     }
 
-    pub fn from_ptn(size: usize, ptn: &str) -> Option<Self> {
-        let parts = ptn.split_whitespace().collect::<Vec<_>>();
-        let actions = parts
-            .iter()
-            .filter_map(|part| TakAction::from_ptn(part))
+    pub fn to_ptn(&self) -> Ptn {
+        let turns = self
+            .actions
+            .chunks(2)
+            .map(|actions| actions.iter().map(|x| x.to_ptn()).collect::<Vec<_>>())
             .collect::<Vec<_>>();
-        let mut game = Self::new(size);
-        for action in actions {
-            println!("{}", action.to_ptn());
-            if game.try_do_action(action).is_err() {
-                game.debug_print();
-                return None; // Invalid action
-            }
-            println!("Success");
-        }
-        Some(game)
-    }
-
-    pub fn to_ptn(&self) -> String {
-        self.actions
-            .iter()
-            .map(|action| action.to_ptn())
-            .collect::<Vec<_>>()
-            .join(" ")
+        let attributes = vec![ptn::PtnAttribute::Size(self.size)];
+        Ptn { attributes, turns }
     }
 
     pub fn debug_print(&self) {

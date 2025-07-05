@@ -1,5 +1,5 @@
 use crate::components::ServerGameMessage;
-use crate::tak::{TakGameAPI, TakPlayer, TimeMode, TimedTakGame};
+use crate::tak::{TakPlayer, TimeMode, TimedTakGame};
 use dioxus::prelude::*;
 use futures_util::SinkExt;
 use rand::distributions::Alphanumeric;
@@ -15,32 +15,59 @@ pub type RoomId = String;
 
 #[cfg(feature = "server")]
 pub struct Room {
-    pub owner: PlayerId,
-    pub opponent: Option<PlayerId>,
-    pub game: TimedTakGame,
-    pub player_sockets: HashMap<PlayerId, crate::server::websocket::PlayerSocket>,
+    pub game: Option<TimedTakGame>,
+    pub players: Vec<(TakPlayer, PlayerId)>,
+    pub spectators: Vec<PlayerId>,
 }
 
 #[cfg(feature = "server")]
 impl Room {
     fn new(owner: PlayerId) -> Self {
-        Room {
-            owner,
-            opponent: None,
-            game: TimedTakGame::new_game(
-                5,
-                TimeMode::new(Duration::from_secs(300), Duration::from_secs(5)),
-            ),
-            player_sockets: HashMap::new(),
+        let mut room = Room {
+            players: Vec::new(),
+            spectators: Vec::new(),
+            game: None,
+        };
+        room.players.push((TakPlayer::White, owner));
+        room
+    }
+
+    fn start_game(&mut self) {
+        if self.game.is_some() {
+            return;
         }
+        self.game = Some(TimedTakGame::new_game(
+            5,
+            TimeMode::new(Duration::from_secs(300), Duration::from_secs(5)),
+        ))
+    }
+
+    fn is_ready(&self) -> bool {
+        let all_player_types = TakPlayer::all();
+        all_player_types
+            .iter()
+            .all(|pt| self.players.iter().any(|(p, _)| p == pt))
+    }
+
+    pub fn get_broadcast_player_ids(&self) -> Vec<PlayerId> {
+        self.players
+            .iter()
+            .map(|(_, id)| id.clone())
+            .chain(self.spectators.iter().cloned())
+            .collect()
     }
 }
 
 #[cfg(feature = "server")]
 pub struct Rooms {
-    pub rooms: HashMap<RoomId, Arc<tokio::sync::Mutex<Room>>>,
-    pub player_mapping: HashMap<PlayerId, RoomId>,
+    rooms: HashMap<RoomId, Arc<tokio::sync::Mutex<Room>>>,
+    player_mapping: HashMap<PlayerId, RoomId>,
+    pub player_sockets: Arc<PlayerSocketMap>,
 }
+
+#[cfg(feature = "server")]
+pub type PlayerSocketMap =
+    dashmap::DashMap<PlayerId, Arc<tokio::sync::Mutex<crate::server::websocket::PlayerSocket>>>;
 
 #[cfg(feature = "server")]
 impl Rooms {
@@ -48,6 +75,7 @@ impl Rooms {
         Rooms {
             rooms: HashMap::new(),
             player_mapping: HashMap::new(),
+            player_sockets: Arc::new(dashmap::DashMap::new()),
         }
     }
 
@@ -58,6 +86,170 @@ impl Rooms {
             .map(|c| c.to_ascii_uppercase() as char)
             .take(6)
             .collect()
+    }
+
+    fn try_generate_room_id(&self) -> Option<RoomId> {
+        let mut attempts = 100;
+        loop {
+            let id = Self::generate_room_id();
+            if !self.rooms.contains_key(&id) {
+                return Some(id);
+            }
+            attempts -= 1;
+            if attempts == 0 {
+                return None;
+            }
+        }
+    }
+
+    fn try_create_room(&mut self, owner: PlayerId) -> CreateRoomResponse {
+        if self.player_mapping.contains_key(&owner) {
+            return CreateRoomResponse::AlreadyInRoom;
+        }
+        let Some(id) = self.try_generate_room_id() else {
+            return CreateRoomResponse::FailedToGenerateId;
+        };
+        self.rooms.insert(
+            id.clone(),
+            Arc::new(tokio::sync::Mutex::new(Room::new(owner.clone()))),
+        );
+        self.player_mapping.insert(owner, id.clone());
+        CreateRoomResponse::Success(id)
+    }
+
+    async fn try_join_room_as_player(
+        &mut self,
+        room_id: RoomId,
+        player_id: PlayerId,
+    ) -> JoinRoomResponse {
+        if self.player_mapping.contains_key(&player_id) {
+            return JoinRoomResponse::AlreadyInRoom;
+        }
+        let Some(room) = self.rooms.get(&room_id) else {
+            return JoinRoomResponse::RoomNotFound;
+        };
+        let mut room_lock = room.lock().await;
+        let all_player_types = TakPlayer::all();
+        let Some(player_type) = all_player_types
+            .into_iter()
+            .find(|x| !room_lock.players.iter().any(|(p, _)| *p == *x))
+        else {
+            return JoinRoomResponse::RoomFull;
+        };
+        room_lock.players.push((player_type, player_id.clone()));
+        self.player_mapping.insert(player_id, room_id);
+        JoinRoomResponse::Success
+    }
+
+    async fn try_join_room_as_spectator(
+        &mut self,
+        room_id: RoomId,
+        player_id: PlayerId,
+    ) -> JoinRoomResponse {
+        if self.player_mapping.contains_key(&player_id) {
+            return JoinRoomResponse::AlreadyInRoom;
+        }
+        let Some(room) = self.rooms.get(&room_id) else {
+            return JoinRoomResponse::RoomNotFound;
+        };
+        let mut room_lock = room.lock().await;
+        room_lock.spectators.push(player_id.clone());
+        self.player_mapping.insert(player_id, room_id);
+        JoinRoomResponse::Success
+    }
+
+    async fn try_leave_room(&mut self, player_id: PlayerId) -> LeaveRoomResponse {
+        let Some(room_id) = self.player_mapping.remove(&player_id) else {
+            return LeaveRoomResponse::NotInARoom;
+        };
+        let room = self.rooms.get(&room_id).unwrap();
+
+        let mut room_lock = room.lock().await;
+        if let Some(player_pos) = room_lock
+            .players
+            .iter()
+            .position(|(_, id)| *id == player_id)
+        {
+            room_lock.players.swap_remove(player_pos);
+        } else if let Some(spec_pos) = room_lock.spectators.iter().position(|id| *id == player_id) {
+            room_lock.spectators.swap_remove(spec_pos);
+        } else {
+            return LeaveRoomResponse::NotInARoom;
+        }
+
+        if room_lock.players.is_empty() && room_lock.spectators.is_empty() {
+            drop(room_lock);
+            self.rooms.remove(&room_id);
+        }
+        LeaveRoomResponse::Success
+    }
+
+    pub fn try_get_room_id(&self, player_id: &PlayerId) -> GetRoomResponse {
+        if let Some(room_id) = self.player_mapping.get(player_id) {
+            GetRoomResponse::Success(room_id.clone())
+        } else {
+            GetRoomResponse::NotInARoom
+        }
+    }
+
+    pub fn try_get_room(&self, player_id: &PlayerId) -> Option<Arc<tokio::sync::Mutex<Room>>> {
+        self.player_mapping
+            .get(player_id)
+            .map(|room_id| self.rooms.get(room_id).unwrap().clone())
+    }
+
+    pub async fn with_room_mut<F, R>(&self, room_id: &RoomId, func: F) -> R
+    where
+        F: FnOnce(&mut Room) -> R,
+    {
+        let room = self.rooms.get(room_id).unwrap();
+        let mut lock = room.lock().await;
+        func(lock.deref_mut())
+    }
+
+    async fn try_get_players(
+        &self,
+        player_id: &PlayerId,
+    ) -> Result<GetPlayersResponse, ServerFnError> {
+        let Some(room_id) = self.player_mapping.get(player_id) else {
+            return Ok(GetPlayersResponse::NotInARoom);
+        };
+        let Some(room) = self.rooms.get(room_id) else {
+            return Ok(GetPlayersResponse::NotInARoom);
+        };
+        let room_lock = room.lock().await;
+        let mut player_info = Vec::with_capacity(room_lock.players.len());
+        for (player, id) in &room_lock.players {
+            let Ok(Some(user)) = crate::server::auth::handle_try_get_user(id).await else {
+                return Err(crate::server::auth::error::Error::InternalServerError(
+                    "Failed to fetch user information".to_string(),
+                ))?;
+            };
+            player_info.push((
+                *player,
+                PlayerInfo {
+                    player_id: id.clone(),
+                    username: user.username,
+                    is_local: id == player_id,
+                },
+            ));
+        }
+        Ok(GetPlayersResponse::Success(player_info))
+    }
+
+    pub fn add_socket(
+        &mut self,
+        player_id: &PlayerId,
+        socket: crate::server::websocket::PlayerSocket,
+    ) {
+        self.player_sockets
+            .insert(player_id.clone(), Arc::new(tokio::sync::Mutex::new(socket)));
+    }
+
+    pub async fn get_broadcast_player_ids(&mut self, room_id: &RoomId) -> Vec<PlayerId> {
+        let room = self.rooms.get(room_id).unwrap();
+        let room_lock = room.lock().await;
+        room_lock.get_broadcast_player_ids()
     }
 }
 
@@ -80,26 +272,7 @@ pub async fn create_room() -> Result<CreateRoomResponse, ServerFnError> {
         return Ok(CreateRoomResponse::Unauthorized);
     };
     let mut rooms = state.rooms.lock().await;
-    if rooms.player_mapping.contains_key(&user.0) {
-        return Ok(CreateRoomResponse::AlreadyInRoom);
-    }
-    let mut attempts = 100;
-    let id = loop {
-        let id = Rooms::generate_room_id();
-        if !rooms.rooms.contains_key(&id) {
-            break id;
-        }
-        attempts -= 1;
-        if attempts == 0 {
-            return Ok(CreateRoomResponse::FailedToGenerateId);
-        }
-    };
-    rooms.rooms.insert(
-        id.clone(),
-        Arc::new(tokio::sync::Mutex::new(Room::new(user.0.clone()))),
-    );
-    rooms.player_mapping.insert(user.0, id.clone());
-    Ok(CreateRoomResponse::Success(id))
+    Ok(rooms.try_create_room(user.0))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -112,7 +285,10 @@ pub enum JoinRoomResponse {
 }
 
 #[server]
-pub async fn join_room(room_id: String) -> Result<JoinRoomResponse, ServerFnError> {
+pub async fn join_room(
+    room_id: String,
+    is_spectator: bool,
+) -> Result<JoinRoomResponse, ServerFnError> {
     use crate::server::auth::AuthenticatedUser;
     use crate::server::websocket::SharedState;
     use axum::Extension;
@@ -122,34 +298,57 @@ pub async fn join_room(room_id: String) -> Result<JoinRoomResponse, ServerFnErro
         return Ok(JoinRoomResponse::Unauthorized);
     };
     let mut rooms = state.rooms.lock().await;
-    if rooms.player_mapping.contains_key(&user.0) {
-        return Ok(JoinRoomResponse::AlreadyInRoom);
-    }
-    let Some(room) = rooms.rooms.get(&room_id) else {
-        return Ok(JoinRoomResponse::RoomNotFound);
+    let res = if is_spectator {
+        rooms
+            .try_join_room_as_spectator(room_id.clone(), user.0.clone())
+            .await
+    } else {
+        rooms
+            .try_join_room_as_player(room_id.clone(), user.0.clone())
+            .await
     };
-    let room = room.clone();
-    let mut room_lock = room.lock().await;
-    if room_lock.opponent.is_some() {
-        return Ok(JoinRoomResponse::RoomFull);
+    drop(rooms);
+
+    if let JoinRoomResponse::Success = res {
+        println!(
+            "Player {} joined room {} as {}",
+            user.0,
+            room_id,
+            if is_spectator { "spectator" } else { "player" }
+        );
+        tokio::spawn(async move {
+            let mut rooms = state.rooms.lock().await;
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            maybe_start_game(&mut rooms, &room_id).await;
+        });
     }
-    room_lock.opponent = Some(user.0.clone());
-    rooms.player_mapping.insert(user.0, room_id.clone());
-    start_game(room_lock.deref_mut()).await;
     Ok(JoinRoomResponse::Success)
 }
 
 #[cfg(feature = "server")]
-async fn start_game(room: &mut Room) {
+async fn maybe_start_game(rooms: &mut Rooms, room_id: &RoomId) {
+    if !rooms
+        .with_room_mut(room_id, |room| {
+            let is_ready = room.is_ready();
+            if is_ready {
+                room.start_game();
+            }
+            is_ready
+        })
+        .await
+    {
+        return;
+    }
+
     let msg = ServerGameMessage::StartGame(5);
     let msg = axum::extract::ws::Message::Text(serde_json::to_string(&msg).unwrap());
 
-    if let Some(owner_socket) = room.player_sockets.get_mut(&room.owner) {
-        let _ = owner_socket.sender.send(msg.clone()).await;
-    }
-
-    if let Some(opponent_socket) = room.player_sockets.get_mut(room.opponent.as_ref().unwrap()) {
-        let _ = opponent_socket.sender.send(msg.clone());
+    for player in rooms.get_broadcast_player_ids(room_id).await {
+        if let Some(socket_ref) = rooms.player_sockets.get(&player) {
+            let socket_ref = socket_ref.clone();
+            let mut socket = socket_ref.lock().await;
+            let _ = socket.sender.send(msg.clone()).await;
+        }
     }
 
     println!("Sent start game message");
@@ -173,23 +372,7 @@ pub async fn leave_room() -> Result<LeaveRoomResponse, ServerFnError> {
         return Ok(LeaveRoomResponse::Unauthorized);
     };
     let mut rooms = state.rooms.lock().await;
-    let Some(room_id) = rooms.player_mapping.remove(&user.0) else {
-        return Ok(LeaveRoomResponse::NotInARoom);
-    };
-    if let Some(room) = rooms.rooms.get_mut(&room_id) {
-        let mut room = room.lock().await;
-        if room.owner == user.0 {
-            let opponent = room.opponent.clone();
-            drop(room);
-            rooms.rooms.remove(&room_id);
-            if let Some(opponent) = opponent {
-                rooms.player_mapping.remove(&opponent);
-            }
-        } else {
-            room.opponent = None;
-        }
-    }
-    Ok(LeaveRoomResponse::Success)
+    Ok(rooms.try_leave_room(user.0).await)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -210,11 +393,7 @@ pub async fn get_room() -> Result<GetRoomResponse, ServerFnError> {
         return Ok(GetRoomResponse::Unauthorized);
     };
     let rooms = state.rooms.lock().await;
-    if let Some(room_id) = rooms.player_mapping.get(&user.0) {
-        Ok(GetRoomResponse::Success(room_id.clone()))
-    } else {
-        Ok(GetRoomResponse::NotInARoom)
-    }
+    Ok(rooms.try_get_room_id(&user.0))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -241,59 +420,37 @@ pub async fn get_players() -> Result<GetPlayersResponse, ServerFnError> {
         return Ok(GetPlayersResponse::Unauthorized);
     };
 
-    println!("Getting players for user: {}", user.0);
-
     let Extension(state): Extension<SharedState> = extract().await?;
     let rooms = state.rooms.lock().await;
-    let Some(room_id) = rooms.player_mapping.get(&user.0) else {
-        return Ok(GetPlayersResponse::NotInARoom);
-    };
-    let room = rooms.rooms.get(room_id).ok_or_else(|| {
-        crate::server::auth::error::Error::InternalServerError("Room not found".to_string())
-    })?;
-    let room = room.lock().await;
+    rooms.try_get_players(&user.0).await
+}
 
-    println!("Getting players in room: {}", room_id);
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum GetGameStateResponse {
+    Success(Option<String>),
+    NotInARoom,
+    Unauthorized,
+}
 
-    let Some(owner): Option<crate::server::auth::User> = crate::server::auth::DB
-        .select(("user", &room.owner))
-        .await?
-    else {
-        return Err(crate::server::auth::error::Error::InternalServerError(
-            format!("Player {} doesn't exist", &room.owner),
-        ))?;
-    };
-    let opponent = {
-        if let Some(opponent_id) = &room.opponent {
-            let Some(opponent): Option<crate::server::auth::User> = crate::server::auth::DB
-                .select(("user", opponent_id))
-                .await?
-            else {
-                return Err(crate::server::auth::error::Error::InternalServerError(
-                    format!("Player {} doesn't exist", opponent_id),
-                ))?;
-            };
-            Some(opponent)
-        } else {
-            None
-        }
-    };
+#[server]
+pub async fn get_game_state() -> Result<GetGameStateResponse, ServerFnError> {
+    use crate::server::auth::AuthenticatedUser;
+    use crate::server::websocket::SharedState;
+    use axum::Extension;
 
-    drop(room);
-
-    let owner_info = PlayerInfo {
-        is_local: owner.user_id == user.0,
-        player_id: owner.user_id,
-        username: owner.username,
+    let Extension(state): Extension<SharedState> = extract().await?;
+    let Some(user) = extract::<AuthenticatedUser, _>().await.ok() else {
+        return Ok(GetGameStateResponse::Unauthorized);
     };
-    let mut player_info = vec![(TakPlayer::White, owner_info)];
-    if let Some(opponent) = opponent {
-        let opponent_info = PlayerInfo {
-            is_local: opponent.user_id == user.0,
-            player_id: opponent.user_id,
-            username: opponent.username,
-        };
-        player_info.push((TakPlayer::Black, opponent_info));
+    let rooms = state.rooms.lock().await;
+    let Some(room) = rooms.try_get_room(&user.0) else {
+        return Ok(GetGameStateResponse::NotInARoom);
+    };
+    let room_lock = room.lock().await;
+    if let Some(game) = &room_lock.game {
+        let game_state = game.to_ptn();
+        Ok(GetGameStateResponse::Success(Some(game_state.to_str())))
+    } else {
+        Ok(GetGameStateResponse::Success(None))
     }
-    Ok(GetPlayersResponse::Success(player_info))
 }

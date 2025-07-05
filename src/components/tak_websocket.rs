@@ -1,3 +1,4 @@
+use crate::server::room::{get_game_state, GetGameStateResponse};
 use crate::tak::TakAction;
 use crate::views::TakBoardState;
 use dioxus::core_macro::component;
@@ -7,7 +8,7 @@ use gloo::net::websocket::futures::WebSocket;
 use gloo::net::websocket::{Message, WebSocketError};
 use wasm_bindgen_futures::spawn_local;
 use web_sys::wasm_bindgen::JsCast;
-use web_sys::{window, HtmlDocument};
+use web_sys::window;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
 pub enum ServerGameMessage {
@@ -18,10 +19,12 @@ pub enum ServerGameMessage {
 fn get_session_id_from_cookie() -> Option<String> {
     let cookies = window()?
         .document()?
-        .dyn_into::<HtmlDocument>()
+        .dyn_into::<web_sys::HtmlDocument>()
         .unwrap()
         .cookie()
         .ok()?;
+
+    dioxus::logger::tracing::info!("[WebSocket] Cookies: {cookies}");
 
     for cookie in cookies.split(';') {
         let trimmed = cookie.trim();
@@ -34,7 +37,7 @@ fn get_session_id_from_cookie() -> Option<String> {
 }
 
 #[component]
-pub fn TakWebSocket() -> Element {
+pub fn TakWebSocket(session_id: String) -> Element {
     let mut board = use_context::<TakBoardState>();
 
     let board_clone = board.clone();
@@ -46,7 +49,7 @@ pub fn TakWebSocket() -> Element {
                 dioxus::logger::tracing::info!("[WebSocket] Starting game with size: {size}");
                 spawn_local(async move {
                     board_clone.update_player_info().await;
-                    board_clone.start_game();
+                    board_clone.has_started.set(true);
                 })
             }
             ServerGameMessage::Move(action) => {
@@ -64,10 +67,8 @@ pub fn TakWebSocket() -> Element {
 
     let ws = use_coroutine(move |mut rx: UnboundedReceiver<Message>| {
         let mut board_clone = board_clone.clone();
+        let session_id = session_id.clone();
         async move {
-            let Some(session_id) = get_session_id_from_cookie() else {
-                return;
-            };
             let url = "ws://localhost:8080/ws";
             let Ok(mut ws) = WebSocket::open(url) else {
                 return;
@@ -148,5 +149,33 @@ pub fn TakWebSocket() -> Element {
         }
     });
 
-    rsx! {}
+    use_effect(move || {
+        let mut board = board.clone();
+        spawn_local(async move {
+            dioxus::logger::tracing::info!("[WebSocket] Resyncing game state on first render");
+            let res = get_game_state().await;
+            if let Ok(GetGameStateResponse::Success(game_state)) = &res {
+                board.has_started.set(game_state.is_some());
+                if let Some(ptn) = game_state {
+                    board.set_game_from_ptn(ptn.to_string());
+                } else {
+                    board.reset_game();
+                }
+            }
+            dioxus::logger::tracing::info!("[WebSocket] Game state resynced: {:?}", res);
+        });
+    });
+
+    rsx! {
+        button {
+            onclick: move |_| {
+                if let Some(session_id) = get_session_id_from_cookie() {
+                    dioxus::logger::tracing::info!("[WebSocket] Sent session id: {session_id}");
+                } else {
+                    dioxus::logger::tracing::error!("[WebSocket] No session id found");
+                }
+            },
+            "Print Cookies"
+        }
+    }
 }
