@@ -6,8 +6,33 @@ use serde::{Deserialize, Serialize};
 pub use timed::*;
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct TakKomi {
+    pub whole: usize,
+    pub half: bool,
+}
+
+impl TakKomi {
+    pub fn new(whole: usize, half: bool) -> Self {
+        TakKomi { whole, half }
+    }
+
+    pub fn determine_winner(&self, white_score: usize, black_score: usize) -> Option<TakPlayer> {
+        if white_score > black_score + self.whole {
+            Some(TakPlayer::White)
+        } else if white_score < black_score + self.whole {
+            Some(TakPlayer::Black)
+        } else if self.half {
+            Some(TakPlayer::Black)
+        } else {
+            None
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct TakGame {
     pub size: usize,
+    pub komi: TakKomi,
     pub board: Vec<TakTile>,
     pub current_player: TakPlayer,
     pub actions: Vec<TakAction>,
@@ -40,8 +65,8 @@ pub enum TakInvalidAction {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct TakHand {
-    stones: usize,
-    capstones: usize,
+    pub stones: usize,
+    pub capstones: usize,
 }
 
 impl TakHand {
@@ -385,6 +410,7 @@ impl TakGame {
     pub fn new(size: usize) -> Self {
         TakGame {
             size,
+            komi: TakKomi::new(2, false),
             board: vec![None; size * size],
             current_player: TakPlayer::White,
             actions: Vec::new(),
@@ -411,28 +437,12 @@ impl TakGame {
             } => self.try_move_piece(from, direction, *take, drops),
         }?;
         self.actions.push(action);
+        self.check_game_over();
         self.current_player = match self.current_player {
             TakPlayer::White => TakPlayer::Black,
             TakPlayer::Black => TakPlayer::White,
         };
-        self.check_game_over();
         Ok(self.game_state)
-    }
-
-    pub fn new_game(size: usize, _: ()) -> Self {
-        TakGame::new(size)
-    }
-
-    pub fn current_player(&self) -> TakPlayer {
-        self.current_player
-    }
-
-    pub fn size(&self) -> usize {
-        self.size
-    }
-
-    pub fn get_actions(&self) -> &Vec<TakAction> {
-        &self.actions
     }
 
     pub fn try_get_tower(&self, pos: TakCoord) -> Option<&TakTower> {
@@ -454,12 +464,90 @@ impl TakGame {
         Some(())
     }
 
-    fn check_game_over(&mut self) {}
+    fn check_game_over(&mut self) {
+        let player = self.current_player;
+        let check_direction = |is_horizontal: bool| {
+            let mut visited = vec![false; self.size * self.size];
+            let mut stack = Vec::new();
+            for i in 0..self.size {
+                let pos = if is_horizontal {
+                    TakCoord::new(0, i)
+                } else {
+                    TakCoord::new(i, 0)
+                };
+                if let Some(tower) = self.get_tile(&pos) {
+                    if tower.controlling_player() == player && tower.top_type != TakPieceType::Wall
+                    {
+                        stack.push(pos);
+                    }
+                }
+            }
+            while let Some(pos) = stack.pop() {
+                if visited[pos.y * self.size + pos.x] {
+                    continue;
+                }
+                visited[pos.y * self.size + pos.x] = true;
+                if (if is_horizontal { pos.x } else { pos.y }) == self.size - 1 {
+                    return true;
+                }
+                for direction in Direction::all() {
+                    if let Some(new_pos) = pos.offset_by(&direction, 1) {
+                        if let Ok(tower) = self.try_get_tower_at(&new_pos) {
+                            if tower.controlling_player() == player
+                                && tower.top_type != TakPieceType::Wall
+                            {
+                                stack.push(new_pos);
+                            }
+                        }
+                    }
+                }
+            }
+            false
+        };
+        dioxus::logger::tracing::info!("Checking game over");
+        if check_direction(true) || check_direction(false) {
+            self.game_state = TakGameState::Win(player);
+            dioxus::logger::tracing::info!("Game over by street: {:?}", self.game_state);
+            return;
+        }
+        dioxus::logger::tracing::info!("Counting");
+        let mut flat_counts = [0, 0];
+        for y in 0..self.size {
+            for x in 0..self.size {
+                let pos = TakCoord::new(x, y);
+                if let Ok(tower) = self.try_get_tower_at(&pos) {
+                    if tower.top_type == TakPieceType::Flat {
+                        let i = match tower.controlling_player() {
+                            TakPlayer::White => 0,
+                            TakPlayer::Black => 1,
+                        };
+                        flat_counts[i] += 1;
+                    }
+                } else {
+                    dioxus::logger::tracing::info!("Square {:?} is empty", pos);
+                    return;
+                }
+            }
+        }
+        if let Some(winner) = self.komi.determine_winner(flat_counts[0], flat_counts[1]) {
+            self.game_state = TakGameState::Win(winner);
+        } else {
+            self.game_state = TakGameState::Draw;
+        }
+        dioxus::logger::tracing::info!("Game over: {:?}", self.game_state);
+    }
 
     fn get_hand_mut(&mut self, player: TakPlayer) -> &mut TakHand {
         match player {
             TakPlayer::White => &mut self.hands[0],
             TakPlayer::Black => &mut self.hands[1],
+        }
+    }
+
+    fn get_hand(&self, player: TakPlayer) -> &TakHand {
+        match player {
+            TakPlayer::White => &self.hands[0],
+            TakPlayer::Black => &self.hands[1],
         }
     }
 
@@ -473,23 +561,6 @@ impl TakGame {
         Ptn { attributes, turns }
     }
 
-    pub fn debug_print(&self) {
-        for y in (0..self.size).rev() {
-            for x in 0..self.size {
-                let pos = TakCoord::new(x, y);
-                match self.get_tile(&pos) {
-                    Some(tower) => {
-                        print!("{:?}{:?} ", tower.top_type, tower.composition);
-                    }
-                    None => {
-                        print!("_ ");
-                    }
-                }
-            }
-            println!();
-        }
-    }
-
     fn get_tile(&self, position: &TakCoord) -> &TakTile {
         position.validate(self.size).unwrap();
         &self.board[position.y * self.size + position.x]
@@ -498,11 +569,6 @@ impl TakGame {
     fn get_tile_mut(&mut self, position: &TakCoord) -> &mut TakTile {
         position.validate(self.size).unwrap();
         &mut self.board[position.y * self.size + position.x]
-    }
-
-    fn try_get_tile_mut(&mut self, position: &TakCoord) -> TakResult<&mut TakTile> {
-        position.validate(self.size)?;
-        Ok(&mut self.board[position.y * self.size + position.x])
     }
 
     fn try_get_tile(&self, position: &TakCoord) -> TakResult<&TakTile> {

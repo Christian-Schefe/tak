@@ -19,7 +19,10 @@ use futures_util::stream::{SplitSink, SplitStream};
 
 pub struct PlayerSocket {
     pub sender: SplitSink<WebSocket, Message>,
-    pub receive_task: Option<tokio::task::JoinHandle<()>>,
+    pub abort_handle: Option<(
+        tokio::sync::oneshot::Sender<()>,
+        tokio::task::JoinHandle<()>,
+    )>,
 }
 
 #[derive(Clone)]
@@ -104,14 +107,14 @@ async fn handle_socket(
     };
 
     let session_store = session_store.lock().await;
-    let Some(player_id) = session_store.get(&session_id) else {
+    let Some(player_id) = session_store.get(&session_id).cloned() else {
         println!("Unauthorized access from {who} with session_id {session_id}");
         let _ = socket.close().await;
         return;
     };
 
     if socket.send(Message::Ping(vec![1, 2, 3])).await.is_ok() {
-        println!("Pinged {who}...");
+        println!("Pinged {who}");
     } else {
         println!("Could not send ping {who}!");
         let _ = socket.close().await;
@@ -120,27 +123,55 @@ async fn handle_socket(
 
     let (mut sender, receiver) = socket.split();
 
-    let mut rooms = state.rooms.lock().await;
-    let Some(room) = rooms.try_get_room(player_id) else {
+    let rooms = state.rooms.lock().await;
+    let Some(room) = rooms.try_get_room(&player_id) else {
         println!("Player {player_id} not in any room");
         let _ = sender.close().await;
         return;
     };
+
+    let recv_sockets = rooms.player_sockets.clone();
+
+    if Rooms::try_remove_socket(rooms, &player_id).await {
+        println!("Old socket for {who} removed.");
+    }
+
+    let (sx, rx) = tokio::sync::oneshot::channel();
+
     let recv_room = room.clone();
     let recv_player = player_id.clone();
-    let recv_sockets = rooms.player_sockets.clone();
     let recv_task = tokio::spawn(async move {
         room_receive_task(recv_room, recv_sockets, receiver, recv_player).await;
         println!("Websocket receiver task of {who} ended.");
     });
 
+    let wait_player = player_id.clone();
+    let wait_rooms = state.rooms.clone();
+    let wait_task = tokio::spawn(async move {
+        tokio::select! {
+            biased;
+            _ = rx => {
+                println!("Websocket handler for {who} was aborted.");
+            }
+            _ = recv_task => {
+                println!("Websocket handler for {who} finished.");
+            }
+        }
+        let mut rooms = wait_rooms.lock().await;
+        rooms.try_remove_socket_no_cancel(&wait_player).await;
+        println!("Websocket handler for {who} finished fully.");
+    });
+
     let socket = PlayerSocket {
         sender,
-        receive_task: Some(recv_task),
+        abort_handle: Some((sx, wait_task)),
     };
 
-    rooms.add_socket(player_id, socket);
+    let mut rooms = state.rooms.lock().await;
+    rooms.add_socket(&player_id, socket);
     drop(rooms);
+
+    println!("Waiting for end for {who}");
 }
 
 async fn on_room_receive_move(
@@ -183,8 +214,8 @@ async fn room_receive_task(
     mut receiver: SplitStream<WebSocket>,
     player: PlayerId,
 ) {
-    while let Some(Ok(msg)) = receiver.next().await {
-        if let Message::Text(msg) = &msg {
+    while let Some(msg) = receiver.next().await {
+        if let Ok(Message::Text(msg)) = &msg {
             if let Ok(msg) = serde_json::from_str::<ClientGameMessage>(msg) {
                 match msg {
                     ClientGameMessage::Move(action) => {
@@ -200,6 +231,5 @@ async fn room_receive_task(
                 }
             }
         }
-        println!(">>> {player} sent str: {msg:?}");
     }
 }

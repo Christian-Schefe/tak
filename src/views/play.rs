@@ -2,7 +2,8 @@ use crate::components::{TakBoard, TakWebSocket};
 use crate::server::room::{get_players, get_room, GetPlayersResponse, GetRoomResponse};
 use crate::tak::ptn::Ptn;
 use crate::tak::{
-    Direction, TakAction, TakCoord, TakFeedback, TakPieceType, TakPlayer, TimeMode, TimedTakGame,
+    Direction, TakAction, TakCoord, TakFeedback, TakGameState, TakPieceType, TakPlayer, TimeMode,
+    TimedTakGame,
 };
 use crate::views::get_session_id;
 use crate::Route;
@@ -23,6 +24,8 @@ pub enum ClientGameMessage {
 pub struct TakBoardState {
     game: Arc<Mutex<TimedTakGame>>,
     pub has_started: Signal<bool>,
+    pub game_state: Signal<TakGameState>,
+    pub remaining_stones: Signal<HashMap<TakPlayer, (usize, usize)>>,
     pub player: Signal<TakPlayer>,
     pub player_info: Signal<HashMap<TakPlayer, PlayerInfo>>,
     pub move_selection: Signal<Option<MoveSelection>>,
@@ -62,9 +65,13 @@ pub struct MoveSelection {
 impl TakBoardState {
     pub fn new(size: usize, player_info: HashMap<TakPlayer, PlayerInfo>) -> Self {
         let time_mode = TimeMode::new(Duration::from_secs(300), Duration::from_secs(10));
+        let game = TimedTakGame::new_game(size, time_mode);
+        let remaining_stones = Self::get_remaining_stones(&game);
         TakBoardState {
-            game: Arc::new(Mutex::new(TimedTakGame::new_game(size, time_mode))),
+            game: Arc::new(Mutex::new(game)),
             has_started: Signal::new(false),
+            game_state: Signal::new(TakGameState::Ongoing),
+            remaining_stones: Signal::new(remaining_stones),
             player: Signal::new(TakPlayer::White),
             player_info: Signal::new(player_info),
             move_selection: Signal::new(None),
@@ -73,6 +80,37 @@ impl TakBoardState {
             pieces: Signal::new(HashMap::new()),
             message_queue: Signal::new(Vec::new()),
         }
+    }
+
+    pub fn get_winning_tiles(&self, winner: TakPlayer) -> Vec<TakCoord> {
+        let game_lock = self.game.lock().unwrap();
+        let mut winning_tiles = Vec::new();
+        for y in 0..game_lock.size() {
+            for x in 0..game_lock.size() {
+                let pos = TakCoord::new(x, y);
+                if let Some(tower) = game_lock.try_get_tower(pos) {
+                    if tower.controlling_player() == winner {
+                        winning_tiles.push(pos);
+                    }
+                }
+            }
+        }
+        winning_tiles
+    }
+
+    pub fn count_flats(&self) -> HashMap<TakPlayer, usize> {
+        let game_lock = self.game.lock().unwrap();
+        let mut counts = HashMap::new();
+        for y in 0..game_lock.size() {
+            for x in 0..game_lock.size() {
+                if let Some(tower) = game_lock.try_get_tower(TakCoord::new(x, y)) {
+                    if tower.top_type == TakPieceType::Flat {
+                        *counts.entry(tower.controlling_player()).or_insert(0) += 1;
+                    }
+                }
+            }
+        }
+        counts
     }
 
     pub fn set_game_from_ptn(&mut self, ptn: String) -> Option<()> {
@@ -138,16 +176,29 @@ impl TakBoardState {
         game_lock.get_time_remaining(player)
     }
 
-    fn on_finish_move(&mut self, action: &TakAction) {
+    fn on_finish_move(&mut self, is_local: bool, action: &TakAction) {
         self.on_game_update();
-        self.message_queue
-            .push(ClientGameMessage::Move(action.to_ptn()));
+        if is_local {
+            println!("local move: {:?}", action);
+            self.message_queue
+                .push(ClientGameMessage::Move(action.to_ptn()));
+        }
+    }
+
+    fn get_remaining_stones(game: &TimedTakGame) -> HashMap<TakPlayer, (usize, usize)> {
+        let mut remaining_stones = HashMap::new();
+        for player in TakPlayer::all() {
+            let hand = game.get_hand(player);
+            remaining_stones.insert(player, (hand.stones, hand.capstones));
+        }
+        remaining_stones
     }
 
     fn on_game_update(&mut self) {
         let game_lock = self.game.lock().unwrap();
         let new_player = game_lock.current_player();
         self.player.set(new_player);
+        self.game_state.set(game_lock.get_game_state());
         let mut pieces = self.pieces.write();
         let mut unused_pieces = pieces.keys().cloned().collect::<HashSet<_>>();
         let size = game_lock.size();
@@ -159,6 +210,8 @@ impl TakBoardState {
         for id in unused_pieces {
             pieces.remove(&id);
         }
+        let remaining_stones = Self::get_remaining_stones(&game_lock);
+        self.remaining_stones.set(remaining_stones);
     }
 
     fn on_update_square(
@@ -202,34 +255,51 @@ impl TakBoardState {
         game_lock.try_get_tower(pos).is_none()
     }
 
-    pub fn try_do_action(&mut self, action: &TakAction) -> TakFeedback {
+    pub fn try_do_remote_action(&mut self, action: &TakAction) -> TakFeedback {
         let mut game_lock = self.game.lock().unwrap();
         game_lock.try_do_action(action.clone())?;
         drop(game_lock);
-        self.on_finish_move(action);
+        self.on_finish_move(false, action);
         Ok(())
     }
 
-    pub fn try_place_move(&mut self, pos: TakCoord, piece_type: TakPieceType) -> TakFeedback {
+    pub fn try_do_local_place_move(
+        &mut self,
+        pos: TakCoord,
+        piece_type: TakPieceType,
+    ) -> Option<TakFeedback> {
         let tak_move = TakAction::PlacePiece {
             position: pos,
             piece_type,
         };
         let mut game_lock = self.game.lock().unwrap();
+        if !self.is_current_player_local(&game_lock) {
+            tracing::error!("Current player is not local, cannot perform action");
+            return None;
+        }
         let res = game_lock.try_do_action(tak_move.clone());
         drop(game_lock);
         if res.is_ok() {
-            self.on_finish_move(&tak_move);
+            self.on_finish_move(true, &tak_move);
         }
-        res.map(|_| ())
+        Some(res.map(|_| ()))
     }
 
-    pub fn try_do_move(&mut self, pos: TakCoord) -> Option<TakFeedback> {
+    pub fn try_do_local_move(&mut self, pos: TakCoord) -> Option<TakFeedback> {
         let _ = self.add_to_move_selection(pos);
-        self.try_do_move_action()
+        self.try_do_local_move_action()
     }
 
-    fn try_do_move_action(&mut self) -> Option<TakFeedback> {
+    fn is_current_player_local(&self, game: &TimedTakGame) -> bool {
+        let player = game.current_player();
+        if let Some(info) = self.player_info.read().get(&player) {
+            info.player_type == PlayerType::Local
+        } else {
+            false
+        }
+    }
+
+    fn try_do_local_move_action(&mut self) -> Option<TakFeedback> {
         let move_action = self.move_selection.read().clone()?;
         let drop_sum = move_action.drops.iter().sum::<usize>();
         tracing::info!("selection: {:?}", move_action);
@@ -246,11 +316,15 @@ impl TakBoardState {
             drops: move_action.drops,
         };
         let mut game_lock = self.game.lock().unwrap();
+        if !self.is_current_player_local(&game_lock) {
+            tracing::error!("Current player is not local, cannot perform action");
+            return None;
+        }
         let res = game_lock.try_do_action(action.clone());
         drop(game_lock);
         self.move_selection.write().take();
         if res.is_ok() {
-            self.on_finish_move(&action);
+            self.on_finish_move(true, &action);
         }
         Some(res.map(|_| ()))
     }
@@ -356,9 +430,14 @@ pub fn PlayComputer() -> Element {
     );
     player_info.insert(
         TakPlayer::Black,
-        PlayerInfo::new("Computer".to_string(), PlayerType::Computer),
+        PlayerInfo::new("Computer".to_string(), PlayerType::Local),
     );
-    use_context_provider(|| TakBoardState::new(5, player_info));
+    let mut board = use_context_provider(|| TakBoardState::new(5, player_info));
+
+    use_effect(move || {
+        board.has_started.set(true);
+    });
+
     rsx! {
         document::Link { rel: "stylesheet", href: CSS }
         div {
@@ -393,14 +472,17 @@ pub fn PlayOnline() -> Element {
         }
     });
 
-    use_effect(move || match room.read().as_ref() {
-        Some(Ok(GetRoomResponse::Unauthorized)) => {
-            nav.replace(Route::Auth {});
+    use_effect(move || {
+        println!("room: {:?}", room.read());
+        match room.read().as_ref() {
+            Some(Ok(GetRoomResponse::Unauthorized)) => {
+                nav.replace(Route::Auth {});
+            }
+            Some(Ok(GetRoomResponse::NotInARoom)) => {
+                nav.replace(Route::Home {});
+            }
+            _ => {}
         }
-        Some(Ok(GetRoomResponse::NotInARoom)) => {
-            nav.replace(Route::Home {});
-        }
-        _ => {}
     });
 
     rsx! {

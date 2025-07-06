@@ -1,7 +1,5 @@
 use crate::tak::ptn::{Ptn, PtnAttribute};
-use crate::tak::{
-    TakAction, TakCoord, TakGame, TakGameState, TakInvalidAction, TakPlayer, TakTower,
-};
+use crate::tak::{TakAction, TakCoord, TakGame, TakGameState, TakHand, TakInvalidAction, TakPlayer, TakTower};
 use std::time::Duration;
 
 #[derive(Debug, Clone)]
@@ -43,6 +41,14 @@ impl TimedTakGame {
             .unwrap_or(0);
         time_left.saturating_sub(Duration::from_millis(elapsed))
     }
+    
+    pub fn get_hand(&self, player: TakPlayer) -> &TakHand {
+        self.game.get_hand(player)
+    }
+    
+    pub fn get_game_state(&self) -> TakGameState {
+        self.game.game_state
+    }
 
     pub fn try_do_action(&mut self, action: TakAction) -> Result<TakGameState, TakInvalidAction> {
         let current_player = self.game.current_player;
@@ -83,10 +89,6 @@ impl TimedTakGame {
 
     pub fn size(&self) -> usize {
         self.game.size
-    }
-
-    pub fn get_actions(&self) -> &Vec<TakAction> {
-        self.game.get_actions()
     }
 
     pub fn try_get_tower(&self, pos: TakCoord) -> Option<&TakTower> {

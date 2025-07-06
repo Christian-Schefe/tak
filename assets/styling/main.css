@@ -11,31 +11,19 @@
     /** Theme primary colors */
     --clr-primary-a0: #4f94e8;
     --clr-primary-a10: #699feb;
-    --clr-primary-a20: #7fabee;
-    --clr-primary-a30: #93b6f0;
-    --clr-primary-a40: #a6c2f3;
-    --clr-primary-a50: #b9cef6;
 
     /** Theme surface colors */
     --clr-surface-a0: #121217;
     --clr-surface-a10: #28282c;
-    --clr-surface-a20: #3f3f43;
-    --clr-surface-a30: #57575b;
-    --clr-surface-a40: #717174;
-    --clr-surface-a50: #8b8b8e;
-
-    /** Theme tonal surface colors */
-    --clr-surface-tonal-a0: #1a1e28;
-    --clr-surface-tonal-a10: #2f333c;
-    --clr-surface-tonal-a20: #464952;
-    --clr-surface-tonal-a30: #5e6068;
-    --clr-surface-tonal-a40: #767980;
-    --clr-surface-tonal-a50: #909298;
+    --clr-surface-a20: #4f525c;
+    --clr-surface-a50: #818995;
 
     --clr-board-light: #949da8;
     --clr-board-dark: #818995;
-    --clr-board-selected-light: #4f94e8;
-    --clr-board-selected-dark: #3876c1;
+    --clr-board-selected-light: #adb4c6;
+    --clr-board-selected-dark: #b8bfd1;
+    --clr-board-highlight-light: #4f94e8;
+    --clr-board-highlight-dark: #699feb;
     --clr-piece-light: #dee1e8;
     --clr-piece-dark: #4f525c;
 }
@@ -58,12 +46,14 @@ body {
     width: 100%;
     height: 100%;
     max-width: 600px;
+    padding-top: 50px;
 }
 
 .tak-board {
     display: grid;
     position: relative;
     user-select: none;
+    touch-action: none;
 }
 
 .tak-tile {
@@ -83,6 +73,14 @@ body {
     background-color: var(--clr-board-dark);
 }
 
+.tak-tile-light.tak-tile-highlight {
+    background-color: var(--clr-board-highlight-light);
+}
+
+.tak-tile-dark.tak-tile-highlight {
+    background-color: var(--clr-board-highlight-dark);
+}
+
 .tak-tile-light.tak-tile-selected {
     background-color: var(--clr-board-selected-light);
 }
@@ -93,7 +91,7 @@ body {
 
 .tak-tile-label {
     position: absolute;
-    font-size: 12px;
+    font-size: 14px;
     font-weight: bold;
 }
 
@@ -160,13 +158,13 @@ body {
 .tak-piece-inner-flat {
     width: 50%;
     height: 50%;
-    border-radius: 5px;
+    border-radius: 3px;
 }
 
 .tak-piece-inner-wall {
     width: 50%;
     height: 20%;
-    border-radius: 5px;
+    border-radius: 3px;
     transform: rotate(-45deg);
 }
 
@@ -187,6 +185,34 @@ body {
     }
 }
 
+.tak-piece-hand-container {
+    display: flex;
+    width: 100%;
+    height: 50px;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px;
+    box-sizing: border-box;
+}
+
+.tak-piece-hand-container .tak-piece-hand {
+    padding: 5px 10px;
+    font-size: 14px;
+    font-weight: bold;
+    color: var(--clr-light-a0);
+    border-radius: 5px;
+    background-color: var(--clr-surface-a0);
+    margin: 0;
+    min-width: 40px;
+    text-align: center;
+    outline: 2px solid var(--clr-piece-dark);
+    transition: outline var(--animation-speed) ease-in-out;
+}
+
+.tak-piece-hand-container .tak-piece-hand.tak-piece-hand-current {
+    outline: 2px solid var(--clr-primary-a0);
+}
+
 .tak-piece-selector {
     display: flex;
     width: 100%;
@@ -195,7 +221,7 @@ body {
 }
 
 .tak-piece-selector .piece-selector {
-    background-color: var(--clr-surface-a30);
+    background-color: var(--clr-board-dark);
     border: none;
     cursor: pointer;
     padding: 5px;
@@ -205,10 +231,12 @@ body {
     width: 40px;
     height: 40px;
     user-select: none;
+    flex-grow: 1;
+    transition: background-color var(--animation-speed) ease-in-out;
 }
 
 .tak-piece-selector .piece-selector:active {
-    background-color: var(--clr-surface-a50);
+    background-color: var(--clr-board-light);
 }
 
 .tak-piece-selector .piece-selector-current {
@@ -216,20 +244,36 @@ body {
 }
 
 .tak-piece-selector .piece-selector-current:active {
-    background-color: var(--clr-primary-a30);
+    background-color: var(--clr-primary-a10);
 }
 
-.clock-container {
+.tak-game-info {
     width: 100%;
     display: flex;
     justify-content: space-between;
     align-items: center;
+    height: 50px;
+    padding: 10px;
+    box-sizing: border-box;
 }
 
 .clock {
-    margin: 10px;
-    padding: 5px 10px;
+    padding: 0 10px;
     border-radius: 5px;
+    height: 100%;
+    min-width: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.clock p {
+    margin: 0;
+    padding: 0;
+    font-size: 14px;
+    font-weight: bold;
+    display: inline-block;
+    white-space: nowrap;
 }
 
 .clock-light {
@@ -240,4 +284,79 @@ body {
 .clock-dark {
     background-color: var(--clr-piece-dark);
     color: var(--clr-light-a0);
+}
+
+.flats-counter {
+    flex-grow: 1;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-radius: 5px;
+    overflow: hidden;
+    margin: 0 10px;
+    height: 100%;
+}
+
+.flats-bar {
+    transition: flex-grow var(--animation-speed) ease-in-out;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.flats-bar p {
+    margin: 0;
+    padding: 0;
+    font-size: 14px;
+    font-weight: bold;
+    display: inline-block;
+    white-space: nowrap;
+}
+
+.flats-bar.flats-bar-light {
+    background-color: var(--clr-piece-light);
+    color: var(--clr-dark-a0);
+    min-width: 10px;
+    align-items: end;
+    padding-right: 5px;
+}
+
+.flats-bar.flats-bar-dark {
+    background-color: var(--clr-piece-dark);
+    color: var(--clr-light-a0);
+    align-items: start;
+    padding-left: 5px;
+    min-width: 10px;
+}
+
+.flats-bar.flats-bar-komi {
+    background-color: var(--clr-board-dark);
+    color: var(--clr-light-a0);
+    align-items: start;
+    padding-left: 5px;
+    min-width: 10px;
+}
+
+.tak-game-info p.tak-player-info {
+    margin: 0;
+    padding: 0 10px;
+    flex-grow: 1;
+    font-size: 16px;
+    font-weight: bold;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: color var(--animation-speed) ease-in-out;
+}
+
+.tak-game-info p.tak-player-info.left {
+    text-align: left;
+}
+
+.tak-game-info p.tak-player-info.right {
+    text-align: right;
+}
+
+.tak-game-info p.tak-player-info.current-player {
+    color: var(--clr-primary-a0);
 }

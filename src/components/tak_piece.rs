@@ -16,19 +16,19 @@ pub fn TakPiece(id: usize) -> Element {
         let mut position = piece.position;
         let mut height = piece.stack_height;
 
-        let Some(move_selection) = &*board.move_selection.read() else {
-            return (position, height);
-        };
-        if move_selection.position != piece.position {
-            return (position, height);
-        }
-
         let this_stack_height = pieces
             .iter()
             .filter(|(_, p)| p.position == piece.position)
             .map(|(_, p)| p.stack_height)
             .max()
             .unwrap();
+
+        let Some(move_selection) = &*board.move_selection.read() else {
+            return (position, height);
+        };
+        if move_selection.position != piece.position {
+            return (position, height);
+        }
 
         let first_dropped_height = this_stack_height + 1 - move_selection.count;
         if first_dropped_height > piece.stack_height {
@@ -71,7 +71,7 @@ pub fn TakPiece(id: usize) -> Element {
     rsx! {
         div {
             class: "tak-piece tak-piece-height-{actual_stack_height}",
-            style: format!("width: {}%; height: {}%; transform: translate({}%, calc({}% - {}px)); z-index: {}", 100f32 / size as f32, 100f32 / size as f32, actual_pos.x * 100, (size - actual_pos.y - 1) * 100, actual_stack_height * 10, actual_stack_height),
+            style: format!("width: {}%; height: {}%; transform: translate({}%, calc({}% - {}%)); z-index: {}", 100f32 / size as f32, 100f32 / size as f32, actual_pos.x * 100, (size - actual_pos.y - 1) * 100, actual_stack_height * 7, actual_stack_height),
             div {
                 class: "tak-piece-wrapper",
                 div {

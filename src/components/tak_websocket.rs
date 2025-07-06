@@ -7,33 +7,11 @@ use futures_util::{SinkExt, StreamExt};
 use gloo::net::websocket::futures::WebSocket;
 use gloo::net::websocket::{Message, WebSocketError};
 use wasm_bindgen_futures::spawn_local;
-use web_sys::wasm_bindgen::JsCast;
-use web_sys::window;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
 pub enum ServerGameMessage {
     StartGame(usize),
     Move(String),
-}
-
-fn get_session_id_from_cookie() -> Option<String> {
-    let cookies = window()?
-        .document()?
-        .dyn_into::<web_sys::HtmlDocument>()
-        .unwrap()
-        .cookie()
-        .ok()?;
-
-    dioxus::logger::tracing::info!("[WebSocket] Cookies: {cookies}");
-
-    for cookie in cookies.split(';') {
-        let trimmed = cookie.trim();
-        if let Some(value) = trimmed.strip_prefix("session_id=") {
-            return Some(value.to_string());
-        }
-    }
-
-    None
 }
 
 #[component]
@@ -55,7 +33,7 @@ pub fn TakWebSocket(session_id: String) -> Element {
             ServerGameMessage::Move(action) => {
                 dioxus::logger::tracing::info!("[WebSocket] Processing move action: {action}");
                 if let None =
-                    TakAction::from_ptn(&action).and_then(|x| board.try_do_action(&x).ok())
+                    TakAction::from_ptn(&action).and_then(|x| board.try_do_remote_action(&x).ok())
                 {
                     dioxus::logger::tracing::error!(
                         "[WebSocket] Invalid action received: {action}"
@@ -166,16 +144,5 @@ pub fn TakWebSocket(session_id: String) -> Element {
         });
     });
 
-    rsx! {
-        button {
-            onclick: move |_| {
-                if let Some(session_id) = get_session_id_from_cookie() {
-                    dioxus::logger::tracing::info!("[WebSocket] Sent session id: {session_id}");
-                } else {
-                    dioxus::logger::tracing::error!("[WebSocket] No session id found");
-                }
-            },
-            "Print Cookies"
-        }
-    }
+    rsx! {}
 }

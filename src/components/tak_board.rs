@@ -1,11 +1,13 @@
+use crate::components::tak_flats_counter::TakFlatsCounter;
 use crate::components::tak_piece::TakPiece;
 use crate::components::Clock;
-use crate::tak::{Direction, TakCoord, TakPieceType};
+use crate::tak::{Direction, TakCoord, TakGameState, TakPieceType, TakPlayer};
 use crate::views::{PlayerInfo, PlayerType, TakBoardState};
 use dioxus::core_macro::{component, rsx};
 use dioxus::dioxus_core::Element;
 use dioxus::logger::tracing;
 use dioxus::prelude::*;
+use crate::components::tak_hand::TakHand;
 
 #[component]
 pub fn TakBoard() -> Element {
@@ -16,7 +18,9 @@ pub fn TakBoard() -> Element {
         let pos = TakCoord::new(i, j);
         let mut cloned_state = state_clone.clone();
         move |_| {
-            if !*cloned_state.has_started.read() {
+            if !*cloned_state.has_started.read()
+                || *state_clone.game_state.read() != TakGameState::Ongoing
+            {
                 return;
             }
             let Some(PlayerInfo {
@@ -32,11 +36,11 @@ pub fn TakBoard() -> Element {
             tracing::info!("Clicked on tile: {:?}", pos);
             if cloned_state.is_empty_tile(pos) && cloned_state.move_selection.read().is_none() {
                 let piece_type = *cloned_state.selected_piece_type.read();
-                if let Err(e) = cloned_state.try_place_move(pos, piece_type) {
+                if let Some(Err(e)) = cloned_state.try_do_local_place_move(pos, piece_type) {
                     tracing::error!("Failed to place piece: {:?}", e);
                 }
             } else {
-                if let Some(Err(e)) = cloned_state.try_do_move(pos) {
+                if let Some(Err(e)) = cloned_state.try_do_local_move(pos) {
                     tracing::error!("Failed to do move: {:?}", e);
                 }
             }
@@ -60,7 +64,9 @@ pub fn TakBoard() -> Element {
     let selected_tiles = use_memo(move || {
         let player = *state.player.read();
         let size = *state.size.read();
-        if !*state_clone.has_started.read() {
+        if !*state_clone.has_started.read()
+            || *state_clone.game_state.read() != TakGameState::Ongoing
+        {
             return vec![];
         }
         let Some(PlayerInfo {
@@ -113,10 +119,50 @@ pub fn TakBoard() -> Element {
                 place_positions
             })
     });
+    let state_clone = state.clone();
+    let winning_tiles = use_memo(move || {
+        if let TakGameState::Win(winner) = *state_clone.game_state.read() {
+            state_clone.get_winning_tiles(winner)
+        } else {
+            vec![]
+        }
+    });
+
+    let player_names = use_memo(move || {
+        let player_info = state.player_info.read();
+        let white_player_name = player_info
+            .get(&TakPlayer::White)
+            .map_or("Waiting...".to_string(), |info| info.name.clone());
+
+        let black_player_name = player_info
+            .get(&TakPlayer::Black)
+            .map_or("Waiting...".to_string(), |info| info.name.clone());
+
+        (white_player_name, black_player_name)
+    });
 
     rsx! {
         div {
             class: "tak-board-container",
+            div {
+                class: "tak-game-info",
+                Clock {
+                    player: TakPlayer::White,
+                }
+                p {
+                    class: "tak-player-info left",
+                    class: if *state.player.read() == TakPlayer::White {"current-player"} else {""},
+                    "{player_names.read().0}"
+                }
+                p {
+                    class: "tak-player-info right",
+                    class: if *state.player.read() == TakPlayer::Black {"current-player"} else {""},
+                    "{player_names.read().1}"
+                }
+                Clock {
+                    player: TakPlayer::Black,
+                }
+            }
             div {
                 class: "tak-board",
                 style: "grid-template-columns: repeat({state.size}, 1fr); grid-template-rows: repeat({state.size}, 1fr);",
@@ -131,6 +177,8 @@ pub fn TakBoard() -> Element {
                             },
                             class: if selected_tiles.read().contains(&TakCoord::new(i, j)) {
                                 "tak-tile-selected"
+                            } else if winning_tiles.read().contains(&TakCoord::new(i, j)) {
+                                "tak-tile-highlight"
                             } else {
                                 ""
                             },
@@ -151,8 +199,15 @@ pub fn TakBoard() -> Element {
                 }
                 {pieces_rendered}
             }
-            Clock {
-
+            div {
+                class: "tak-piece-hand-container",
+                TakHand {
+                    player: TakPlayer::White
+                }
+                TakFlatsCounter {}
+                TakHand {
+                    player: TakPlayer::Black
+                }
             }
             div {
                 class: "tak-piece-selector",
@@ -166,7 +221,7 @@ pub fn TakBoard() -> Element {
                     onclick: move |_| {
                         state.selected_piece_type.set(TakPieceType::Flat);
                     },
-                    "F"
+                    "Flat"
                 }
                 button {
                     class: "piece-selector",
@@ -178,7 +233,7 @@ pub fn TakBoard() -> Element {
                     onclick: move |_| {
                         state.selected_piece_type.set(TakPieceType::Wall);
                     },
-                    "W"
+                    "Wall"
                 }
                 button {
                     class: "piece-selector",
@@ -190,10 +245,9 @@ pub fn TakBoard() -> Element {
                     onclick: move |_| {
                         state.selected_piece_type.set(TakPieceType::Capstone);
                     },
-                    "C"
+                    "Cap"
                 }
             }
-            {format!("{:?} to move", state.player.read())}
         }
     }
 }

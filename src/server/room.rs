@@ -246,6 +246,32 @@ impl Rooms {
             .insert(player_id.clone(), Arc::new(tokio::sync::Mutex::new(socket)));
     }
 
+    pub async fn try_remove_socket_no_cancel(&mut self, player_id: &PlayerId) -> bool {
+        if let Some((_, socket)) = self.player_sockets.remove(player_id) {
+            let mut socket = socket.lock().await;
+            let _ = socket.sender.close().await;
+            true
+        } else {
+            false
+        }
+    }
+
+    pub async fn try_remove_socket(rooms: tokio::sync::MutexGuard<'_, Self>, player_id: &PlayerId) -> bool {
+        if let Some((_, socket)) = rooms.player_sockets.remove(player_id) {
+            drop(rooms);
+            let mut socket = socket.lock().await;
+            let _ = socket.sender.close().await;
+            if let Some((sender, wait_task)) = socket.abort_handle.take() {
+                drop(socket);
+                let _ = sender.send(());
+                let _ = wait_task.await;
+            }
+            true
+        } else {
+            false
+        }
+    }
+
     pub async fn get_broadcast_player_ids(&mut self, room_id: &RoomId) -> Vec<PlayerId> {
         let room = self.rooms.get(room_id).unwrap();
         let room_lock = room.lock().await;
@@ -317,8 +343,8 @@ pub async fn join_room(
             if is_spectator { "spectator" } else { "player" }
         );
         tokio::spawn(async move {
-            let mut rooms = state.rooms.lock().await;
             tokio::time::sleep(Duration::from_secs(1)).await;
+            let mut rooms = state.rooms.lock().await;
             maybe_start_game(&mut rooms, &room_id).await;
         });
     }
