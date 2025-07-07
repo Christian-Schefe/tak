@@ -1,6 +1,8 @@
+pub mod action;
 pub mod ptn;
 pub mod timed;
 
+use crate::tak::action::{TakAction, TakActionResult};
 use crate::tak::ptn::Ptn;
 use serde::{Deserialize, Serialize};
 pub use timed::*;
@@ -35,16 +37,23 @@ pub struct TakGame {
     pub komi: TakKomi,
     pub board: Vec<TakTile>,
     pub current_player: TakPlayer,
-    pub actions: Vec<TakAction>,
+    pub actions: Vec<TakActionResult>,
     pub hands: [TakHand; 2],
     id_counter: usize,
     game_state: TakGameState,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+pub enum TakWinReason {
+    Road,
+    FlatCount,
+    Timeout,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum TakGameState {
     Ongoing,
-    Win(TakPlayer),
+    Win(TakPlayer, TakWinReason),
     Draw,
 }
 
@@ -131,7 +140,7 @@ impl TakCoord {
         }
     }
 
-    fn try_get_positions(
+    pub fn try_get_positions(
         &self,
         direction: &Direction,
         times: usize,
@@ -297,115 +306,6 @@ impl Direction {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub enum TakAction {
-    PlacePiece {
-        position: TakCoord,
-        piece_type: TakPieceType,
-    },
-    MovePiece {
-        from: TakCoord,
-        direction: Direction,
-        take: usize,
-        drops: Vec<usize>,
-    },
-}
-
-impl TakAction {
-    pub fn to_ptn(&self) -> String {
-        match self {
-            TakAction::PlacePiece {
-                position,
-                piece_type,
-            } => {
-                let prefix = match piece_type {
-                    TakPieceType::Flat => "",
-                    TakPieceType::Wall => "S",
-                    TakPieceType::Capstone => "C",
-                };
-                let file = (b'a' + position.x as u8) as char;
-                let rank = position.y + 1;
-                format!("{}{}{}", prefix, file, rank)
-            }
-            TakAction::MovePiece {
-                from,
-                direction,
-                take,
-                drops,
-            } => {
-                let take_str = if *take == 1 {
-                    String::new()
-                } else {
-                    format!("{}", take)
-                };
-                let file = (b'a' + from.x as u8) as char;
-                let rank = from.y + 1;
-                let direction_str = match direction {
-                    Direction::Up => "+",
-                    Direction::Down => "-",
-                    Direction::Left => "<",
-                    Direction::Right => ">",
-                };
-                let drops_str: String = drops
-                    .iter()
-                    .map(|d| d.to_string())
-                    .collect::<Vec<_>>()
-                    .join("");
-                format!("{}{}{}{}{}", take_str, file, rank, direction_str, drops_str)
-            }
-        }
-    }
-
-    pub fn from_ptn(ptn: &str) -> Option<Self> {
-        let place_regex = regex::Regex::new(r"^([SC]?)([a-z])([1-9])$").unwrap();
-        let move_regex = regex::Regex::new(r"^([1-9]?)([a-z])([1-9])([+-<>])([1-9]*)\*?$").unwrap();
-
-        if let Some(captures) = place_regex.captures(ptn) {
-            let piece_type = match &captures[1] {
-                "" => TakPieceType::Flat,
-                "S" => TakPieceType::Wall,
-                "C" => TakPieceType::Capstone,
-                _ => return None,
-            };
-            let file = captures[2].chars().next()?.to_ascii_lowercase() as usize - 'a' as usize;
-            let rank = captures[3].parse::<usize>().ok()? - 1;
-            Some(TakAction::PlacePiece {
-                position: TakCoord::new(file, rank),
-                piece_type,
-            })
-        } else if let Some(captures) = move_regex.captures(ptn) {
-            let take = captures[1].parse::<usize>().unwrap_or(1);
-            let file = captures[2].chars().next()?.to_ascii_lowercase() as usize - 'a' as usize;
-            let rank = captures[3].parse::<usize>().ok()? - 1;
-            let direction = match &captures[4] {
-                "+" => Direction::Up,
-                "-" => Direction::Down,
-                "<" => Direction::Left,
-                ">" => Direction::Right,
-                _ => return None,
-            };
-            let drops_str = &captures[5];
-            let drops: Vec<usize> = if !drops_str.is_empty() {
-                drops_str
-                    .chars()
-                    .filter_map(|d| d.to_digit(10))
-                    .map(|d| d as usize)
-                    .collect()
-            } else {
-                vec![take]
-            };
-            Some(TakAction::MovePiece {
-                from: TakCoord::new(file, rank),
-                direction,
-                take,
-                drops,
-            })
-        } else {
-            None
-        }
-    }
-}
-
 impl TakGame {
     pub fn new(size: usize) -> Self {
         TakGame {
@@ -420,11 +320,11 @@ impl TakGame {
         }
     }
 
-    pub fn try_do_action(&mut self, action: TakAction) -> Result<TakGameState, TakInvalidAction> {
+    pub fn try_do_action(&mut self, action: TakAction) -> TakResult<TakActionResult> {
         if self.game_state != TakGameState::Ongoing {
             return Err(TakInvalidAction::GameOver);
         }
-        match &action {
+        let action_result = match action {
             TakAction::PlacePiece {
                 position,
                 piece_type,
@@ -434,15 +334,15 @@ impl TakGame {
                 direction,
                 take,
                 drops,
-            } => self.try_move_piece(from, direction, *take, drops),
+            } => self.try_move_piece(from, direction, take, drops),
         }?;
-        self.actions.push(action);
+        self.actions.push(action_result.clone());
         self.check_game_over();
         self.current_player = match self.current_player {
             TakPlayer::White => TakPlayer::Black,
             TakPlayer::Black => TakPlayer::White,
         };
-        Ok(self.game_state)
+        Ok(action_result)
     }
 
     pub fn try_get_tower(&self, pos: TakCoord) -> Option<&TakTower> {
@@ -506,10 +406,14 @@ impl TakGame {
         };
         dioxus::logger::tracing::info!("Checking game over");
         if check_direction(true) || check_direction(false) {
-            self.game_state = TakGameState::Win(player);
-            dioxus::logger::tracing::info!("Game over by street: {:?}", self.game_state);
+            self.game_state = TakGameState::Win(player, TakWinReason::Road);
+            dioxus::logger::tracing::info!("Game over by road: {:?}", self.game_state);
             return;
         }
+
+        let hand = self.get_hand(player);
+        let has_remaining_stones = hand.stones > 0 || hand.capstones > 0;
+
         dioxus::logger::tracing::info!("Counting");
         let mut flat_counts = [0, 0];
         for y in 0..self.size {
@@ -523,14 +427,17 @@ impl TakGame {
                         };
                         flat_counts[i] += 1;
                     }
-                } else {
-                    dioxus::logger::tracing::info!("Square {:?} is empty", pos);
+                } else if has_remaining_stones {
+                    dioxus::logger::tracing::info!(
+                        "Square {:?} is empty and player has stones left",
+                        pos
+                    );
                     return;
                 }
             }
         }
         if let Some(winner) = self.komi.determine_winner(flat_counts[0], flat_counts[1]) {
-            self.game_state = TakGameState::Win(winner);
+            self.game_state = TakGameState::Win(winner, TakWinReason::FlatCount);
         } else {
             self.game_state = TakGameState::Draw;
         }
@@ -583,21 +490,25 @@ impl TakGame {
             .ok_or(TakInvalidAction::TileEmpty)
     }
 
-    fn try_place_piece(&mut self, position: &TakCoord, piece_type: &TakPieceType) -> TakFeedback {
+    fn try_place_piece(
+        &mut self,
+        position: TakCoord,
+        piece_type: TakPieceType,
+    ) -> TakResult<TakActionResult> {
         let player = if self.actions.len() >= 2 {
             self.current_player
         } else {
             self.current_player.opponent()
         };
-        let tile = self.try_get_tile(position)?;
+        let tile = self.try_get_tile(&position)?;
         if let None = tile {
-            if *piece_type == TakPieceType::Capstone {
+            if piece_type == TakPieceType::Capstone {
                 self.get_hand_mut(player).try_take_capstone()?;
             } else {
                 self.get_hand_mut(player).try_take_stone()?;
             }
-            *self.get_tile_mut(position) = Some(TakTower {
-                top_type: *piece_type,
+            *self.get_tile_mut(&position) = Some(TakTower {
+                top_type: piece_type,
                 composition: vec![IDStone {
                     player,
                     id: self.id_counter,
@@ -607,17 +518,20 @@ impl TakGame {
         } else {
             return Err(TakInvalidAction::TileOccupied);
         }
-        Ok(())
+        Ok(TakActionResult::PlacePiece {
+            position,
+            piece_type,
+        })
     }
 
     fn try_move_piece(
         &mut self,
-        from: &TakCoord,
-        direction: &Direction,
+        from: TakCoord,
+        direction: Direction,
         take: usize,
-        drops: &Vec<usize>,
-    ) -> TakFeedback {
-        let from_tower = self.try_get_tower_at(from)?;
+        drops: Vec<usize>,
+    ) -> TakResult<TakActionResult> {
+        let from_tower = self.try_get_tower_at(&from)?;
         let from_top_type = from_tower.top_type;
         let from_composition_len = from_tower.composition.len();
         if from_tower.controlling_player() != self.current_player {
@@ -629,15 +543,15 @@ impl TakGame {
         if take > self.size
             || from_composition_len < take
             || take == 0
-            || drop_len < 1
             || drop_sum != take
             || drops.iter().any(|&i| i < 1)
         {
             return Err(TakInvalidAction::InvalidAction);
         }
         let positions = from
-            .try_get_positions(direction, drop_len, self.size)
+            .try_get_positions(&direction, drop_len, self.size)
             .ok_or(TakInvalidAction::InvalidAction)?;
+        let mut has_flattened = false;
         for i in 0..drop_len {
             if let Some(tower) = self.get_tile(&positions[i]) {
                 if tower.top_type != TakPieceType::Flat {
@@ -648,12 +562,13 @@ impl TakGame {
                     if !can_flatten {
                         return Err(TakInvalidAction::InvalidAction);
                     }
+                    has_flattened = true;
                 }
             }
         }
 
         let taken = {
-            let from_tower = self.get_tile_mut(from);
+            let from_tower = self.get_tile_mut(&from);
             if from_composition_len == take {
                 from_tower.take().unwrap().composition
             } else {
@@ -685,6 +600,13 @@ impl TakGame {
             }
             drop_index += drops[i];
         }
-        Ok(())
+
+        Ok(TakActionResult::MovePiece {
+            from,
+            direction,
+            take,
+            drops,
+            flattened: has_flattened,
+        })
     }
 }

@@ -10,9 +10,11 @@ use std::ops::DerefMut;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+use crate::components::ServerGameMessage;
 use crate::server::auth::SessionStore;
-use crate::server::room::{PlayerId, PlayerSocketMap, Room, Rooms};
-use crate::tak::TakAction;
+use crate::server::room::{PlayerSocketMap, Room, Rooms};
+use crate::tak::action::TakAction;
+use crate::tak::TakPlayer;
 use crate::views::ClientGameMessage;
 use axum_extra::TypedHeader;
 use futures_util::stream::{SplitSink, SplitStream};
@@ -139,9 +141,8 @@ async fn handle_socket(
     let (sx, rx) = tokio::sync::oneshot::channel();
 
     let recv_room = room.clone();
-    let recv_player = player_id.clone();
     let recv_task = tokio::spawn(async move {
-        room_receive_task(recv_room, recv_sockets, receiver, recv_player).await;
+        room_receive_task(recv_room, recv_sockets, receiver).await;
         println!("Websocket receiver task of {who} ended.");
     });
 
@@ -174,32 +175,38 @@ async fn handle_socket(
     println!("Waiting for end for {who}");
 }
 
-async fn on_room_receive_move(
-    player: &PlayerId,
-    sockets: Arc<PlayerSocketMap>,
-    room: &mut Room,
-    action: &str,
-) {
+async fn on_room_receive_move(sockets: Arc<PlayerSocketMap>, room: &mut Room, action: &str) {
     if let Some(action) = TakAction::from_ptn(action) {
         let Some(game) = &mut room.game else {
             println!("Game hasn't started yet");
             return;
         };
-        if let Err(e) = game.try_do_action(action.clone()) {
-            println!("Error processing action: {e:?}");
-        }
-        let msg = serde_json::to_string(&ClientGameMessage::Move(action.to_ptn())).unwrap();
-        for other_player in room.get_broadcast_player_ids() {
-            if other_player == *player {
-                continue;
+        let move_index = game.get_current_move_index();
+        let res = match game.try_do_action(action) {
+            Ok(res) => res,
+            Err(e) => {
+                println!("Error processing action: {e:?}");
+                return;
             }
+        };
+        let time_remaining = TakPlayer::all()
+            .into_iter()
+            .map(|x| (x, game.get_time_remaining(x)))
+            .collect::<Vec<_>>();
+        let msg = serde_json::to_string(&ServerGameMessage::Move(
+            move_index,
+            time_remaining,
+            res.to_ptn(),
+        ))
+        .unwrap();
+        for other_player in room.get_broadcast_player_ids() {
             if let Some(socket) = sockets.get(&other_player) {
                 let socket = socket.clone();
                 let sender = &mut socket.lock().await.sender;
                 if sender.send(Message::Text(msg.clone())).await.is_err() {
                     println!("Failed to send message to player {other_player}");
                 } else {
-                    println!("Sent move action to player {other_player}: {action:?}");
+                    println!("Sent move action to player {other_player}: {res:?}");
                 }
             }
         }
@@ -212,7 +219,6 @@ async fn room_receive_task(
     room: Arc<Mutex<Room>>,
     sockets: Arc<PlayerSocketMap>,
     mut receiver: SplitStream<WebSocket>,
-    player: PlayerId,
 ) {
     while let Some(msg) = receiver.next().await {
         if let Ok(Message::Text(msg)) = &msg {
@@ -220,13 +226,7 @@ async fn room_receive_task(
                 match msg {
                     ClientGameMessage::Move(action) => {
                         let mut room_lock = room.lock().await;
-                        on_room_receive_move(
-                            &player,
-                            sockets.clone(),
-                            room_lock.deref_mut(),
-                            &action,
-                        )
-                        .await;
+                        on_room_receive_move(sockets.clone(), room_lock.deref_mut(), &action).await;
                     }
                 }
             }

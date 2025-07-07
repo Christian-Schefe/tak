@@ -1,5 +1,5 @@
 use crate::components::ServerGameMessage;
-use crate::tak::{TakPlayer, TimeMode, TimedTakGame};
+use crate::tak::{CrossPlatformInstant, TakPlayer, TimeMode, TimedTakGame};
 use dioxus::prelude::*;
 use futures_util::SinkExt;
 use rand::distributions::Alphanumeric;
@@ -47,6 +47,10 @@ impl Room {
         all_player_types
             .iter()
             .all(|pt| self.players.iter().any(|(p, _)| p == pt))
+    }
+
+    fn is_empty(&self) -> bool {
+        self.players.is_empty() && self.spectators.is_empty()
     }
 
     pub fn get_broadcast_player_ids(&self) -> Vec<PlayerId> {
@@ -177,9 +181,10 @@ impl Rooms {
             return LeaveRoomResponse::NotInARoom;
         }
 
-        if room_lock.players.is_empty() && room_lock.spectators.is_empty() {
+        if room_lock.is_empty() {
             drop(room_lock);
             self.rooms.remove(&room_id);
+            println!("Room {} was empty and removed", room_id);
         }
         LeaveRoomResponse::Success
     }
@@ -256,7 +261,10 @@ impl Rooms {
         }
     }
 
-    pub async fn try_remove_socket(rooms: tokio::sync::MutexGuard<'_, Self>, player_id: &PlayerId) -> bool {
+    pub async fn try_remove_socket(
+        rooms: tokio::sync::MutexGuard<'_, Self>,
+        player_id: &PlayerId,
+    ) -> bool {
         if let Some((_, socket)) = rooms.player_sockets.remove(player_id) {
             drop(rooms);
             let mut socket = socket.lock().await;
@@ -398,7 +406,7 @@ pub async fn leave_room() -> Result<LeaveRoomResponse, ServerFnError> {
         return Ok(LeaveRoomResponse::Unauthorized);
     };
     let mut rooms = state.rooms.lock().await;
-    Ok(rooms.try_leave_room(user.0).await)
+    Ok(rooms.try_leave_room(user.0.clone()).await)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -453,7 +461,7 @@ pub async fn get_players() -> Result<GetPlayersResponse, ServerFnError> {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum GetGameStateResponse {
-    Success(Option<String>),
+    Success(Option<(String, Vec<(TakPlayer, Duration)>)>),
     NotInARoom,
     Unauthorized,
 }
@@ -475,7 +483,14 @@ pub async fn get_game_state() -> Result<GetGameStateResponse, ServerFnError> {
     let room_lock = room.lock().await;
     if let Some(game) = &room_lock.game {
         let game_state = game.to_ptn();
-        Ok(GetGameStateResponse::Success(Some(game_state.to_str())))
+        let time_remaining = TakPlayer::all()
+            .into_iter()
+            .map(|x| (x, game.get_time_remaining(x)))
+            .collect::<Vec<_>>();
+        Ok(GetGameStateResponse::Success(Some((
+            game_state.to_str(),
+            time_remaining,
+        ))))
     } else {
         Ok(GetGameStateResponse::Success(None))
     }

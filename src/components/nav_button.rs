@@ -1,7 +1,7 @@
 use crate::Route;
 use dioxus::prelude::*;
 use dioxus_free_icons::icons::fa_solid_icons::*;
-use dioxus_free_icons::{Icon, IconShape};
+use dioxus_free_icons::Icon;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum NavButtonIcon {

@@ -1,5 +1,5 @@
 use crate::tak::TakPlayer;
-use crate::views::TakBoardState;
+use crate::components::tak_board_state::TakBoardState;
 use dioxus::prelude::*;
 
 #[component]

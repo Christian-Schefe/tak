@@ -1,17 +1,14 @@
+use crate::components::tak_board_state::TakBoardState;
 use crate::tak::TakPlayer;
-use crate::views::TakBoardState;
 use dioxus::prelude::*;
 
 #[component]
 pub fn TakFlatsCounter() -> Element {
     let board = use_context::<TakBoardState>();
 
-    let board_size = *board.size.read();
-
     let flats = use_memo(move || {
         let _ = board.pieces.read();
         let flats = board.count_flats();
-        println!("flats: {:?}", flats);
         (
             *flats.get(&TakPlayer::White).unwrap_or(&0),
             *flats.get(&TakPlayer::Black).unwrap_or(&0),

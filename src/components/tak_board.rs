@@ -1,13 +1,14 @@
+use crate::components::tak_board_state::{PlayerInfo, PlayerType, TakBoardState};
 use crate::components::tak_flats_counter::TakFlatsCounter;
+use crate::components::tak_hand::TakHand;
 use crate::components::tak_piece::TakPiece;
 use crate::components::Clock;
+use crate::tak::action::TakActionResult;
 use crate::tak::{Direction, TakCoord, TakGameState, TakPieceType, TakPlayer};
-use crate::views::{PlayerInfo, PlayerType, TakBoardState};
 use dioxus::core_macro::{component, rsx};
 use dioxus::dioxus_core::Element;
 use dioxus::logger::tracing;
 use dioxus::prelude::*;
-use crate::components::tak_hand::TakHand;
 
 #[component]
 pub fn TakBoard() -> Element {
@@ -120,9 +121,31 @@ pub fn TakBoard() -> Element {
             })
     });
     let state_clone = state.clone();
-    let winning_tiles = use_memo(move || {
-        if let TakGameState::Win(winner) = *state_clone.game_state.read() {
+    let highlighted_tiles = use_memo(move || {
+        if let TakGameState::Win(winner, _) = *state_clone.game_state.read() {
             state_clone.get_winning_tiles(winner)
+        } else if let Some(prev_move) = state_clone.prev_move.read().as_ref() {
+            match prev_move {
+                TakActionResult::PlacePiece {
+                    position,
+                    piece_type: _,
+                } => {
+                    vec![*position]
+                }
+                TakActionResult::MovePiece {
+                    from,
+                    direction,
+                    drops,
+                    take: _,
+                    flattened: _,
+                } => {
+                    let mut positions = from
+                        .try_get_positions(direction, drops.len(), *state_clone.size.read())
+                        .unwrap_or_else(|| vec![]);
+                    positions.push(*from);
+                    positions
+                }
+            }
         } else {
             vec![]
         }
@@ -175,10 +198,10 @@ pub fn TakBoard() -> Element {
                             } else {
                                 "tak-tile tak-tile-dark"
                             },
-                            class: if selected_tiles.read().contains(&TakCoord::new(i, j)) {
-                                "tak-tile-selected"
-                            } else if winning_tiles.read().contains(&TakCoord::new(i, j)) {
+                            class: if highlighted_tiles.read().contains(&TakCoord::new(i, j)) {
                                 "tak-tile-highlight"
+                            } else if selected_tiles.read().contains(&TakCoord::new(i, j)) {
+                                "tak-tile-selected"
                             } else {
                                 ""
                             },

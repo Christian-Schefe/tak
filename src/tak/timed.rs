@@ -1,5 +1,10 @@
+use crate::tak::action::TakActionResult;
 use crate::tak::ptn::{Ptn, PtnAttribute};
-use crate::tak::{TakAction, TakCoord, TakGame, TakGameState, TakHand, TakInvalidAction, TakPlayer, TakTower};
+use crate::tak::{
+    TakAction, TakCoord, TakGame, TakGameState, TakHand, TakPlayer, TakResult, TakTower,
+    TakWinReason,
+};
+use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 #[derive(Debug, Clone)]
@@ -31,7 +36,7 @@ impl TimedTakGame {
             TakPlayer::White => self.time_left[0],
             TakPlayer::Black => self.time_left[1],
         };
-        if player != self.game.current_player {
+        if player != self.game.current_player || self.game.game_state != TakGameState::Ongoing {
             return time_left;
         }
         let now = CrossPlatformInstant::now();
@@ -41,35 +46,56 @@ impl TimedTakGame {
             .unwrap_or(0);
         time_left.saturating_sub(Duration::from_millis(elapsed))
     }
-    
+
+    pub fn get_current_move_index(&self) -> usize {
+        self.game.actions.len()
+    }
+
     pub fn get_hand(&self, player: TakPlayer) -> &TakHand {
         self.game.get_hand(player)
     }
-    
+
     pub fn get_game_state(&self) -> TakGameState {
         self.game.game_state
     }
 
-    pub fn try_do_action(&mut self, action: TakAction) -> Result<TakGameState, TakInvalidAction> {
+    pub fn set_time_remaining(&mut self, player: TakPlayer, time_remaining: Duration) {
+        let mut time_left = match player {
+            TakPlayer::White => &mut self.time_left[0],
+            TakPlayer::Black => &mut self.time_left[1],
+        };
+        *time_left = time_remaining;
+    }
+
+    pub fn try_do_action_at(
+        &mut self,
+        action: TakAction,
+        time: CrossPlatformInstant,
+    ) -> TakResult<TakActionResult> {
         let current_player = self.game.current_player;
-        self.game.try_do_action(action)?;
-        let now = CrossPlatformInstant::now();
+        let res = self.game.try_do_action(action)?;
         let elapsed = self
             .last_action_time
-            .map(|t| now.elapsed_since(t))
+            .map(|t| time.elapsed_since(t))
             .unwrap_or(0);
-        self.last_action_time = Some(now);
+        self.last_action_time = Some(time);
         let time_left = match current_player {
             TakPlayer::White => &mut self.time_left[0],
             TakPlayer::Black => &mut self.time_left[1],
         };
         *time_left = time_left.saturating_sub(Duration::from_millis(elapsed));
         if time_left.is_zero() {
-            self.game.game_state = TakGameState::Win(current_player.opponent());
+            self.game.game_state =
+                TakGameState::Win(current_player.opponent(), TakWinReason::Timeout);
         } else {
             *time_left += self.time_mode.time_increment;
         }
-        Ok(self.game.game_state)
+        Ok(res)
+    }
+
+    pub fn try_do_action(&mut self, action: TakAction) -> TakResult<TakActionResult> {
+        let now = CrossPlatformInstant::now();
+        self.try_do_action_at(action, now)
     }
 
     pub fn new_game(size: usize, settings: TimeMode) -> Self {
@@ -109,7 +135,7 @@ impl TimedTakGame {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct CrossPlatformInstant {
     millis: u64,
 }

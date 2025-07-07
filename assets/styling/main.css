@@ -9,23 +9,23 @@
     --clr-error-a10: #e8a01b;
 
     /** Theme primary colors */
-    --clr-primary-a0: #4f94e8;
-    --clr-primary-a10: #699feb;
+    --clr-primary-a0: oklch(0.6601 0.144 254.84);
+    --clr-primary-a10: oklch(0.7001 0.144 254.84);
 
     /** Theme surface colors */
-    --clr-surface-a0: #121217;
-    --clr-surface-a10: #28282c;
-    --clr-surface-a20: #4f525c;
-    --clr-surface-a50: #818995;
+    --clr-surface-a0: oklch(0.2049 0.0292 254.84);
+    --clr-surface-a10: oklch(0.3549 0.0292 254.84);
+    --clr-surface-a20: oklch(0.5049 0.0292 254.84);
+    --clr-surface-a50: oklch(0.7049 0.0292 254.84);
 
-    --clr-board-light: #949da8;
-    --clr-board-dark: #818995;
-    --clr-board-selected-light: #adb4c6;
-    --clr-board-selected-dark: #b8bfd1;
-    --clr-board-highlight-light: #4f94e8;
-    --clr-board-highlight-dark: #699feb;
-    --clr-piece-light: #dee1e8;
-    --clr-piece-dark: #4f525c;
+    --clr-board-light: oklch(0.6756 0.0292 254.84);
+    --clr-board-dark: oklch(0.7049 0.0292 254.84);
+    --clr-board-selected-light: oklch(0.7702 0.0292 254.84);
+    --clr-board-selected-dark: oklch(0.7602 0.0292 254.84);
+    --clr-board-highlight-light: oklch(0.6601 0.144 254.84);
+    --clr-board-highlight-dark: oklch(0.6401 0.144 254.84);
+    --clr-piece-light: oklch(0.9233 0.0292 254.84);
+    --clr-piece-dark: oklch(0.3533 0.0292 254.84);
 }
 
 html {
