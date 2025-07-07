@@ -24,26 +24,7 @@ pub fn Home() -> Element {
     });
 
     let on_click_create = move |_| {
-        spawn(async move {
-            let res = create_room().await;
-            match res {
-                Ok(CreateRoomResponse::Unauthorized) => {
-                    nav.push(Route::Auth {});
-                }
-                Ok(CreateRoomResponse::Success(_)) => {
-                    nav.push(Route::PlayOnline {});
-                }
-                Ok(CreateRoomResponse::AlreadyInRoom) => {
-                    dioxus::logger::tracing::error!("Already in a room, cannot create a new one.");
-                }
-                Ok(CreateRoomResponse::FailedToGenerateId) => {
-                    dioxus::logger::tracing::error!("Failed to generate id.");
-                }
-                Err(e) => {
-                    dioxus::logger::tracing::error!("Failed to create room: {}", e);
-                }
-            }
-        });
+        nav.push(Route::CreateRoom {});
     };
 
     let mut room_id_input = use_signal(|| String::new());

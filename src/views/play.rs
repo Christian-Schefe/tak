@@ -1,27 +1,23 @@
+use crate::components::tak_board_state::{PlayerInfo, PlayerType, TakBoardState};
 use crate::components::{TakBoard, TakWebSocket};
-use crate::server::room::{get_players, get_room, GetPlayersResponse, GetRoomResponse};
-use crate::tak::action::{TakAction, TakActionResult};
-use crate::tak::ptn::Ptn;
+use crate::server::room::{get_room, GetPlayersResponse, GetRoomResponse};
+use crate::tak::action::TakActionResult;
 use crate::tak::{
-    Direction, TakCoord, TakFeedback, TakGameState, TakPieceType, TakPlayer, TimeMode, TimedTakGame,
+    TakCoord, TakFeedback, TakGameState, TakPieceType, TakPlayer, TimeMode, TimedTakGame,
 };
 use crate::views::get_session_id;
 use crate::Route;
-use dioxus::logger::tracing;
 use dioxus::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
-use std::ops::Deref;
-use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::Duration;
-use crate::components::tak_board_state::{PlayerInfo, PlayerType, TakBoardState};
+use std::collections::HashMap;
+use std::sync::{Mutex, MutexGuard};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ClientGameMessage {
     Move(String),
 }
 
-const CSS: Asset = asset!("/assets/styling/computer.css");
+const CSS: Asset = asset!("/assets/styling/board.css");
 
 #[component]
 pub fn PlayComputer() -> Element {
@@ -43,7 +39,7 @@ pub fn PlayComputer() -> Element {
     rsx! {
         document::Link { rel: "stylesheet", href: CSS }
         div {
-            id: "play-computer",
+            id: "play-view",
             TakBoard {}
         }
     }
@@ -90,7 +86,7 @@ pub fn PlayOnline() -> Element {
     rsx! {
         document::Link { rel: "stylesheet", href: CSS }
         div {
-            id: "play-computer",
+            id: "play-view",
             if let Some(room) = room_id.read().as_ref() {
                 h2 {
                     "Room ID: {room}"
@@ -103,7 +99,7 @@ pub fn PlayOnline() -> Element {
                     {format!("{:?}", session_id.read())}
                 }
             } else {
-                h1 { "No room found or not connected." }
+                h2 { "No room found or not connected." }
             }
         }
     }

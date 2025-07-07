@@ -105,6 +105,9 @@ pub fn TakBoard() -> Element {
             .unwrap_or_else(|| {
                 let mut place_positions = vec![];
                 state_clone.with_game_readonly(|game| {
+                    if game.get_current_move_index() < 2 {
+                        return;
+                    }
                     for y in 0..size {
                         for x in 0..size {
                             let pos = TakCoord::new(x, y);
@@ -200,7 +203,10 @@ pub fn TakBoard() -> Element {
                             },
                             class: if highlighted_tiles.read().contains(&TakCoord::new(i, j)) {
                                 "tak-tile-highlight"
-                            } else if selected_tiles.read().contains(&TakCoord::new(i, j)) {
+                            } else {
+                                ""
+                            },
+                            class:if selected_tiles.read().contains(&TakCoord::new(i, j)) {
                                 "tak-tile-selected"
                             } else {
                                 ""
@@ -234,43 +240,48 @@ pub fn TakBoard() -> Element {
             }
             div {
                 class: "tak-piece-selector",
-                button {
-                    class: "piece-selector",
-                    class: if *state.selected_piece_type.read() == TakPieceType::Flat {
-                        "piece-selector-current"
-                    } else {
-                        ""
-                    },
-                    onclick: move |_| {
-                        state.selected_piece_type.set(TakPieceType::Flat);
-                    },
-                    "Flat"
-                }
-                button {
-                    class: "piece-selector",
-                    class: if *state.selected_piece_type.read() == TakPieceType::Wall {
-                        "piece-selector-current"
-                    } else {
-                        ""
-                    },
-                    onclick: move |_| {
-                        state.selected_piece_type.set(TakPieceType::Wall);
-                    },
-                    "Wall"
-                }
-                button {
-                    class: "piece-selector",
-                    class: if *state.selected_piece_type.read() == TakPieceType::Capstone {
-                        "piece-selector-current"
-                    } else {
-                        ""
-                    },
-                    onclick: move |_| {
-                        state.selected_piece_type.set(TakPieceType::Capstone);
-                    },
-                    "Cap"
+                PieceTypeSelectorButton {
+                    piece_type: TakPieceType::Flat
+                },
+                PieceTypeSelectorButton {
+                    piece_type: TakPieceType::Wall
+                },
+                PieceTypeSelectorButton {
+                    piece_type: TakPieceType::Capstone
                 }
             }
+        }
+    }
+}
+
+#[component]
+fn PieceTypeSelectorButton(piece_type: TakPieceType) -> Element {
+    let mut state = use_context::<TakBoardState>();
+    let available_piece_types = state.available_piece_types.read();
+    let can_place = available_piece_types.contains(&piece_type);
+    let text = match piece_type {
+        TakPieceType::Flat => "Flat",
+        TakPieceType::Wall => "Wall",
+        TakPieceType::Capstone => "Cap",
+    };
+    rsx! {
+        button {
+            class: "piece-selector",
+            class: if *state.selected_piece_type.read() == piece_type {
+                "piece-selector-current"
+            } else {
+                ""
+            },
+            class: if can_place {
+                ""
+            } else {
+                "piece-selector-disabled"
+            },
+            disabled: !can_place,
+            onclick: move |_| {
+                state.selected_piece_type.set(piece_type);
+            },
+            {text}
         }
     }
 }

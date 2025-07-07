@@ -1,10 +1,10 @@
 use crate::components::{NavButton, NavButtonIcon};
 use crate::Route;
 use dioxus::prelude::*;
-use dioxus_free_icons::icons::fa_solid_icons::FaArrowLeft;
+use dioxus_free_icons::icons::fa_solid_icons::{FaArrowLeft, FaChessBoard};
 use dioxus_free_icons::Icon;
 
-const NAVBAR_CSS: Asset = asset!("/assets/styling/navbar.css");
+const NAVBAR_CSS: Asset = asset!("/assets/styling/navbar.scss");
 
 #[component]
 pub fn Navbar() -> Element {
@@ -31,6 +31,9 @@ pub fn Navbar() -> Element {
             }
             div {
                 id: "navbar-logo",
+                Icon {
+                    icon: FaChessBoard
+                }
                 "Tak"
             }
         }

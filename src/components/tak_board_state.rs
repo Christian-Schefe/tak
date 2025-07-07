@@ -2,8 +2,7 @@ use crate::server::room::{get_players, GetPlayersResponse};
 use crate::tak::action::{TakAction, TakActionResult};
 use crate::tak::ptn::Ptn;
 use crate::tak::{
-    CrossPlatformInstant, Direction, TakCoord, TakFeedback, TakGameState, TakPieceType, TakPlayer,
-    TimeMode, TimedTakGame,
+    Direction, TakCoord, TakFeedback, TakGameState, TakPieceType, TakPlayer, TimeMode, TimedTakGame,
 };
 use crate::views::ClientGameMessage;
 use dioxus::logger::tracing;
@@ -19,6 +18,7 @@ pub struct TakBoardState {
     pub has_started: Signal<bool>,
     pub game_state: Signal<TakGameState>,
     pub remaining_stones: Signal<HashMap<TakPlayer, (usize, usize)>>,
+    pub available_piece_types: Signal<Vec<TakPieceType>>,
     pub player: Signal<TakPlayer>,
     pub player_info: Signal<HashMap<TakPlayer, PlayerInfo>>,
     pub prev_move: Signal<Option<TakActionResult>>,
@@ -61,6 +61,7 @@ impl TakBoardState {
         let time_mode = TimeMode::new(Duration::from_secs(300), Duration::from_secs(10));
         let game = TimedTakGame::new_game(size, time_mode);
         let remaining_stones = Self::get_remaining_stones(&game);
+        let available_piece_types = vec![TakPieceType::Flat];
         TakBoardState {
             game: Arc::new(Mutex::new(game)),
             has_started: Signal::new(false),
@@ -69,12 +70,28 @@ impl TakBoardState {
             player: Signal::new(TakPlayer::White),
             player_info: Signal::new(player_info),
             move_selection: Signal::new(None),
+            available_piece_types: Signal::new(available_piece_types),
             prev_move: Signal::new(None),
             selected_piece_type: Signal::new(TakPieceType::Flat),
             size: Signal::new(size),
             pieces: Signal::new(HashMap::new()),
             message_queue: Signal::new(Vec::new()),
         }
+    }
+
+    pub fn get_active_local_player(&self) -> TakPlayer {
+        let current_player = *self.player.read();
+        if let Some(info) = self.player_info.read().get(&current_player) {
+            if info.player_type == PlayerType::Local {
+                return current_player;
+            }
+        }
+        self.player_info
+            .read()
+            .iter()
+            .find(|(_, info)| info.player_type == PlayerType::Local)
+            .map(|(p, _)| *p)
+            .unwrap_or(current_player)
     }
 
     pub fn set_time_remaining(&mut self, player: TakPlayer, time_remaining: Duration) {
@@ -213,8 +230,41 @@ impl TakBoardState {
         for id in unused_pieces {
             pieces.remove(&id);
         }
+        drop(pieces);
         let remaining_stones = Self::get_remaining_stones(&game_lock);
         self.remaining_stones.set(remaining_stones);
+
+        let active_local_player = self.get_active_local_player();
+        let available_piece_types = game_lock.get_valid_place_options(active_local_player);
+        let current_selected = self.selected_piece_type.peek().clone();
+        match current_selected {
+            TakPieceType::Capstone
+                if !available_piece_types.contains(&TakPieceType::Capstone)
+                    && available_piece_types.contains(&TakPieceType::Flat) =>
+            {
+                self.selected_piece_type.set(TakPieceType::Flat);
+            }
+            TakPieceType::Flat
+                if !available_piece_types.contains(&TakPieceType::Flat)
+                    && available_piece_types.contains(&TakPieceType::Capstone) =>
+            {
+                self.selected_piece_type.set(TakPieceType::Capstone);
+            }
+            TakPieceType::Wall
+                if !available_piece_types.contains(&TakPieceType::Wall)
+                    && available_piece_types.contains(&TakPieceType::Capstone) =>
+            {
+                self.selected_piece_type.set(TakPieceType::Capstone);
+            }
+            TakPieceType::Wall
+                if !available_piece_types.contains(&TakPieceType::Wall)
+                    && available_piece_types.contains(&TakPieceType::Flat) =>
+            {
+                self.selected_piece_type.set(TakPieceType::Flat);
+            }
+            _ => {}
+        }
+        self.available_piece_types.set(available_piece_types);
     }
 
     fn on_update_square(
@@ -374,6 +424,13 @@ impl TakBoardState {
     }
 
     fn add_to_move_selection(&mut self, pos: TakCoord) -> Option<()> {
+        let game_lock = self.game.lock().unwrap();
+        if game_lock.get_current_move_index() < 2 {
+            self.move_selection.set(None);
+            return None;
+        }
+        drop(game_lock);
+
         let prev_selection = self.move_selection.read().clone();
         let Some(selection) = prev_selection.as_ref() else {
             return self.try_select_for_move(pos);

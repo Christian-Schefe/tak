@@ -1,8 +1,8 @@
 use crate::tak::action::TakActionResult;
 use crate::tak::ptn::{Ptn, PtnAttribute};
 use crate::tak::{
-    TakAction, TakCoord, TakGame, TakGameState, TakHand, TakPlayer, TakResult, TakTower,
-    TakWinReason,
+    TakAction, TakCoord, TakGame, TakGameState, TakHand, TakPieceType, TakPlayer, TakResult,
+    TakTower, TakWinReason,
 };
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -26,6 +26,12 @@ impl TimeMode {
         Self {
             time_limit,
             time_increment,
+        }
+    }
+    pub fn new_from_secs(time_limit: u64, time_increment: u64) -> Self {
+        Self {
+            time_limit: Duration::from_secs(time_limit),
+            time_increment: Duration::from_secs(time_increment),
         }
     }
 }
@@ -55,12 +61,16 @@ impl TimedTakGame {
         self.game.get_hand(player)
     }
 
+    pub fn get_valid_place_options(&self, player: TakPlayer) -> Vec<TakPieceType> {
+        self.game.get_valid_place_options(player)
+    }
+
     pub fn get_game_state(&self) -> TakGameState {
         self.game.game_state
     }
 
     pub fn set_time_remaining(&mut self, player: TakPlayer, time_remaining: Duration) {
-        let mut time_left = match player {
+        let time_left = match player {
             TakPlayer::White => &mut self.time_left[0],
             TakPlayer::Black => &mut self.time_left[1],
         };

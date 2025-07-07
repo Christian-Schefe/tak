@@ -1,52 +1,17 @@
-:root {
-    --animation-speed: 200ms;
-
-    /** Base colors */
-    --clr-dark-a0: #000000;
-    --clr-light-a0: #ffffff;
-
-    --clr-error-a0: #ff0000;
-    --clr-error-a10: #e8a01b;
-
-    /** Theme primary colors */
-    --clr-primary-a0: oklch(0.6601 0.144 254.84);
-    --clr-primary-a10: oklch(0.7001 0.144 254.84);
-
-    /** Theme surface colors */
-    --clr-surface-a0: oklch(0.2049 0.0292 254.84);
-    --clr-surface-a10: oklch(0.3549 0.0292 254.84);
-    --clr-surface-a20: oklch(0.5049 0.0292 254.84);
-    --clr-surface-a50: oklch(0.7049 0.0292 254.84);
-
-    --clr-board-light: oklch(0.6756 0.0292 254.84);
-    --clr-board-dark: oklch(0.7049 0.0292 254.84);
-    --clr-board-selected-light: oklch(0.7702 0.0292 254.84);
-    --clr-board-selected-dark: oklch(0.7602 0.0292 254.84);
-    --clr-board-highlight-light: oklch(0.6601 0.144 254.84);
-    --clr-board-highlight-dark: oklch(0.6401 0.144 254.84);
-    --clr-piece-light: oklch(0.9233 0.0292 254.84);
-    --clr-piece-dark: oklch(0.3533 0.0292 254.84);
-}
-
-html {
+#play-view {
     width: 100%;
-    height: 100%;
-    margin: 0;
-}
-
-body {
-    background-color: var(--clr-surface-a0);
-    color: var(--clr-light-a0);
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    margin: 0;
-    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: relative;
 }
 
 .tak-board-container {
     width: 100%;
     height: 100%;
     max-width: 600px;
-    padding-top: 50px;
+    padding-top: 20px;
+    display: block;
 }
 
 .tak-board {
@@ -54,6 +19,10 @@ body {
     position: relative;
     user-select: none;
     touch-action: none;
+    justify-items: start;
+    align-items: start;
+    width: 100%;
+    aspect-ratio: 1;
 }
 
 .tak-tile {
@@ -61,8 +30,9 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    aspect-ratio: 1;
     transition: background-color var(--animation-speed) ease-in-out;
+    width: 100%;
+    height: 100%;
 }
 
 .tak-tile-light {
@@ -89,10 +59,19 @@ body {
     background-color: var(--clr-board-selected-dark);
 }
 
+.tak-tile-light.tak-tile-selected.tak-tile-highlight {
+    background-color: var(--clr-board-selected-highlight-light);
+}
+
+.tak-tile-dark.tak-tile-selected.tak-tile-highlight {
+    background-color: var(--clr-board-selected-highlight-dark);
+}
+
 .tak-tile-label {
     position: absolute;
     font-size: 14px;
     font-weight: bold;
+    width: fit-content;
 }
 
 .tak-tile-label-rank {
@@ -187,6 +166,7 @@ body {
 
 .tak-piece-hand-container {
     display: flex;
+    flex-direction: row;
     width: 100%;
     height: 50px;
     align-items: center;
@@ -215,9 +195,13 @@ body {
 
 .tak-piece-selector {
     display: flex;
+    flex-direction: row;
     width: 100%;
     align-items: center;
     justify-content: center;
+    padding: 0 10px;
+    box-sizing: border-box;
+    gap: 10px;
 }
 
 .tak-piece-selector .piece-selector {
@@ -226,9 +210,7 @@ body {
     cursor: pointer;
     padding: 5px;
     border-radius: 5px;
-    margin: 0 5px;
     color: white;
-    width: 40px;
     height: 40px;
     user-select: none;
     flex-grow: 1;
@@ -239,17 +221,22 @@ body {
     background-color: var(--clr-board-light);
 }
 
-.tak-piece-selector .piece-selector-current {
+.tak-piece-selector .piece-selector.piece-selector-current {
     background-color: var(--clr-primary-a0);
 }
 
-.tak-piece-selector .piece-selector-current:active {
+.tak-piece-selector .piece-selector.piece-selector-current:active {
     background-color: var(--clr-primary-a10);
+}
+
+.tak-piece-selector .piece-selector.piece-selector-disabled {
+    background-color: var(--clr-piece-dark);
 }
 
 .tak-game-info {
     width: 100%;
     display: flex;
+    flex-direction: row;
     justify-content: space-between;
     align-items: center;
     height: 50px;
@@ -263,6 +250,7 @@ body {
     height: 100%;
     min-width: 60px;
     display: flex;
+    flex-direction: row;
     align-items: center;
     justify-content: center;
 }
@@ -289,6 +277,7 @@ body {
 .flats-counter {
     flex-grow: 1;
     display: flex;
+    flex-direction: row;
     justify-content: space-between;
     align-items: center;
     border-radius: 5px;

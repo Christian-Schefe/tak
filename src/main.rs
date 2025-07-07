@@ -1,6 +1,6 @@
 use crate::views::Auth;
 use dioxus::prelude::*;
-use views::{Home, More, Navbar, PlayComputer, PlayOnline, Puzzles};
+use views::{CreateRoom, Home, More, Navbar, PlayComputer, PlayOnline, Puzzles};
 
 mod components;
 mod server;
@@ -22,10 +22,12 @@ enum Route {
     PlayComputer {},
     #[route("/playonline")]
     PlayOnline {},
+    #[route("/createroom")]
+    CreateRoom {},
 }
 
 const FAVICON: Asset = asset!("/assets/favicon.ico");
-const MAIN_CSS: Asset = asset!("/assets/styling/main.css");
+const MAIN_CSS: Asset = asset!("/assets/styling/main.scss");
 
 #[cfg(not(feature = "server"))]
 fn main() {
@@ -57,7 +59,10 @@ async fn main() {
     let router = axum::Router::new()
         .serve_dioxus_application(config, App)
         .route("/ws", axum::routing::any(server::websocket::ws_handler))
-        .route("/ws2", axum::routing::any(server::websocket::ws_test_handler))
+        .route(
+            "/ws2",
+            axum::routing::any(server::websocket::ws_test_handler),
+        )
         .layer(Extension(session_store))
         .layer(Extension(shared_state))
         .layer(CookieManagerLayer::new())
@@ -74,7 +79,6 @@ fn App() -> Element {
     rsx! {
         document::Link { rel: "icon", href: FAVICON }
         document::Link { rel: "stylesheet", href: MAIN_CSS }
-
         Router::<Route> {}
     }
 }

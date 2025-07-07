@@ -43,10 +43,8 @@ pub fn NavButton(to: Route, label: String, icon: NavButtonIcon) -> Element {
             to,
             class: "nav-button",
             active_class: "nav-button-active",
-            div {
-                {icon},
-                "{label}"
-            }
+            {icon},
+            "{label}"
         }
     }
 }

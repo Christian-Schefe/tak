@@ -490,6 +490,22 @@ impl TakGame {
             .ok_or(TakInvalidAction::TileEmpty)
     }
 
+    pub fn get_valid_place_options(&self, player: TakPlayer) -> Vec<TakPieceType> {
+        if self.actions.len() < 2 {
+            return vec![TakPieceType::Flat];
+        }
+        let hand = self.get_hand(player);
+        let mut options = Vec::new();
+        if hand.capstones > 0 {
+            options.push(TakPieceType::Capstone);
+        }
+        if hand.stones > 0 {
+            options.push(TakPieceType::Flat);
+            options.push(TakPieceType::Wall);
+        }
+        options
+    }
+
     fn try_place_piece(
         &mut self,
         position: TakCoord,
@@ -498,6 +514,9 @@ impl TakGame {
         let player = if self.actions.len() >= 2 {
             self.current_player
         } else {
+            if piece_type != TakPieceType::Flat {
+                return Err(TakInvalidAction::InvalidAction);
+            }
             self.current_player.opponent()
         };
         let tile = self.try_get_tile(&position)?;
@@ -531,6 +550,10 @@ impl TakGame {
         take: usize,
         drops: Vec<usize>,
     ) -> TakResult<TakActionResult> {
+        if self.actions.len() < 2 {
+            return Err(TakInvalidAction::InvalidAction);
+        }
+
         let from_tower = self.try_get_tower_at(&from)?;
         let from_top_type = from_tower.top_type;
         let from_composition_len = from_tower.composition.len();
