@@ -1,9 +1,9 @@
-use std::time::Duration;
+use crate::tak::{TakKomi, TakSettings, TakStones, TakTimeMode};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PtnAttribute {
     Size(usize),
-    Clock(Duration, Duration),
+    Clock(usize, usize),
     Komi(usize, bool),
     Flats(usize),
     Caps(usize),
@@ -14,10 +14,8 @@ impl PtnAttribute {
         match self {
             PtnAttribute::Size(size) => format!("[Size \"{}\"]", size),
             PtnAttribute::Clock(time, increment) => {
-                let full_secs = time.as_secs();
-                let mins = full_secs / 60;
-                let secs = full_secs % 60;
-                let increment = increment.as_secs();
+                let mins = time / 60;
+                let secs = time % 60;
                 format!("[Clock \"{}:{} +{}\"]", mins, secs, increment)
             }
             PtnAttribute::Komi(komi, add_half) => {
@@ -55,16 +53,13 @@ impl PtnAttribute {
                 if time_parts.len() != 2 {
                     return None;
                 }
-                let mins = time_parts[0].parse::<u64>().ok()?;
-                let secs = time_parts[1].parse::<u64>().ok()?;
+                let mins = time_parts[0].parse::<usize>().ok()?;
+                let secs = time_parts[1].parse::<usize>().ok()?;
                 let increment = parts[2]
                     .trim_matches(|c| c == '"' || c == '+')
-                    .parse::<u64>()
+                    .parse::<usize>()
                     .ok()?;
-                Some(PtnAttribute::Clock(
-                    Duration::from_secs(mins * 60 + secs),
-                    Duration::from_secs(increment),
-                ))
+                Some(PtnAttribute::Clock(mins * 60 + secs, increment))
             }
             "Komi" => {
                 if parts.len() < 2 {
@@ -95,11 +90,41 @@ pub struct Ptn {
 }
 
 impl Ptn {
-    pub fn get_size(&self) -> Option<usize> {
-        self.attributes.iter().find_map(|attr| match attr {
-            PtnAttribute::Size(size) => Some(*size),
-            _ => None,
-        })
+    pub fn get_settings(&self) -> Option<TakSettings> {
+        let mut size = None;
+        let mut komi = None;
+        let mut flats = None;
+        let mut caps = None;
+        let mut clock = None;
+        for attr in &self.attributes {
+            match attr {
+                PtnAttribute::Size(s) => size = Some(*s),
+                PtnAttribute::Komi(k, add_half) => komi = Some((*k, *add_half)),
+                PtnAttribute::Flats(f) => flats = Some(*f),
+                PtnAttribute::Caps(c) => caps = Some(*c),
+                PtnAttribute::Clock(time, increment) => clock = Some((*time, *increment)),
+            }
+        }
+        if size.is_some() && komi.is_some() && flats.is_some() && caps.is_some() && clock.is_some()
+        {
+            Some(TakSettings {
+                size: size.unwrap(),
+                komi: TakKomi {
+                    whole: komi.unwrap().0,
+                    half: komi.unwrap().1,
+                },
+                stones: TakStones {
+                    stones: flats.unwrap(),
+                    capstones: caps.unwrap(),
+                },
+                time_mode: TakTimeMode {
+                    time_limit: clock.unwrap().0,
+                    time_increment: clock.unwrap().1,
+                },
+            })
+        } else {
+            None
+        }
     }
 
     pub fn to_str(&self) -> String {

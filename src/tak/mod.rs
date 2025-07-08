@@ -5,15 +5,20 @@ pub mod timed;
 use crate::tak::action::{TakAction, TakActionResult};
 use crate::tak::ptn::Ptn;
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 pub use timed::*;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TakKomi {
     pub whole: usize,
     pub half: bool,
 }
 
 impl TakKomi {
+    pub fn default() -> Self {
+        TakKomi::new(2, false)
+    }
+
     pub fn new(whole: usize, half: bool) -> Self {
         TakKomi { whole, half }
     }
@@ -31,16 +36,57 @@ impl TakKomi {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct TakGame {
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct TakStones {
+    pub stones: usize,
+    pub capstones: usize,
+}
+
+impl TakStones {
+    pub fn default_from_size(size: usize) -> Self {
+        let (stones, capstones) = match size {
+            3 => (10, 0),
+            4 => (15, 0),
+            5 => (21, 1),
+            6 => (30, 1),
+            7 => (40, 2),
+            8 => (50, 2),
+            _ => (21, 1),
+        };
+        TakStones { stones, capstones }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct TakSettings {
     pub size: usize,
     pub komi: TakKomi,
+    pub time_mode: TakTimeMode,
+    pub stones: TakStones,
+}
+
+impl TakSettings {
+    pub fn default() -> Self {
+        TakSettings {
+            size: 5,
+            time_mode: TakTimeMode::new(300, 5),
+            komi: TakKomi::default(),
+            stones: TakStones::default_from_size(5),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct TakGame {
+    pub settings: TakSettings,
     pub board: Vec<TakTile>,
     pub current_player: TakPlayer,
     pub actions: Vec<TakActionResult>,
     pub hands: [TakHand; 2],
+    pub time_left: [Duration; 2],
+    last_action_time: Option<CrossPlatformInstant>,
     id_counter: usize,
-    game_state: TakGameState,
+    pub game_state: TakGameState,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -79,26 +125,10 @@ pub struct TakHand {
 }
 
 impl TakHand {
-    pub fn new(size: usize) -> Self {
+    pub fn new(stones: &TakStones) -> Self {
         TakHand {
-            stones: match size {
-                3 => 10,
-                4 => 15,
-                5 => 21,
-                6 => 30,
-                7 => 40,
-                8 => 50,
-                _ => panic!("Invalid Tak board size"),
-            },
-            capstones: match size {
-                3 => 0,
-                4 => 0,
-                5 => 1,
-                6 => 1,
-                7 => 2,
-                8 => 2,
-                _ => panic!("Invalid Tak board size"),
-            },
+            stones: stones.stones,
+            capstones: stones.capstones,
         }
     }
 
@@ -121,7 +151,7 @@ impl TakHand {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct TakCoord {
     pub x: usize,
     pub y: usize,
@@ -307,20 +337,70 @@ impl Direction {
 }
 
 impl TakGame {
-    pub fn new(size: usize) -> Self {
+    pub fn new(settings: TakSettings) -> Self {
+        let size = settings.size;
+        let time_left = [
+            Duration::from_secs(settings.time_mode.time_limit as u64),
+            Duration::from_secs(settings.time_mode.time_limit as u64),
+        ];
         TakGame {
-            size,
-            komi: TakKomi::new(2, false),
             board: vec![None; size * size],
             current_player: TakPlayer::White,
             actions: Vec::new(),
-            hands: [TakHand::new(size), TakHand::new(size)],
+            hands: [
+                TakHand::new(&settings.stones),
+                TakHand::new(&settings.stones),
+            ],
             id_counter: 0,
             game_state: TakGameState::Ongoing,
+            time_left,
+            last_action_time: None,
+            settings,
         }
     }
 
+    pub fn size(&self) -> usize {
+        self.settings.size
+    }
+
+    pub fn get_time_remaining(&self, player: TakPlayer) -> Duration {
+        let time_left = match player {
+            TakPlayer::White => self.time_left[0],
+            TakPlayer::Black => self.time_left[1],
+        };
+        if player != self.current_player || self.game_state != TakGameState::Ongoing {
+            return time_left;
+        }
+        let now = CrossPlatformInstant::now();
+        let elapsed = self
+            .last_action_time
+            .map(|t| now.elapsed_since(t))
+            .unwrap_or(0);
+        time_left.saturating_sub(Duration::from_millis(elapsed))
+    }
+
+    pub fn get_current_move_index(&self) -> usize {
+        self.actions.len()
+    }
+
+    pub fn set_time_remaining(&mut self, player: TakPlayer, time_remaining: Duration) {
+        let time_left = match player {
+            TakPlayer::White => &mut self.time_left[0],
+            TakPlayer::Black => &mut self.time_left[1],
+        };
+        *time_left = time_remaining;
+    }
+
     pub fn try_do_action(&mut self, action: TakAction) -> TakResult<TakActionResult> {
+        let now = CrossPlatformInstant::now();
+        self.try_do_action_at(action, now)
+    }
+
+    pub fn try_do_action_at(
+        &mut self,
+        action: TakAction,
+        time: CrossPlatformInstant,
+    ) -> TakResult<TakActionResult> {
         if self.game_state != TakGameState::Ongoing {
             return Err(TakInvalidAction::GameOver);
         }
@@ -338,6 +418,24 @@ impl TakGame {
         }?;
         self.actions.push(action_result.clone());
         self.check_game_over();
+
+        let elapsed = self
+            .last_action_time
+            .map(|t| time.elapsed_since(t))
+            .unwrap_or(0);
+        self.last_action_time = Some(time);
+        let time_left = match self.current_player {
+            TakPlayer::White => &mut self.time_left[0],
+            TakPlayer::Black => &mut self.time_left[1],
+        };
+        *time_left = time_left.saturating_sub(Duration::from_millis(elapsed));
+        if time_left.is_zero() {
+            self.game_state =
+                TakGameState::Win(self.current_player.opponent(), TakWinReason::Timeout);
+        } else {
+            *time_left += Duration::from_secs(self.settings.time_mode.time_increment as u64);
+        }
+
         self.current_player = match self.current_player {
             TakPlayer::White => TakPlayer::Black,
             TakPlayer::Black => TakPlayer::White,
@@ -355,8 +453,8 @@ impl TakGame {
             .iter()
             .flat_map(|actions| actions.iter().map(|x| TakAction::from_ptn(x)))
             .collect::<Option<Vec<_>>>()?;
-        let size = ptn.get_size()?;
-        let mut game = Self::new(size);
+        let settings = ptn.get_settings()?;
+        let mut game = Self::new(settings);
         for action in actions {
             game.try_do_action(action).ok()?;
         }
@@ -366,10 +464,11 @@ impl TakGame {
 
     fn check_game_over(&mut self) {
         let player = self.current_player;
+        let size = self.settings.size;
         let check_direction = |is_horizontal: bool| {
-            let mut visited = vec![false; self.size * self.size];
+            let mut visited = vec![false; size * size];
             let mut stack = Vec::new();
-            for i in 0..self.size {
+            for i in 0..size {
                 let pos = if is_horizontal {
                     TakCoord::new(0, i)
                 } else {
@@ -383,11 +482,11 @@ impl TakGame {
                 }
             }
             while let Some(pos) = stack.pop() {
-                if visited[pos.y * self.size + pos.x] {
+                if visited[pos.y * size + pos.x] {
                     continue;
                 }
-                visited[pos.y * self.size + pos.x] = true;
-                if (if is_horizontal { pos.x } else { pos.y }) == self.size - 1 {
+                visited[pos.y * size + pos.x] = true;
+                if (if is_horizontal { pos.x } else { pos.y }) == size - 1 {
                     return true;
                 }
                 for direction in Direction::all() {
@@ -404,7 +503,6 @@ impl TakGame {
             }
             false
         };
-        dioxus::logger::tracing::info!("Checking game over");
         if check_direction(true) || check_direction(false) {
             self.game_state = TakGameState::Win(player, TakWinReason::Road);
             dioxus::logger::tracing::info!("Game over by road: {:?}", self.game_state);
@@ -414,10 +512,9 @@ impl TakGame {
         let hand = self.get_hand(player);
         let has_remaining_stones = hand.stones > 0 || hand.capstones > 0;
 
-        dioxus::logger::tracing::info!("Counting");
         let mut flat_counts = [0, 0];
-        for y in 0..self.size {
-            for x in 0..self.size {
+        for y in 0..size {
+            for x in 0..size {
                 let pos = TakCoord::new(x, y);
                 if let Ok(tower) = self.try_get_tower_at(&pos) {
                     if tower.top_type == TakPieceType::Flat {
@@ -428,15 +525,15 @@ impl TakGame {
                         flat_counts[i] += 1;
                     }
                 } else if has_remaining_stones {
-                    dioxus::logger::tracing::info!(
-                        "Square {:?} is empty and player has stones left",
-                        pos
-                    );
                     return;
                 }
             }
         }
-        if let Some(winner) = self.komi.determine_winner(flat_counts[0], flat_counts[1]) {
+        if let Some(winner) = self
+            .settings
+            .komi
+            .determine_winner(flat_counts[0], flat_counts[1])
+        {
             self.game_state = TakGameState::Win(winner, TakWinReason::FlatCount);
         } else {
             self.game_state = TakGameState::Draw;
@@ -451,7 +548,7 @@ impl TakGame {
         }
     }
 
-    fn get_hand(&self, player: TakPlayer) -> &TakHand {
+    pub fn get_hand(&self, player: TakPlayer) -> &TakHand {
         match player {
             TakPlayer::White => &self.hands[0],
             TakPlayer::Black => &self.hands[1],
@@ -464,28 +561,41 @@ impl TakGame {
             .chunks(2)
             .map(|actions| actions.iter().map(|x| x.to_ptn()).collect::<Vec<_>>())
             .collect::<Vec<_>>();
-        let attributes = vec![ptn::PtnAttribute::Size(self.size)];
+        let attributes = vec![
+            ptn::PtnAttribute::Size(self.settings.size),
+            ptn::PtnAttribute::Komi(self.settings.komi.whole, self.settings.komi.half),
+            ptn::PtnAttribute::Flats(self.settings.stones.stones),
+            ptn::PtnAttribute::Caps(self.settings.stones.capstones),
+            ptn::PtnAttribute::Clock(
+                self.settings.time_mode.time_limit,
+                self.settings.time_mode.time_increment,
+            ),
+        ];
         Ptn { attributes, turns }
     }
 
     fn get_tile(&self, position: &TakCoord) -> &TakTile {
-        position.validate(self.size).unwrap();
-        &self.board[position.y * self.size + position.x]
+        let size = self.settings.size;
+        position.validate(size).unwrap();
+        &self.board[position.y * size + position.x]
     }
 
     fn get_tile_mut(&mut self, position: &TakCoord) -> &mut TakTile {
-        position.validate(self.size).unwrap();
-        &mut self.board[position.y * self.size + position.x]
+        let size = self.settings.size;
+        position.validate(size).unwrap();
+        &mut self.board[position.y * size + position.x]
     }
 
     fn try_get_tile(&self, position: &TakCoord) -> TakResult<&TakTile> {
-        position.validate(self.size)?;
-        Ok(&self.board[position.y * self.size + position.x])
+        let size = self.settings.size;
+        position.validate(size)?;
+        Ok(&self.board[position.y * size + position.x])
     }
 
     fn try_get_tower_at(&self, position: &TakCoord) -> TakResult<&TakTower> {
-        position.validate(self.size)?;
-        self.board[position.y * self.size + position.x]
+        let size = self.settings.size;
+        position.validate(size)?;
+        self.board[position.y * size + position.x]
             .as_ref()
             .ok_or(TakInvalidAction::TileEmpty)
     }
@@ -553,6 +663,7 @@ impl TakGame {
         if self.actions.len() < 2 {
             return Err(TakInvalidAction::InvalidAction);
         }
+        let size = self.settings.size;
 
         let from_tower = self.try_get_tower_at(&from)?;
         let from_top_type = from_tower.top_type;
@@ -563,7 +674,7 @@ impl TakGame {
 
         let drop_len = drops.len();
         let drop_sum: usize = drops.iter().sum();
-        if take > self.size
+        if take > size
             || from_composition_len < take
             || take == 0
             || drop_sum != take
@@ -572,7 +683,7 @@ impl TakGame {
             return Err(TakInvalidAction::InvalidAction);
         }
         let positions = from
-            .try_get_positions(&direction, drop_len, self.size)
+            .try_get_positions(&direction, drop_len, size)
             .ok_or(TakInvalidAction::InvalidAction)?;
         let mut has_flattened = false;
         for i in 0..drop_len {

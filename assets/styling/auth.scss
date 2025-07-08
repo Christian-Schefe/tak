@@ -1,0 +1,93 @@
+@import "settings/colors";
+
+.auth-container {
+  width: 100%;
+  display: block;
+  padding: 20px;
+  box-sizing: border-box;
+}
+
+.auth-form {
+  width: 100%;
+  max-width: 400px;
+  margin: auto;
+  background-color: $clr-surface;
+  display: flex;
+  flex-direction: column;
+  border-radius: 8px;
+  justify-items: center;
+  align-items: center;
+  outline: 1px solid $clr-surface-light;
+  position: relative;
+  padding: 10px;
+  box-sizing: border-box;
+}
+
+.auth-form .auth-instruction {
+  font-size: 14px;
+  margin: 20px 0 5px 0;
+  width: 100%;
+  padding: 0 5px;
+  box-sizing: border-box;
+}
+
+.auth-form .auth-validation {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 100px;
+}
+
+.auth-form .auth-error {
+  color: $clr-error;
+  font-size: 14px;
+  margin: 0;
+  width: 100%;
+  padding: 5px 10px;
+}
+
+.auth-form .auth-button {
+  min-width: 100px;
+  padding: 10px;
+  background-color: $clr-primary;
+  color: $clr-white;
+  border: none;
+  border-radius: 4px;
+  margin: 30px 0 10px 0;
+
+  &:active {
+    background-color: $clr-primary-light;
+  }
+}
+
+.auth-form .auth-toggle {
+  min-width: 100px;
+  padding: 5px 10px;
+  background-color: transparent;
+  color: $clr-primary;
+  border: none;
+  border-radius: 4px;
+}
+
+.auth-form .auth-input {
+  width: 100%;
+  padding: 10px;
+  outline: none;
+  border: 1px solid $clr-surface-light;
+  border-radius: 4px;
+  background-color: $clr-background;
+  color: $clr-white;
+  box-sizing: border-box;
+
+  &.auth-invalid {
+    border-color: $clr-error;
+  }
+
+  &:focus {
+    border-color: $clr-primary;
+  }
+
+  &.auth-invalid:focus {
+      border-color: $clr-warning;
+  }
+}

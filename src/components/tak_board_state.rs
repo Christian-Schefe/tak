@@ -2,19 +2,18 @@ use crate::server::room::{get_players, GetPlayersResponse};
 use crate::tak::action::{TakAction, TakActionResult};
 use crate::tak::ptn::Ptn;
 use crate::tak::{
-    Direction, TakCoord, TakFeedback, TakGameState, TakPieceType, TakPlayer, TimeMode, TimedTakGame,
+    Direction, TakCoord, TakFeedback, TakGame, TakGameState, TakPieceType, TakPlayer, TakSettings,
 };
 use crate::views::ClientGameMessage;
 use dioxus::logger::tracing;
 use dioxus::prelude::{Readable, Signal, Writable, WritableVecExt, Write};
 use std::collections::{HashMap, HashSet};
-use std::ops::Deref;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 #[derive(Clone)]
 pub struct TakBoardState {
-    game: Arc<Mutex<TimedTakGame>>,
+    game: Arc<Mutex<TakGame>>,
     pub has_started: Signal<bool>,
     pub game_state: Signal<TakGameState>,
     pub remaining_stones: Signal<HashMap<TakPlayer, (usize, usize)>>,
@@ -30,6 +29,7 @@ pub struct TakBoardState {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+#[allow(dead_code)]
 pub enum PlayerType {
     Local,
     Remote,
@@ -57,12 +57,12 @@ pub struct MoveSelection {
 }
 
 impl TakBoardState {
-    pub fn new(size: usize, player_info: HashMap<TakPlayer, PlayerInfo>) -> Self {
-        let time_mode = TimeMode::new(Duration::from_secs(300), Duration::from_secs(10));
-        let game = TimedTakGame::new_game(size, time_mode);
+    pub fn new(settings: TakSettings, player_info: HashMap<TakPlayer, PlayerInfo>) -> Self {
+        let game = TakGame::new(settings);
         let remaining_stones = Self::get_remaining_stones(&game);
         let available_piece_types = vec![TakPieceType::Flat];
         TakBoardState {
+            size: Signal::new(game.settings.size),
             game: Arc::new(Mutex::new(game)),
             has_started: Signal::new(false),
             game_state: Signal::new(TakGameState::Ongoing),
@@ -73,9 +73,17 @@ impl TakBoardState {
             available_piece_types: Signal::new(available_piece_types),
             prev_move: Signal::new(None),
             selected_piece_type: Signal::new(TakPieceType::Flat),
-            size: Signal::new(size),
             pieces: Signal::new(HashMap::new()),
             message_queue: Signal::new(Vec::new()),
+        }
+    }
+
+    pub fn replace_settings_if_not_started(&mut self, settings: &TakSettings) {
+        if !*self.has_started.read() {
+            let mut game_lock = self.game.lock().unwrap();
+            *game_lock = TakGame::new(settings.clone());
+            drop(game_lock);
+            self.on_game_update();
         }
     }
 
@@ -145,9 +153,9 @@ impl TakBoardState {
     }
 
     pub fn reset_game(&mut self) {
-        let time_mode = TimeMode::new(Duration::from_secs(300), Duration::from_secs(10));
         let mut game_lock = self.game.lock().unwrap();
-        *game_lock = TimedTakGame::new_game(*self.size.read(), time_mode);
+        let settings = game_lock.settings.clone();
+        *game_lock = TakGame::new(settings);
         drop(game_lock);
         self.has_started.set(false);
         self.player.set(TakPlayer::White);
@@ -183,13 +191,6 @@ impl TakBoardState {
         };
     }
 
-    pub fn with_game_readonly<R, F: FnOnce(&TimedTakGame) -> R>(&self, func: F) -> R {
-        let lock = self.game.lock().unwrap();
-        let res = func(lock.deref());
-        drop(lock);
-        res
-    }
-
     pub fn get_time_remaining(&self, player: TakPlayer) -> Duration {
         let game_lock = self.game.lock().unwrap();
         game_lock.get_time_remaining(player)
@@ -202,10 +203,9 @@ impl TakBoardState {
             self.message_queue
                 .push(ClientGameMessage::Move(action.to_ptn()));
         }
-        self.prev_move.set(Some(action));
     }
 
-    fn get_remaining_stones(game: &TimedTakGame) -> HashMap<TakPlayer, (usize, usize)> {
+    fn get_remaining_stones(game: &TakGame) -> HashMap<TakPlayer, (usize, usize)> {
         let mut remaining_stones = HashMap::new();
         for player in TakPlayer::all() {
             let hand = game.get_hand(player);
@@ -216,9 +216,11 @@ impl TakBoardState {
 
     fn on_game_update(&mut self) {
         let game_lock = self.game.lock().unwrap();
-        let new_player = game_lock.current_player();
+        self.size.set(game_lock.size());
+        self.prev_move.set(game_lock.actions.last().cloned());
+        let new_player = game_lock.current_player;
         self.player.set(new_player);
-        self.game_state.set(game_lock.get_game_state());
+        self.game_state.set(game_lock.game_state);
         let mut pieces = self.pieces.write();
         let mut unused_pieces = pieces.keys().cloned().collect::<HashSet<_>>();
         let size = game_lock.size();
@@ -268,7 +270,7 @@ impl TakBoardState {
     }
 
     fn on_update_square(
-        game_lock: &MutexGuard<TimedTakGame>,
+        game_lock: &MutexGuard<TakGame>,
         unused_pieces: &mut HashSet<usize>,
         pieces: &mut Write<HashMap<usize, TakPieceState>>,
         y: usize,
@@ -358,8 +360,8 @@ impl TakBoardState {
         self.try_do_local_move_action()
     }
 
-    fn is_current_player_local(&self, game: &TimedTakGame) -> bool {
-        let player = game.current_player();
+    fn is_current_player_local(&self, game: &TakGame) -> bool {
+        let player = game.current_player;
         if let Some(info) = self.player_info.read().get(&player) {
             info.player_type == PlayerType::Local
         } else {
@@ -370,7 +372,6 @@ impl TakBoardState {
     fn try_do_local_move_action(&mut self) -> Option<TakFeedback> {
         let move_action = self.move_selection.read().clone()?;
         let drop_sum = move_action.drops.iter().sum::<usize>();
-        tracing::info!("selection: {:?}", move_action);
         if drop_sum < move_action.count {
             return None;
         } else if drop_sum > move_action.count || move_action.count == 0 {
@@ -486,6 +487,134 @@ impl TakBoardState {
             direction: None,
         }));
         Some(())
+    }
+
+    pub fn get_bridges(&self) -> HashMap<TakCoord, (TakPlayer, Vec<Direction>)> {
+        let _ = self.player.read();
+        let game_lock = self.game.lock().unwrap();
+        let mut bridges = Vec::new();
+        let size = game_lock.size();
+        for y in 0..size {
+            for x in 0..size {
+                let pos = TakCoord::new(x, y);
+                let Some(tower) = game_lock.try_get_tower(pos) else {
+                    continue;
+                };
+                let player = tower.controlling_player();
+                if tower.top_type == TakPieceType::Wall {
+                    continue;
+                }
+                let mut check_positions = vec![
+                    (TakCoord::new(x + 1, y), Direction::Right),
+                    (TakCoord::new(x, y + 1), Direction::Up),
+                ];
+                if x > 0 {
+                    check_positions.push((TakCoord::new(x - 1, y), Direction::Left));
+                }
+                if y > 0 {
+                    check_positions.push((TakCoord::new(x, y - 1), Direction::Down));
+                }
+                for (other_pos, direction) in check_positions {
+                    if let Some(other_tower) = game_lock.try_get_tower(other_pos) {
+                        if other_tower.controlling_player() == player
+                            && other_tower.top_type != TakPieceType::Wall
+                        {
+                            bridges.push((pos, player, direction));
+                        }
+                    }
+                }
+                if x + 1 == size {
+                    bridges.push((pos, player, Direction::Right));
+                }
+                if x == 0 {
+                    bridges.push((pos, player, Direction::Left));
+                }
+                if y + 1 == size {
+                    bridges.push((pos, player, Direction::Up));
+                }
+                if y == 0 {
+                    bridges.push((pos, player, Direction::Down));
+                }
+            }
+        }
+        let mut bridge_map = HashMap::new();
+        for (pos, player, direction) in bridges {
+            bridge_map
+                .entry(pos)
+                .or_insert_with(|| (player, vec![]))
+                .1
+                .push(direction);
+        }
+        bridge_map
+    }
+
+    pub fn get_selected_tiles(&self) -> Vec<TakCoord> {
+        let player = *self.player.read();
+        if !*self.has_started.read() || *self.game_state.read() != TakGameState::Ongoing {
+            return vec![];
+        }
+        let Some(PlayerInfo {
+            name: _,
+            player_type: PlayerType::Local,
+        }) = self.player_info.read().get(&player)
+        else {
+            return vec![];
+        };
+        self.move_selection
+            .read()
+            .as_ref()
+            .map(|m| {
+                let mut positions = vec![];
+                if let Some(dir) = m.direction {
+                    let offset_pos = m.position.offset_by(&dir, m.drops.len()).unwrap();
+                    positions.push(offset_pos);
+                    if let Some(pos) = offset_pos.offset_by(&dir, 1) {
+                        if self.can_drop_at(m, pos) {
+                            positions.push(pos);
+                        }
+                    }
+                } else {
+                    for dir in Direction::all() {
+                        if let Some(pos) = m.position.offset_by(&dir, 1) {
+                            if self.can_drop_at(m, pos) {
+                                positions.push(pos);
+                            }
+                        }
+                    }
+                }
+                positions
+            })
+            .unwrap_or_else(|| vec![])
+    }
+
+    pub fn get_highlighted_tiles(&self) -> Vec<TakCoord> {
+        if let TakGameState::Win(winner, _) = *self.game_state.read() {
+            self.get_winning_tiles(winner)
+        } else if let Some(prev_move) = self.prev_move.read().as_ref() {
+            match prev_move {
+                TakActionResult::PlacePiece {
+                    position,
+                    piece_type: _,
+                } => {
+                    vec![*position]
+                }
+                TakActionResult::MovePiece {
+                    from,
+                    direction,
+                    drops,
+                    take: _,
+                    flattened: _,
+                } => {
+                    let mut positions = from
+                        .try_get_positions(direction, drops.len(), *self.size.read())
+                        .unwrap_or_else(|| vec![]);
+                    positions.push(*from);
+                    positions
+                }
+            }
+        } else {
+            vec![]
+        }
     }
 }
 

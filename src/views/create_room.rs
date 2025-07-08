@@ -1,10 +1,9 @@
-use crate::server::room::{create_room, CreateRoomResponse};
+use crate::server::room::{create_room, CreateRoomResponse, RoomSettings};
+use crate::tak::{TakKomi, TakSettings, TakStones, TakTimeMode};
 use crate::Route;
 use dioxus::prelude::*;
 use dioxus_free_icons::icons::fa_solid_icons::{FaBolt, FaChessBoard, FaClock};
 use dioxus_free_icons::Icon;
-
-const CSS: Asset = asset!("/assets/styling/create_room.css");
 
 #[component]
 pub fn CreateRoom() -> Element {
@@ -20,8 +19,19 @@ pub fn CreateRoom() -> Element {
     let mut time_mode = use_signal(|| (10, 0));
 
     let on_click_create = move |_| {
+        let time_mode = time_mode.read().clone();
+        let time_mode = TakTimeMode::new(time_mode.0 * 60, time_mode.1);
+        let board_size = *board_size.read();
+        let create_room_params = RoomSettings {
+            game_settings: TakSettings {
+                size: board_size,
+                time_mode: time_mode.clone(),
+                komi: TakKomi::default(),
+                stones: TakStones::default_from_size(board_size),
+            },
+        };
         spawn(async move {
-            let res = create_room().await;
+            let res = create_room(create_room_params).await;
             match res {
                 Ok(CreateRoomResponse::Unauthorized) => {
                     nav.push(Route::Auth {});
@@ -57,7 +67,7 @@ pub fn CreateRoom() -> Element {
                 }
                 div {
                     class: "category-container",
-                    for size in 3..=9 {
+                    for size in 3..=8 {
                         button {
                             class: "board-size-button",
                             onclick: move |_| board_size.set(size),
@@ -90,6 +100,7 @@ pub fn CreateRoom() -> Element {
             }
             button {
                 id: "create-room-button",
+                class: "primary-button",
                 onclick: on_click_create,
                 "Create Room",
             }

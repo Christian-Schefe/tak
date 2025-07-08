@@ -4,8 +4,6 @@ use dioxus::core_macro::{component, rsx};
 use dioxus::dioxus_core::Element;
 use dioxus::prelude::*;
 
-const CSS: Asset = asset!("/assets/styling/auth.css");
-
 #[derive(Clone, Debug, Copy, PartialEq)]
 enum AuthState {
     NotAttempted,
@@ -119,7 +117,6 @@ pub fn Auth() -> Element {
     };
 
     rsx! {
-        document::Link { rel: "stylesheet", href: CSS }
         div {
             class: "auth-container",
             div {
@@ -134,7 +131,7 @@ pub fn Auth() -> Element {
                 input {
                     type: "text",
                     class: "auth-input",
-                    class: if form_state.read().invalid_username { "auth-invalid" },
+                    class: if !show_login && form_state.read().invalid_username { "auth-invalid" },
                     placeholder: "Username",
                     name: "username",
                     oninput: move |e| {
@@ -148,7 +145,7 @@ pub fn Auth() -> Element {
                 input {
                     type: "password",
                     class: "auth-input",
-                    class: if form_state.read().invalid_password { "auth-invalid" },
+                    class: if !show_login && form_state.read().invalid_password { "auth-invalid" },
                     placeholder: "Password",
                     name: "password",
                     oninput: move |e| {

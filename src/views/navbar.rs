@@ -4,8 +4,6 @@ use dioxus::prelude::*;
 use dioxus_free_icons::icons::fa_solid_icons::{FaArrowLeft, FaChessBoard};
 use dioxus_free_icons::Icon;
 
-const NAVBAR_CSS: Asset = asset!("/assets/styling/navbar.scss");
-
 #[component]
 pub fn Navbar() -> Element {
     let nav = use_navigator();
@@ -19,7 +17,6 @@ pub fn Navbar() -> Element {
     };
 
     rsx! {
-        document::Link { rel: "stylesheet", href: NAVBAR_CSS }
         div {
             id: "navbar-top",
             button {

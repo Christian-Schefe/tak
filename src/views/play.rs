@@ -1,23 +1,17 @@
 use crate::components::tak_board_state::{PlayerInfo, PlayerType, TakBoardState};
 use crate::components::{TakBoard, TakWebSocket};
-use crate::server::room::{get_room, GetPlayersResponse, GetRoomResponse};
-use crate::tak::action::TakActionResult;
-use crate::tak::{
-    TakCoord, TakFeedback, TakGameState, TakPieceType, TakPlayer, TimeMode, TimedTakGame,
-};
+use crate::server::room::{get_room, GetRoomResponse};
+use crate::tak::{TakPlayer, TakSettings};
 use crate::views::get_session_id;
 use crate::Route;
 use dioxus::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::{Mutex, MutexGuard};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ClientGameMessage {
     Move(String),
 }
-
-const CSS: Asset = asset!("/assets/styling/board.css");
 
 #[component]
 pub fn PlayComputer() -> Element {
@@ -30,14 +24,14 @@ pub fn PlayComputer() -> Element {
         TakPlayer::Black,
         PlayerInfo::new("Computer".to_string(), PlayerType::Local),
     );
-    let mut board = use_context_provider(|| TakBoardState::new(5, player_info));
+    let settings = TakSettings::default();
+    let mut board = use_context_provider(|| TakBoardState::new(settings, player_info));
 
     use_effect(move || {
         board.has_started.set(true);
     });
 
     rsx! {
-        document::Link { rel: "stylesheet", href: CSS }
         div {
             id: "play-view",
             TakBoard {}
@@ -47,13 +41,14 @@ pub fn PlayComputer() -> Element {
 
 #[component]
 pub fn PlayOnline() -> Element {
-    let room = use_server_future(|| get_room())?;
-    let session_id = use_server_future(|| get_session_id())?;
+    let room = use_resource(|| get_room());
+    let session_id = use_resource(|| get_session_id());
 
     let nav = use_navigator();
 
     let player_info = HashMap::new();
-    let board = use_context_provider(|| TakBoardState::new(5, player_info));
+    let board = use_context_provider(|| TakBoardState::new(TakSettings::default(), player_info));
+    let mut board_clone = board.clone();
 
     use_effect(move || {
         let mut board = board.clone();
@@ -63,7 +58,7 @@ pub fn PlayOnline() -> Element {
     });
 
     let room_id = use_memo(move || {
-        if let Some(Ok(GetRoomResponse::Success(id))) = room.read().as_ref() {
+        if let Some(Ok(GetRoomResponse::Success(id, _))) = room.read().as_ref() {
             Some(id.clone())
         } else {
             None
@@ -71,8 +66,11 @@ pub fn PlayOnline() -> Element {
     });
 
     use_effect(move || {
-        println!("room: {:?}", room.read());
+        dioxus::logger::tracing::info!("room: {:?}", room.read());
         match room.read().as_ref() {
+            Some(Ok(GetRoomResponse::Success(_, settings))) => {
+                board_clone.replace_settings_if_not_started(&settings.game_settings);
+            }
             Some(Ok(GetRoomResponse::Unauthorized)) => {
                 nav.replace(Route::Auth {});
             }
@@ -84,7 +82,6 @@ pub fn PlayOnline() -> Element {
     });
 
     rsx! {
-        document::Link { rel: "stylesheet", href: CSS }
         div {
             id: "play-view",
             if let Some(room) = room_id.read().as_ref() {
@@ -95,8 +92,6 @@ pub fn PlayOnline() -> Element {
                 }
                 if let Some(Ok(Some(session_id))) = session_id.read().as_ref() {
                     TakWebSocket {session_id}
-                } else {
-                    {format!("{:?}", session_id.read())}
                 }
             } else {
                 h2 { "No room found or not connected." }

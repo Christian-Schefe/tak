@@ -1,7 +1,7 @@
 use crate::components::tak_board_state::TakBoardState;
 use crate::server::room::{get_game_state, GetGameStateResponse};
 use crate::tak::action::TakAction;
-use crate::tak::{CrossPlatformInstant, TakPlayer};
+use crate::tak::TakPlayer;
 use dioxus::core_macro::component;
 use dioxus::prelude::*;
 use futures_util::{SinkExt, StreamExt};
@@ -12,7 +12,7 @@ use wasm_bindgen_futures::spawn_local;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
 pub enum ServerGameMessage {
-    StartGame(usize),
+    StartGame,
     Move(usize, Vec<(TakPlayer, Duration)>, String),
 }
 
@@ -25,8 +25,8 @@ pub fn TakWebSocket(session_id: String) -> Element {
     let handle_game_message = move |board: &mut TakBoardState, msg: ServerGameMessage| {
         let mut board_clone = board.clone();
         let should_resync = match msg {
-            ServerGameMessage::StartGame(size) => {
-                dioxus::logger::tracing::info!("[WebSocket] Starting game with size: {size}");
+            ServerGameMessage::StartGame => {
+                dioxus::logger::tracing::info!("[WebSocket] Starting game");
                 let mut board_clone = board_clone.clone();
                 spawn_local(async move {
                     board_clone.update_player_info().await;

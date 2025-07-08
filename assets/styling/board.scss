@@ -1,0 +1,406 @@
+@import "settings/colors";
+@import "settings/params";
+
+#play-view {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+}
+
+.tak-board-container {
+  width: 100%;
+  height: 100%;
+  max-width: 600px;
+  padding-top: 20px;
+  display: block;
+}
+
+.tak-board {
+  display: grid;
+  position: relative;
+  user-select: none;
+  touch-action: none;
+  justify-items: start;
+  align-items: start;
+  width: 100%;
+  aspect-ratio: 1;
+}
+
+.tak-tile {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color $animation-speed ease-in-out;
+  width: 100%;
+  height: 100%;
+}
+
+.tak-tile-light {
+  background-color: $clr-board-light;
+}
+
+.tak-tile-dark {
+  background-color: $clr-board-dark;
+}
+
+.tak-tile-light.tak-tile-highlight {
+  background-color: $clr-board-highlight-light;
+}
+
+.tak-tile-dark.tak-tile-highlight {
+  background-color: $clr-board-highlight-dark;
+}
+
+.tak-tile-light.tak-tile-selected {
+  background-color: $clr-board-selected-light;
+}
+
+.tak-tile-dark.tak-tile-selected {
+  background-color: $clr-board-selected-dark;
+}
+
+.tak-tile-light.tak-tile-selected.tak-tile-highlight {
+  background-color: $clr-board-selected-highlight-light;
+}
+
+.tak-tile-dark.tak-tile-selected.tak-tile-highlight {
+  background-color: $clr-board-selected-highlight-dark;
+}
+
+.tak-tile-label {
+  position: absolute;
+  font-size: 14px;
+  font-weight: bold;
+  width: fit-content;
+}
+
+.tak-tile-label-rank {
+  bottom: 0;
+  right: 3px;
+  color: $clr-piece-light;
+}
+
+.tak-tile-label-file {
+  top: 0;
+  left: 3px;
+  color: $clr-piece-light;
+}
+
+.tak-piece {
+  position: absolute;
+  pointer-events: none;
+  filter: drop-shadow(0 5px 5px rgb(0, 0, 0, 0.1));
+  transition:
+    transform $animation-speed ease-in-out,
+    filter $animation-speed ease-in-out;
+}
+
+.tak-piece-wrapper {
+  width: 100%;
+  height: 100%;
+  animation: scaleIn $animation-speed ease-out forwards;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tak-piece-inner {
+  transition:
+    width $animation-speed ease-in-out,
+    height $animation-speed ease-in-out,
+    transform $animation-speed ease-in-out;
+}
+
+.tak-piece-height-0 {
+  filter: drop-shadow(0 5px 5px rgb(0, 0, 0, 0.2));
+}
+
+.tak-piece-inner-light {
+  background-color: $clr-piece-light;
+  outline: $clr-piece-dark solid 1px;
+}
+
+.tak-piece-inner-dark {
+  background-color: $clr-piece-dark;
+  outline: $clr-piece-light solid 1px;
+}
+
+.tak-piece-inner-flat {
+  width: 50%;
+  height: 50%;
+  border-radius: 3px;
+}
+
+.tak-piece-inner-wall {
+  width: 50%;
+  height: 20%;
+  border-radius: 3px;
+  transform: rotate(-45deg);
+}
+
+.tak-piece-inner-cap {
+  width: 50%;
+  height: 50%;
+  border-radius: 100%;
+}
+
+@keyframes scaleIn {
+  from {
+    transform: scale(0.8);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.tak-piece-hand-container {
+  display: flex;
+  flex-direction: row;
+  width: 100%;
+  height: 50px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px;
+  box-sizing: border-box;
+}
+
+.tak-piece-hand-container .tak-piece-hand {
+  padding: 5px 10px;
+  font-size: 14px;
+  font-weight: bold;
+  color: $clr-white;
+  border-radius: 5px;
+  background-color: $clr-background;
+  margin: 0;
+  min-width: 40px;
+  text-align: center;
+  outline: 2px solid $clr-piece-dark;
+  transition: outline $animation-speed ease-in-out;
+}
+
+.tak-piece-hand-container .tak-piece-hand.tak-piece-hand-current {
+  outline: 2px solid $clr-primary;
+}
+
+.tak-piece-selector {
+  display: flex;
+  flex-direction: row;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  box-sizing: border-box;
+  gap: 10px;
+}
+
+.tak-piece-selector .piece-selector {
+  background-color: $clr-board-dark;
+  border: none;
+  cursor: pointer;
+  padding: 5px;
+  border-radius: 5px;
+  color: white;
+  height: 40px;
+  user-select: none;
+  flex-grow: 1;
+  transition: background-color $animation-speed ease-in-out;
+}
+
+.tak-piece-selector .piece-selector:active {
+  background-color: $clr-board-light;
+}
+
+.tak-piece-selector .piece-selector.piece-selector-current {
+  background-color: $clr-primary;
+}
+
+.tak-piece-selector .piece-selector.piece-selector-current:active {
+  background-color: $clr-primary-light;
+}
+
+.tak-piece-selector .piece-selector.piece-selector-disabled {
+  background-color: $clr-piece-dark;
+}
+
+.tak-game-info {
+  width: 100%;
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  height: 50px;
+  padding: 10px;
+  box-sizing: border-box;
+}
+
+.clock {
+  padding: 0 10px;
+  border-radius: 5px;
+  height: 100%;
+  min-width: 60px;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+}
+
+.clock p {
+  margin: 0;
+  padding: 0;
+  font-size: 14px;
+  font-weight: bold;
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.clock-light {
+  background-color: $clr-piece-light;
+  color: $clr-black;
+}
+
+.clock-dark {
+  background-color: $clr-piece-dark;
+  color: $clr-white;
+}
+
+.flats-counter {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  border-radius: 5px;
+  overflow: hidden;
+  margin: 0 10px;
+  height: 100%;
+}
+
+.flats-bar {
+  transition: flex-grow $animation-speed ease-in-out;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.flats-bar p {
+  margin: 0;
+  padding: 0;
+  font-size: 14px;
+  font-weight: bold;
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.flats-bar.flats-bar-light {
+  background-color: $clr-piece-light;
+  color: $clr-black;
+  min-width: 10px;
+  align-items: end;
+  padding-right: 5px;
+}
+
+.flats-bar.flats-bar-dark {
+  background-color: $clr-piece-dark;
+  color: $clr-white;
+  align-items: start;
+  padding-left: 5px;
+  min-width: 10px;
+}
+
+.flats-bar.flats-bar-komi {
+  background-color: $clr-board-dark;
+  color: $clr-white;
+  align-items: start;
+  padding-left: 5px;
+  min-width: 10px;
+}
+
+.tak-game-info p.tak-player-info {
+  margin: 0;
+  padding: 0 10px;
+  flex-grow: 1;
+  font-size: 16px;
+  font-weight: bold;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color $animation-speed ease-in-out;
+}
+
+.tak-game-info p.tak-player-info.left {
+  text-align: left;
+}
+
+.tak-game-info p.tak-player-info.right {
+  text-align: right;
+}
+
+.tak-game-info p.tak-player-info.current-player {
+  color: $clr-primary;
+}
+
+.tak-bridge {
+  background-color: transparent;
+  opacity: 0;
+  position: absolute;
+  $short-size: 30%;
+  $long-size: (100% - $short-size) / 2;
+  top: $long-size;
+  bottom: $long-size;
+  left: $long-size;
+  right: $long-size;
+  transition:
+    opacity $animation-speed ease-in-out,
+    background-color $animation-speed ease-in-out,
+    border-radius $animation-speed ease-in-out;
+
+  &.tak-bridge-up {
+    top: 0;
+    bottom: $long-size + $short-size;
+  }
+
+  &.tak-bridge-down {
+    top: $long-size + $short-size;
+    bottom: 0;
+  }
+
+  &.tak-bridge-left {
+    left: 0;
+    right: $long-size + $short-size;
+  }
+
+  &.tak-bridge-right {
+    left: $long-size + $short-size;
+    right: 0;
+  }
+
+  &.tak-bridge-center {
+    &.tak-bridge-corner-up-left {
+      border-top-left-radius: 1000px;
+    }
+    &.tak-bridge-corner-up-right {
+      border-top-right-radius: 1000px;
+    }
+    &.tak-bridge-corner-down-left {
+      border-bottom-left-radius: 1000px;
+    }
+    &.tak-bridge-corner-down-right {
+      border-bottom-right-radius: 1000px;
+    }
+  }
+
+  &.tak-bridge-light {
+    background-color: $clr-piece-light;
+    opacity: 20%;
+  }
+
+  &.tak-bridge-dark {
+    background-color: $clr-piece-dark;
+    opacity: 20%;
+  }
+}

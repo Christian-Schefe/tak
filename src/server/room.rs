@@ -1,5 +1,5 @@
 use crate::components::ServerGameMessage;
-use crate::tak::{CrossPlatformInstant, TakPlayer, TimeMode, TimedTakGame};
+use crate::tak::{TakGame, TakPlayer, TakSettings};
 use dioxus::prelude::*;
 use futures_util::SinkExt;
 use rand::distributions::Alphanumeric;
@@ -15,15 +15,17 @@ pub type RoomId = String;
 
 #[cfg(feature = "server")]
 pub struct Room {
-    pub game: Option<TimedTakGame>,
+    pub settings: RoomSettings,
+    pub game: Option<TakGame>,
     pub players: Vec<(TakPlayer, PlayerId)>,
     pub spectators: Vec<PlayerId>,
 }
 
 #[cfg(feature = "server")]
 impl Room {
-    fn new(owner: PlayerId) -> Self {
+    fn new(owner: PlayerId, settings: RoomSettings) -> Self {
         let mut room = Room {
+            settings,
             players: Vec::new(),
             spectators: Vec::new(),
             game: None,
@@ -36,10 +38,7 @@ impl Room {
         if self.game.is_some() {
             return;
         }
-        self.game = Some(TimedTakGame::new_game(
-            5,
-            TimeMode::new(Duration::from_secs(300), Duration::from_secs(5)),
-        ))
+        self.game = Some(TakGame::new(self.settings.game_settings.clone()))
     }
 
     fn is_ready(&self) -> bool {
@@ -106,7 +105,7 @@ impl Rooms {
         }
     }
 
-    fn try_create_room(&mut self, owner: PlayerId) -> CreateRoomResponse {
+    fn try_create_room(&mut self, settings: RoomSettings, owner: PlayerId) -> CreateRoomResponse {
         if self.player_mapping.contains_key(&owner) {
             return CreateRoomResponse::AlreadyInRoom;
         }
@@ -115,7 +114,7 @@ impl Rooms {
         };
         self.rooms.insert(
             id.clone(),
-            Arc::new(tokio::sync::Mutex::new(Room::new(owner.clone()))),
+            Arc::new(tokio::sync::Mutex::new(Room::new(owner.clone(), settings))),
         );
         self.player_mapping.insert(owner, id.clone());
         CreateRoomResponse::Success(id)
@@ -189,9 +188,13 @@ impl Rooms {
         LeaveRoomResponse::Success
     }
 
-    pub fn try_get_room_id(&self, player_id: &PlayerId) -> GetRoomResponse {
+    pub async fn try_get_room_id(&self, player_id: &PlayerId) -> GetRoomResponse {
         if let Some(room_id) = self.player_mapping.get(player_id) {
-            GetRoomResponse::Success(room_id.clone())
+            let room = self.rooms.get(room_id).unwrap();
+            let room_lock = room.lock().await;
+            let settings = room_lock.settings.clone();
+            drop(room_lock);
+            GetRoomResponse::Success(room_id.clone(), settings)
         } else {
             GetRoomResponse::NotInARoom
         }
@@ -295,8 +298,13 @@ pub enum CreateRoomResponse {
     Unauthorized,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoomSettings {
+    pub game_settings: TakSettings,
+}
+
 #[server]
-pub async fn create_room() -> Result<CreateRoomResponse, ServerFnError> {
+pub async fn create_room(settings: RoomSettings) -> Result<CreateRoomResponse, ServerFnError> {
     use crate::server::auth::AuthenticatedUser;
     use crate::server::websocket::SharedState;
     use axum::Extension;
@@ -306,7 +314,7 @@ pub async fn create_room() -> Result<CreateRoomResponse, ServerFnError> {
         return Ok(CreateRoomResponse::Unauthorized);
     };
     let mut rooms = state.rooms.lock().await;
-    Ok(rooms.try_create_room(user.0))
+    Ok(rooms.try_create_room(settings, user.0))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -356,7 +364,7 @@ pub async fn join_room(
             maybe_start_game(&mut rooms, &room_id).await;
         });
     }
-    Ok(JoinRoomResponse::Success)
+    Ok(res)
 }
 
 #[cfg(feature = "server")]
@@ -374,7 +382,7 @@ async fn maybe_start_game(rooms: &mut Rooms, room_id: &RoomId) {
         return;
     }
 
-    let msg = ServerGameMessage::StartGame(5);
+    let msg = ServerGameMessage::StartGame;
     let msg = axum::extract::ws::Message::Text(serde_json::to_string(&msg).unwrap());
 
     for player in rooms.get_broadcast_player_ids(room_id).await {
@@ -411,7 +419,7 @@ pub async fn leave_room() -> Result<LeaveRoomResponse, ServerFnError> {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum GetRoomResponse {
-    Success(RoomId),
+    Success(RoomId, RoomSettings),
     NotInARoom,
     Unauthorized,
 }
@@ -427,7 +435,7 @@ pub async fn get_room() -> Result<GetRoomResponse, ServerFnError> {
         return Ok(GetRoomResponse::Unauthorized);
     };
     let rooms = state.rooms.lock().await;
-    Ok(rooms.try_get_room_id(&user.0))
+    Ok(rooms.try_get_room_id(&user.0).await)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

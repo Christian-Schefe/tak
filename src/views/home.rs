@@ -1,17 +1,16 @@
 use crate::server::room::{
-    create_room, get_room, join_room, leave_room, CreateRoomResponse, GetRoomResponse,
-    JoinRoomResponse, LeaveRoomResponse,
+    get_room, join_room, leave_room, GetRoomResponse, JoinRoomResponse, LeaveRoomResponse,
 };
 use crate::Route;
 use dioxus::prelude::*;
 
-const CSS: Asset = asset!("/assets/styling/home.css");
-
 #[component]
 pub fn Home() -> Element {
+    let room_id_length = 6;
+
     let nav = use_navigator();
 
-    let mut room = use_server_future(|| get_room())?;
+    let mut room = use_resource(|| get_room());
 
     use_effect(move || {
         match &*room.read() {
@@ -31,7 +30,7 @@ pub fn Home() -> Element {
 
     let join_valid = use_memo(move || {
         let room_id = room_id_input.read().trim().to_ascii_uppercase();
-        room_id.len() == 6 && room_id.chars().all(|c| c.is_ascii_alphanumeric())
+        room_id.len() == room_id_length && room_id.chars().all(|c| c.is_ascii_alphanumeric())
     });
 
     let on_click_join = move |_| {
@@ -86,10 +85,9 @@ pub fn Home() -> Element {
     };
 
     rsx! {
-        document::Link { rel: "stylesheet", href: CSS }
         div {
             id: "play-options",
-            if let Some(Ok(GetRoomResponse::Success(_))) = &*room.read() {
+            if let Some(Ok(GetRoomResponse::Success(_, _))) = &*room.read() {
                 button {
                     onclick: move |_| {
                         nav.push(Route::PlayOnline {});
@@ -101,22 +99,28 @@ pub fn Home() -> Element {
                     "Leave Room"
                 }
             } else {
+                div {
+                    id: "home-join-bar",
+                    input {
+                        type: "text",
+                        placeholder: vec!['_'; room_id_length].into_iter().collect::<String>(),
+                        value: "{room_id_input}",
+                        maxlength: room_id_length,
+                        oninput: move |e| {
+                            let new_str = e.value().trim().to_ascii_uppercase();
+                            room_id_input.set(new_str);
+                        }
+                    }
+                    button {
+                        class: "primary-button",
+                        onclick: on_click_join,
+                        disabled: !*join_valid.read(),
+                        "Join"
+                    }
+                }
                 button {
                     onclick: on_click_create,
                     "Create Room"
-                }
-                button {
-                    onclick: on_click_join,
-                    disabled: !*join_valid.read(),
-                    "Join Room"
-                }
-                input {
-                    type: "text",
-                    placeholder: "Enter room ID",
-                    id: "room-id-input",
-                    oninput: move |e| {
-                        room_id_input.set(e.value())
-                    }
                 }
             }
             button {

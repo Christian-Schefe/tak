@@ -1,9 +1,12 @@
 @use "settings/defaults";
 @use "navbar";
+@use "auth";
+@use "home";
+@use "create_room";
+@use "board";
 
 @import "settings/colors";
 @import "settings/params";
-
 
 html {
   width: 100%;

@@ -1,4 +1,5 @@
 @import "colors";
+@import "params";
 
 *, *::before, *::after {
   box-sizing: border-box;
@@ -38,6 +39,20 @@ button.primary-button {
     background-color: $clr-primary-light;
   }
 }
+
+input {
+  padding: 10px;
+  outline: none;
+  border: 1px solid $clr-surface-light;
+  border-radius: $border-radius;
+  background-color: $clr-background;
+  color: $clr-white;
+
+  &:focus {
+    border-color: $clr-primary;
+  }
+}
+
 
 @mixin flex-col-center {
   display: flex;

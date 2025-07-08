@@ -1,3 +1,5 @@
+@import "settings/colors";
+
 #create-room-view {
     display: flex;
     flex-direction: column;
@@ -20,19 +22,15 @@
 }
 
 .board-size-button {
-    text-decoration: none;
-    background-color: var(--clr-surface-a20);
-    color: var(--clr-light-a0);
     padding: 10px 10px;
     border: none;
-    border-radius: 5px;
     height: 40px;
     flex-grow: 1;
     max-width: 80px;
 }
 
 .board-size-button.current {
-    outline: 2px solid var(--clr-primary-a0);
+    outline: 2px solid $clr-primary;
 }
 
 #time-mode-chooser {
@@ -54,11 +52,12 @@
 }
 
 .time-mode-button.current {
-    outline: 2px solid var(--clr-primary-a0);
+    outline: 2px solid $clr-primary;
 }
 
 .category-header {
     width: 100%;
+    display: flex;
     flex-direction: row;
     justify-content: start;
     padding-left: 10px;
@@ -68,6 +67,7 @@
 }
 
 .category-container {
+    display: flex;
     flex-direction: row;
     width: 100%;
     gap: 5px;
@@ -77,18 +77,9 @@
 }
 
 #create-room-button {
-    text-decoration: none;
-    background-color: var(--clr-primary-a0);
-    color: var(--clr-light-a0);
     padding: 10px 10px;
-    border: none;
-    border-radius: 5px;
     height: 40px;
     width: 100%;
     max-width: 200px;
     margin-top: 50px;
-}
-
-#create-room-button:active {
-    background-color: var(--clr-primary-a10);
 }

@@ -1,0 +1,38 @@
+@import "settings/colors";
+@import "settings/defaults";
+
+#play-options {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  gap: 10px;
+  padding: 10px;
+  margin-top: 50px;
+  max-width: 220px;
+
+  button {
+    width: 100%;
+  }
+}
+
+#home-join-bar {
+  @include flex-row-center;
+  flex-wrap: wrap;
+
+  width: 100%;
+  gap: 10px;
+
+  input {
+    letter-spacing: 6px;
+    font-family: monospace;
+    text-align: center;
+    width: 130px;
+  }
+
+  button {
+    width: auto;
+    flex-grow: 1;
+  }
+}
