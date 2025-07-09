@@ -1,15 +1,27 @@
+[workspace]
+members = ["tak-core"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Christian-Schefe <schefechristian@gmail.com>"]
+
 [package]
 name = "tak"
-version = "0.1.0"
-authors = ["Christian-Schefe <schefechristian@gmail.com>"]
-edition = "2021"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
 
 [dependencies]
 dioxus = { version = "0.6.3", features = ["router", "fullstack"] }
 dioxus-free-icons = { version = "0.9", features = ["font-awesome-solid"] }
 regex = "1.11.1"
 web-sys = { version = "0.3.77", features = ["HtmlDocument"] }
-tokio = { version = "1.45.1", features = ["time", "sync", "rt"], optional = true }
+tokio = { version = "1.45.1", features = [
+    "time",
+    "sync",
+    "rt",
+], optional = true }
 gloo = { version = "0.11.0", features = ["timers", "futures"] }
 axum = { version = "0.7.9", features = ["ws"], optional = true }
 axum-extra = { version = "0.9.6", optional = true, features = ["typed-header"] }
@@ -24,7 +36,9 @@ headers = "0.4.1"
 argon2 = "0.5"
 surrealdb = { version = "2.3.6", optional = true }
 thiserror = "2.0.12"
-tower-cookies = { version = "0.10.0", features = ["axum-core"], optional = true }
+tower-cookies = { version = "0.10.0", features = [
+    "axum-core",
+], optional = true }
 rand = "0.8.5"
 dashmap = { version = "6.1.0", optional = true }
 
@@ -32,7 +46,18 @@ dashmap = { version = "6.1.0", optional = true }
 web = ["dioxus/web"]
 desktop = ["dioxus/desktop"]
 mobile = ["dioxus/mobile"]
-server = ["dioxus/server", "dep:dashmap", "dep:tower-cookies", "dep:surrealdb", "dioxus-fullstack/axum", "dep:axum", "dep:tokio", "dep:uuid", "dioxus-cli-config", "dep:axum-extra"]
+server = [
+    "dioxus/server",
+    "dep:dashmap",
+    "dep:tower-cookies",
+    "dep:surrealdb",
+    "dioxus-fullstack/axum",
+    "dep:axum",
+    "dep:tokio",
+    "dep:uuid",
+    "dioxus-cli-config",
+    "dep:axum-extra",
+]
 
 [profile]
 

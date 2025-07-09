@@ -1,0 +1,11 @@
+[package]
+name = "tak-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+web-sys = { version = "*", features = ["console"], optional = true }
+
+[features]
+wasm = ["web-sys"]
