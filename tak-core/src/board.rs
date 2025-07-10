@@ -1,9 +1,12 @@
+use std::collections::VecDeque;
+
 use crate::{
     TakCoord, TakDir, TakInvalidMoveError, TakInvalidPlaceError, TakInvalidUndoMoveError,
     TakInvalidUndoPlaceError, TakPieceVariant, TakPlayer,
 };
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TakPiece {
     pub id: usize,
     pub player: TakPlayer,
@@ -16,6 +19,7 @@ impl TakPiece {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TakTower {
     pub variant: TakPieceVariant,
     pub composition: Vec<TakPiece>,
@@ -41,7 +45,14 @@ impl TakTower {
     }
 }
 
+/// Represents a Tak board with a specified size and a vector of towers.
+/// It provides methods to place, move, and undo moves of pieces on the board,
+/// as well as to check for valid placements and moves.
+/// It also includes methods to check for roads, count stones, and convert the board to a partial TPS (Tak Position String) representation.
+/// The board is represented as a flat vector of optional `TakTower` instances, where each position can either be empty (`None`) or occupied by a `TakTower`.
+/// Each piece can be identified by a unique ID.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TakBoard {
     pub size: usize,
     board: Vec<Option<TakTower>>,
@@ -50,6 +61,7 @@ pub struct TakBoard {
 }
 
 impl TakBoard {
+    /// Creates an empty TakBoard with the given size.
     pub fn new(size: usize) -> Self {
         TakBoard {
             size,
@@ -59,6 +71,8 @@ impl TakBoard {
         }
     }
 
+    /// Checks if a piece can be placed at the given position.
+    /// Returns `Ok(())` if the position is valid and empty, or an error if the position is occupied or invalid.
     pub fn can_place(&self, pos: TakCoord) -> Result<(), TakInvalidPlaceError> {
         match pos.try_get(&self.board, self.size) {
             Some(None) => Ok(()),
@@ -67,6 +81,9 @@ impl TakBoard {
         }
     }
 
+    /// Attempts to place a piece at the given position.
+    /// Returns `Ok(())` if the placement is successful, or an error if it fails.
+    /// If the placement fails, the board state remains unchanged.
     pub fn try_place(
         &mut self,
         pos: TakCoord,
@@ -78,6 +95,8 @@ impl TakBoard {
         Ok(())
     }
 
+    /// Places a piece at the given position without checking if the placement is valid.
+    /// Using this method can lead to an invalid board state or panic if the position is occupied or not valid.
     pub fn do_place_unchecked(
         &mut self,
         pos: TakCoord,
@@ -90,6 +109,8 @@ impl TakBoard {
         *pos.get_mut(&mut self.board, self.size) = Some(tower);
     }
 
+    /// Checks if the placement of a piece at the given position can be undone.
+    /// This requires that the piece is the last placed piece.
     pub fn can_undo_place(
         &mut self,
         pos: TakCoord,
@@ -113,6 +134,7 @@ impl TakBoard {
         }
     }
 
+    /// Attempts to undo the placement of a piece at the given position.
     pub fn try_undo_place(
         &mut self,
         pos: TakCoord,
@@ -124,6 +146,8 @@ impl TakBoard {
         Ok(())
     }
 
+    /// Undoes the placement of a piece at the given position without checking if the undo is valid.
+    /// Using this method can lead to an invalid board state or panic if the position or undo is not valid.
     pub fn undo_place_unchecked(&mut self, pos: TakCoord) {
         let tower = pos.get_mut(&mut self.board, self.size);
         *tower = None;
@@ -131,6 +155,8 @@ impl TakBoard {
         self.empty_spaces += 1;
     }
 
+    /// Checks if a move can be made from the given position in the specified direction,
+    /// taking a specified number of pieces and drops into account.
     pub fn can_move(
         &self,
         pos: TakCoord,
@@ -187,6 +213,9 @@ impl TakBoard {
         Ok(is_flattening)
     }
 
+    /// Attempts to move pieces from the given position in the specified direction,
+    /// taking a specified number of pieces and drops into account.
+    /// Returns true if the move results in a flattening, and false otherwise.
     pub fn try_move(
         &mut self,
         pos: TakCoord,
@@ -199,6 +228,9 @@ impl TakBoard {
         Ok(is_flattening)
     }
 
+    /// Moves pieces from the given position in the specified direction,
+    /// taking a specified number of pieces and drops into account.
+    /// This method does not check if the move is valid and can lead to an invalid board state.
     pub fn do_move_unchecked(&mut self, pos: TakCoord, dir: TakDir, take: usize, drops: &[usize]) {
         let drop_len = drops.len();
         let tile = pos.get_mut(&mut self.board, self.size);
@@ -243,6 +275,9 @@ impl TakBoard {
         }
     }
 
+    /// Checks if a move can be undone from the given position in the specified direction,
+    /// taking a specified number of pieces and drops into account.
+    /// Returns an error if the move cannot be undone, or `Ok(())` if it can be undone.
     pub fn can_undo_move(
         &mut self,
         pos: TakCoord,
@@ -305,6 +340,9 @@ impl TakBoard {
         Ok(())
     }
 
+    /// Attempts to undo a move from the given position in the specified direction,
+    /// taking a specified number of pieces and drops into account.
+    /// Returns `Ok(())` if the undo is successful, or an error if it fails.
     pub fn try_undo_move(
         &mut self,
         pos: TakCoord,
@@ -318,6 +356,9 @@ impl TakBoard {
         Ok(())
     }
 
+    /// Undoes a move from the given position in the specified direction,
+    /// taking a specified number of pieces and drops into account.
+    /// This method does not check if the undo is valid and can lead to an invalid board state.
     fn undo_move_unchecked(
         &mut self,
         pos: TakCoord,
@@ -337,10 +378,11 @@ impl TakBoard {
                 original_variant = tower.variant;
             }
 
-            let pieces_to_move = tower
-                .composition
-                .drain(tower.composition.len() - drops[i]..);
-            moved_pieces.extend(pieces_to_move);
+            moved_pieces.extend(
+                tower
+                    .composition
+                    .drain(tower.composition.len() - drops[i]..),
+            );
             if tower.composition.is_empty() {
                 *tile = None;
                 self.empty_spaces += 1;
@@ -365,6 +407,9 @@ impl TakBoard {
         }
     }
 
+    /// Converts the board to a partial TPS (Tak Position String) representation.
+    /// The TPS format is a string representation of the board state.
+    /// The partial TPS format is a simplified version that only includes the occupied positions and their tower compositions.
     pub fn to_partial_tps(&self) -> String {
         let mut tps = String::new();
         for y in 0..self.size {
@@ -416,6 +461,8 @@ impl TakBoard {
         tps
     }
 
+    /// Attempts to create a TakBoard from a partial TPS string.
+    /// The partial TPS format is a simplified version that only includes the occupied positions and their tower compositions.
     pub fn try_from_partial_tps(tps: &str) -> Option<Self> {
         let mut size = None;
         let mut board = Vec::new();
@@ -474,6 +521,8 @@ impl TakBoard {
         })
     }
 
+    /// Checks if there is a road for the given player that passes through the specified positions.
+    /// Returns `Some((start, end))` if a road is found, where `start` and `end` are the coordinates of the road's endpoints.
     pub fn check_for_road(
         &self,
         positions: &[TakCoord],
@@ -524,10 +573,67 @@ impl TakBoard {
         None
     }
 
+    /// Finds the shortest path from the start position to the end position for the specified player.
+    /// This path follows the rules of a Tak road, meaning it can only traverse through pieces of the same player
+    /// and cannot pass through walls.
+    pub fn find_shortest_path(&self, start: TakCoord, end: TakCoord) -> Option<Vec<TakCoord>> {
+        let Some(player) = self
+            .try_get_tower(start)
+            .filter(|tower| tower.variant != TakPieceVariant::Wall)
+            .map(|tower| tower.player())
+        else {
+            return None;
+        };
+        if start == end {
+            return Some(vec![start]);
+        }
+        let mut visited = vec![None; self.size * self.size];
+        let mut queue = VecDeque::new();
+        queue.push_back(start);
+        *start.get_mut(&mut visited, self.size) = Some(start);
+
+        let construct_path = |end: TakCoord, visited: &[Option<TakCoord>]| -> Vec<TakCoord> {
+            let mut path = Vec::new();
+            let mut current = end;
+            while let Some(prev) = current.get(visited, self.size) {
+                path.push(current);
+                if prev == &start {
+                    path.push(start);
+                    break;
+                }
+                current = *prev;
+            }
+            path.reverse();
+            path
+        };
+
+        while let Some(current_pos) = queue.pop_front() {
+            if current_pos == end {
+                return Some(construct_path(end, &visited));
+            }
+            for dir in TakDir::ALL.iter() {
+                let next_pos = current_pos.offset_dir(*dir);
+                if let Some(Some(next_tower)) = next_pos.try_get(&self.board, self.size) {
+                    if next_tower.player() == player
+                        && next_tower.variant != TakPieceVariant::Wall
+                        && next_pos.get(&visited, self.size).is_none()
+                    {
+                        queue.push_back(next_pos);
+                        *next_pos.get_mut(&mut visited, self.size) = Some(current_pos);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Checks if there is any empty space left on the board.
     pub fn has_empty_space(&self) -> bool {
         self.empty_spaces > 0
     }
 
+    /// Counts the number of placed stones and capstones for the given player.
+    /// Returns a tuple with the number of stones and capstones.
     pub fn count_stones(&self, player: TakPlayer) -> (usize, usize) {
         let mut stone_count = 0;
         let mut capstone_count = 0;
@@ -550,6 +656,9 @@ impl TakBoard {
         (stone_count, capstone_count)
     }
 
+    /// Counts the number of topmost flats for each player on the board.
+    /// This is used to determine the winner if a player has no stones left or there are no
+    /// empty spaces left.
     pub fn count_flats(&self) -> [usize; 2] {
         let mut counts = [0, 0];
         for tile in &self.board {
@@ -564,6 +673,9 @@ impl TakBoard {
         counts
     }
 
+    /// Returns an iterator over all pieces of the specified player on the board.
+    /// Each item in the iterator is a tuple containing the position and a reference to the tower
+    /// at that position.
     pub fn iter_pieces(&self, player: TakPlayer) -> impl Iterator<Item = (TakCoord, &TakTower)> {
         TakCoord::iter_board(self.size).filter_map(move |pos| {
             if let Some(tower) = pos.get(&self.board, self.size) {
@@ -578,14 +690,163 @@ impl TakBoard {
         })
     }
 
+    /// Returns an iterator over all empty spaces on the board.
+    /// Each item in the iterator is a `TakCoord` representing an empty position.
+    pub fn iter_empty_spaces<'a>(&'a self) -> impl Iterator<Item = TakCoord> + 'a {
+        TakCoord::iter_board(self.size).filter(|pos| pos.try_get(&self.board, self.size).is_none())
+    }
+
+    /// Returns a reference to the tower at the specified position, if it exists.
+    /// If the position is invalid or empty, it returns `None`.
     pub fn try_get_tower(&self, pos: TakCoord) -> Option<&TakTower> {
         pos.try_get(&self.board, self.size).and_then(|x| x.as_ref())
+    }
+
+    /// Validates the board state.
+    /// Discovers if the board state is inconsistent or invalid.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.size < 1 {
+            return Err("Board size must be at least 1".to_string());
+        }
+        if self.board.len() != self.size * self.size {
+            return Err(format!(
+                "Board size mismatch: expected {}, got {}",
+                self.size * self.size,
+                self.board.len()
+            ));
+        }
+        let mut id_set = std::collections::HashSet::new();
+        let mut empty_count = 0;
+        for tile in &self.board {
+            if let Some(tower) = tile {
+                if tower.composition.is_empty() {
+                    return Err("Tower cannot be empty".to_string());
+                }
+                for piece in &tower.composition {
+                    if !id_set.insert(piece.id) {
+                        return Err(format!("Duplicate piece ID found: {}", piece.id));
+                    }
+                    if piece.id >= self.id_counter {
+                        return Err(format!(
+                            "Piece ID {} is greater than or equal to id_counter {}",
+                            piece.id, self.id_counter
+                        ));
+                    }
+                }
+            } else {
+                empty_count += 1;
+            }
+        }
+        if self.id_counter != id_set.len() {
+            return Err(format!(
+                "ID counter mismatch: expected {}, got {}",
+                id_set.len(),
+                self.id_counter
+            ));
+        }
+        if self.empty_spaces != empty_count {
+            return Err(format!(
+                "Empty spaces mismatch: expected {}, got {}",
+                self.empty_spaces, empty_count
+            ));
+        }
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_can_place() {
+        let board = TakBoard::try_from_partial_tps("1,2,12112/2C,1S,112S/x,111C,x").unwrap();
+        let occupied_cases = vec![
+            TakCoord::new(0, 0),
+            TakCoord::new(1, 0),
+            TakCoord::new(2, 0),
+            TakCoord::new(0, 1),
+            TakCoord::new(1, 1),
+            TakCoord::new(2, 1),
+            TakCoord::new(1, 2),
+        ];
+        let valid_cases = vec![TakCoord::new(0, 2), TakCoord::new(2, 2)];
+        let invalid_cases = vec![
+            TakCoord::new(3, 0),
+            TakCoord::new(0, 3),
+            TakCoord::new(4, 4),
+            TakCoord::new(-1, 0),
+            TakCoord::new(0, -1),
+        ];
+        let cases = [
+            (occupied_cases, Err(TakInvalidPlaceError::PositionOccupied)),
+            (valid_cases, Ok(())),
+            (invalid_cases, Err(TakInvalidPlaceError::InvalidPosition)),
+        ];
+        for (cases, expected) in cases {
+            for pos in cases {
+                let result = board.can_place(pos);
+                assert_eq!(result, expected);
+            }
+        }
+    }
+
+    #[test]
+    fn test_place_unchecked() {
+        let mut board = TakBoard::try_from_partial_tps("x3/2C,1S,112S/x,111C,x").unwrap();
+        assert_eq!(board.empty_spaces, 5);
+        assert_eq!(board.id_counter, 8);
+        board.do_place_unchecked(
+            TakCoord::new(0, 0),
+            TakPieceVariant::Capstone,
+            TakPlayer::White,
+        );
+        assert_eq!(board.empty_spaces, 4);
+        assert_eq!(board.id_counter, 9);
+        assert_eq!(board.to_partial_tps(), "1C,x2/2C,1S,112S/x,111C,x");
+        board.do_place_unchecked(TakCoord::new(1, 0), TakPieceVariant::Wall, TakPlayer::Black);
+        board.do_place_unchecked(TakCoord::new(2, 0), TakPieceVariant::Flat, TakPlayer::White);
+
+        assert_eq!(board.empty_spaces, 2);
+        assert_eq!(board.id_counter, 11);
+        assert_eq!(board.to_partial_tps(), "1C,2S,1/2C,1S,112S/x,111C,x");
+    }
+
+    #[test]
+    fn test_can_undo_place() {
+        let mut board = TakBoard::try_from_partial_tps("x3/2C,1S,112S/x,111C,x").unwrap();
+        let pos = TakCoord::new(0, 0);
+        assert!(board
+            .try_place(pos, TakPieceVariant::Capstone, TakPlayer::White)
+            .is_ok());
+
+        assert_eq!(
+            board.can_undo_place(pos, TakPieceVariant::Wall, TakPlayer::White),
+            Err(TakInvalidUndoPlaceError::NotAllowed)
+        );
+        assert_eq!(
+            board.can_undo_place(pos, TakPieceVariant::Capstone, TakPlayer::Black),
+            Err(TakInvalidUndoPlaceError::NotAllowed)
+        );
+        assert_eq!(
+            board.can_undo_place(TakCoord::new(1, 1), TakPieceVariant::Wall, TakPlayer::White),
+            Err(TakInvalidUndoPlaceError::NotAllowed)
+        );
+
+        assert!(board
+            .can_undo_place(pos, TakPieceVariant::Capstone, TakPlayer::White)
+            .is_ok());
+        assert!(board
+            .try_undo_place(pos, TakPieceVariant::Capstone, TakPlayer::White)
+            .is_ok());
+        assert!(board.can_place(pos).is_ok());
+        assert_eq!(board.to_partial_tps(), "x3/2C,1S,112S/x,111C,x");
+
+        assert_eq!(
+            board.can_undo_place(pos, TakPieceVariant::Capstone, TakPlayer::White),
+            Err(TakInvalidUndoPlaceError::PositionEmpty)
+        );
+    }
 
     #[test]
     fn test_new_board_is_empty() {
@@ -731,7 +992,6 @@ mod tests {
         assert!(board
             .try_place(TakCoord::new(2, 0), TakPieceVariant::Wall, TakPlayer::White)
             .is_ok());
-        println!("board: {board:?}");
         assert_eq!(board.to_partial_tps(), "x,1221C,1S,21,2S/x5/x5/x5/x5");
         assert!(board
             .try_undo_place(TakCoord::new(2, 0), TakPieceVariant::Wall, TakPlayer::White)
@@ -750,5 +1010,27 @@ mod tests {
             .try_undo_move(TakCoord::new(1, 0), TakDir::Right, 3, &[1, 1, 1], true)
             .is_ok());
         assert_eq!(board.to_partial_tps(), "x,1221C,x,21,2S/x5/x5/x5/x5");
+    }
+
+    #[test]
+    fn test_find_shortest_path() {
+        let board = TakBoard::try_from_partial_tps("1,1S,1,x/221C,2,221,1/1,1,1,1/x4").unwrap();
+        let start = TakCoord::new(0, 0);
+        let end = TakCoord::new(2, 0);
+        let path = board.find_shortest_path(start, end);
+        assert!(path.is_some());
+        let path = path.unwrap();
+        assert_eq!(
+            path,
+            vec![
+                TakCoord::new(0, 0),
+                TakCoord::new(0, 1),
+                TakCoord::new(0, 2),
+                TakCoord::new(1, 2),
+                TakCoord::new(2, 2),
+                TakCoord::new(2, 1),
+                TakCoord::new(2, 0)
+            ]
+        );
     }
 }

@@ -1,6 +1,7 @@
 use crate::TakPlayer;
 
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TakTimeMode {
     pub time: usize,
     pub increment: usize,
@@ -13,6 +14,7 @@ impl TakTimeMode {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TakTimestamp {
     pub millis: u64,
 }
@@ -42,6 +44,7 @@ impl TakTimestamp {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TakClock {
     pub time_remaining_millis: [u64; 2],
     pub increment_millis: u64,

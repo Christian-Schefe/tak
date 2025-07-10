@@ -6,6 +6,9 @@ authors.workspace = true
 
 [dependencies]
 web-sys = { version = "*", features = ["console"], optional = true }
+serde = { version = "*", features = ["derive"], optional = true }
+serde_json = { version = "*", optional = true }
 
 [features]
-wasm = ["web-sys"]
+wasm = ["dep:web-sys"]
+serde = ["dep:serde", "dep:serde_json"]

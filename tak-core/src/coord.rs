@@ -1,4 +1,5 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TakCoord {
     pub x: i32,
     pub y: i32,
@@ -66,6 +67,7 @@ impl TakCoord {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum TakDir {
     Up,
     Down,

@@ -1,14 +1,21 @@
+mod action;
 mod board;
 mod coord;
 mod game;
+mod ptn;
 mod time;
+mod tps;
 
+pub use action::*;
 pub use board::*;
 pub use coord::*;
 pub use game::*;
+pub use ptn::*;
 pub use time::*;
+pub use tps::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum TakPieceVariant {
     Flat,
     Wall,
@@ -16,6 +23,7 @@ pub enum TakPieceVariant {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum TakPlayer {
     White,
     Black,
@@ -38,6 +46,7 @@ impl TakPlayer {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum TakInvalidPlaceError {
     NotAllowed,
     InvalidPosition,
@@ -47,6 +56,7 @@ pub enum TakInvalidPlaceError {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum TakInvalidUndoPlaceError {
     NotAllowed,
     InvalidPosition,
@@ -55,6 +65,7 @@ pub enum TakInvalidUndoPlaceError {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum TakInvalidMoveError {
     NotAllowed,
     InvalidPosition,
@@ -67,6 +78,7 @@ pub enum TakInvalidMoveError {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum TakInvalidUndoMoveError {
     NotAllowed,
     InvalidPosition,
@@ -76,12 +88,14 @@ pub enum TakInvalidUndoMoveError {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum TakInvalidActionError {
     InvalidPlace(TakInvalidPlaceError),
     InvalidMove(TakInvalidMoveError),
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum TakInvalidUndoActionError {
     InvalidPlace(TakInvalidUndoPlaceError),
     InvalidMove(TakInvalidUndoMoveError),
@@ -89,13 +103,15 @@ pub enum TakInvalidUndoActionError {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum TakWinReason {
-    Road(TakCoord, TakCoord),
+    Road,
     Flat,
     Timeout,
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum TakGameState {
     Ongoing,
     Win(TakPlayer, TakWinReason),

@@ -1,10 +1,12 @@
 use crate::{
-    TakBoard, TakClock, TakCoord, TakDir, TakGameState, TakInvalidActionError, TakInvalidMoveError,
-    TakInvalidPlaceError, TakInvalidUndoActionError, TakInvalidUndoMoveError,
-    TakInvalidUndoPlaceError, TakPieceVariant, TakPlayer, TakTimeMode, TakTimestamp, TakWinReason,
+    TakAction, TakActionRecord, TakBoard, TakClock, TakCoord, TakDir, TakGameState,
+    TakInvalidActionError, TakInvalidMoveError, TakInvalidPlaceError, TakInvalidUndoActionError,
+    TakInvalidUndoMoveError, TakInvalidUndoPlaceError, TakPieceVariant, TakPlayer, TakPtn,
+    TakPtnAttr, TakTimeMode, TakTimestamp, TakTps, TakWinReason,
 };
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TakKomi {
     pub amount: usize,
     pub tiebreak: bool,
@@ -30,6 +32,7 @@ impl TakKomi {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TakStones {
     pub stones: usize,
     pub capstones: usize,
@@ -55,41 +58,57 @@ impl TakStones {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TakGameSettings {
     pub size: usize,
     pub stones: TakStones,
     pub komi: TakKomi,
     pub time_mode: Option<TakTimeMode>,
+    pub start_position: TakTps,
 }
 
 impl TakGameSettings {
     pub fn new(
         size: usize,
-        stones: TakStones,
+        stones: Option<TakStones>,
         komi: TakKomi,
         time_mode: Option<TakTimeMode>,
     ) -> Self {
         TakGameSettings {
             size,
-            stones,
+            stones: stones.unwrap_or_else(|| TakStones::from_size(size)),
             komi,
             time_mode,
+            start_position: TakTps::new_empty(size),
+        }
+    }
+    pub fn new_with_position(
+        size: usize,
+        start_position: TakTps,
+        stones: Option<TakStones>,
+        komi: TakKomi,
+        time_mode: Option<TakTimeMode>,
+    ) -> Self {
+        TakGameSettings {
+            size,
+            stones: stones.unwrap_or_else(|| TakStones::from_size(size)),
+            komi,
+            time_mode,
+            start_position,
         }
     }
 }
 
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TakHand {
     pub stones: usize,
     pub capstones: usize,
 }
 
 impl TakHand {
-    pub fn new(stones: &TakStones) -> Self {
-        TakHand {
-            stones: stones.stones,
-            capstones: stones.capstones,
-        }
+    pub fn new(stones: usize, capstones: usize) -> Self {
+        TakHand { stones, capstones }
     }
 
     pub fn try_take(&mut self, variant: TakPieceVariant) -> bool {
@@ -132,40 +151,13 @@ impl TakHand {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub enum TakActionRecord {
-    PlacePiece {
-        pos: TakCoord,
-        variant: TakPieceVariant,
-        player: TakPlayer,
-    },
-    MovePiece {
-        pos: TakCoord,
-        dir: TakDir,
-        take: usize,
-        drops: Vec<usize>,
-        flattened: bool,
-    },
-}
 #[derive(Debug, Clone, PartialEq)]
-pub enum TakAction {
-    PlacePiece {
-        pos: TakCoord,
-        variant: TakPieceVariant,
-    },
-    MovePiece {
-        pos: TakCoord,
-        dir: TakDir,
-        take: usize,
-        drops: Vec<usize>,
-    },
-}
-
-#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TakGame {
-    pub komi: TakKomi,
+    pub settings: TakGameSettings,
     pub board: TakBoard,
     pub current_player: TakPlayer,
+    pub turn_index: usize,
     pub action_history: Vec<TakActionRecord>,
     pub hands: [TakHand; 2],
     pub game_state: TakGameState,
@@ -173,23 +165,45 @@ pub struct TakGame {
 }
 
 impl TakGame {
-    pub fn new(settings: TakGameSettings) -> Self {
+    pub fn new(settings: TakGameSettings) -> Option<Self> {
         let size = settings.size;
-        let board = TakBoard::new(size);
+        if size < 3 || size > 8 {
+            return None;
+        }
+        let board = TakBoard::try_from_partial_tps(&settings.start_position.position)?;
+        if board.size != size {
+            return None;
+        }
+        let white_stones = board.count_stones(TakPlayer::White);
+        let black_stones = board.count_stones(TakPlayer::Black);
+        if white_stones.0 > settings.stones.stones
+            || white_stones.1 > settings.stones.capstones
+            || black_stones.0 > settings.stones.stones
+            || black_stones.1 > settings.stones.capstones
+        {
+            return None;
+        }
         let hands = [
-            TakHand::new(&settings.stones),
-            TakHand::new(&settings.stones),
+            TakHand::new(
+                settings.stones.stones - white_stones.0,
+                settings.stones.capstones - white_stones.1,
+            ),
+            TakHand::new(
+                settings.stones.stones - black_stones.0,
+                settings.stones.capstones - black_stones.1,
+            ),
         ];
-        let clock = settings.time_mode.as_ref().map(|mode| TakClock::new(&mode));
-        TakGame {
-            komi: settings.komi,
+        let clock = settings.time_mode.as_ref().map(|mode| TakClock::new(mode));
+        Some(TakGame {
             board,
             current_player: TakPlayer::White,
+            turn_index: settings.start_position.turn_index,
             action_history: Vec::new(),
             hands,
             game_state: TakGameState::Ongoing,
             clock,
-        }
+            settings,
+        })
     }
 
     pub fn check_timeout(&mut self) -> bool {
@@ -219,23 +233,19 @@ impl TakGame {
             }
         };
 
-        if let Some(road) = self
+        if let Some(_road) = self
             .board
             .check_for_road(&affected_positions, self.current_player)
         {
-            self.game_state =
-                TakGameState::Win(self.current_player, TakWinReason::Road(road.0, road.1));
-        } else if let Some(road) = self
+            self.game_state = TakGameState::Win(self.current_player, TakWinReason::Road);
+        } else if let Some(_road) = self
             .board
             .check_for_road(&affected_positions, self.current_player.other())
         {
-            self.game_state = TakGameState::Win(
-                self.current_player.other(),
-                TakWinReason::Road(road.0, road.1),
-            );
+            self.game_state = TakGameState::Win(self.current_player.other(), TakWinReason::Road);
         } else if !self.board.has_empty_space() || self.hands.iter().any(TakHand::is_empty) {
             let counts = self.board.count_flats();
-            if let Some(winner) = self.komi.determine_winner(counts) {
+            if let Some(winner) = self.settings.komi.determine_winner(counts) {
                 self.game_state = TakGameState::Win(winner, TakWinReason::Flat);
             } else {
                 self.game_state = TakGameState::Draw;
@@ -251,6 +261,7 @@ impl TakGame {
         }
 
         self.action_history.push(record);
+        self.turn_index += 1;
         self.current_player = self.current_player.other();
     }
 
@@ -275,6 +286,7 @@ impl TakGame {
             .action_history
             .pop()
             .ok_or(TakInvalidUndoActionError::NoLastAction)?;
+        self.turn_index -= 1;
         self.current_player = self.current_player.other();
         self.game_state = TakGameState::Ongoing;
 
@@ -318,7 +330,7 @@ impl TakGame {
         }
 
         self.board.can_place(pos)?;
-        let player = if self.action_history.len() < 2 {
+        let player = if self.turn_index < 2 {
             if variant != TakPieceVariant::Flat {
                 return Err(TakInvalidPlaceError::InvalidVariant);
             }
@@ -363,7 +375,7 @@ impl TakGame {
             return Err(TakInvalidMoveError::NotAllowed);
         }
 
-        if self.action_history.len() < 2 {
+        if self.turn_index < 2 {
             return Err(TakInvalidMoveError::NotAllowed);
         }
         let flattened = self.board.try_move(pos, dir, take, drops)?;
@@ -389,7 +401,7 @@ impl TakGame {
         self.board.try_undo_move(pos, dir, take, drops, flattened)
     }
 
-    pub fn gen_moves(&self) -> Vec<TakAction> {
+    pub fn gen_moves(&self, partition_memo: &Vec<Vec<Vec<Vec<usize>>>>) -> Vec<TakAction> {
         if self.game_state != TakGameState::Ongoing {
             return Vec::new();
         }
@@ -405,14 +417,14 @@ impl TakGame {
                         pos,
                         variant: TakPieceVariant::Flat,
                     });
-                    if self.action_history.len() >= 2 {
+                    if self.turn_index >= 2 {
                         moves.push(TakAction::PlacePiece {
                             pos,
                             variant: TakPieceVariant::Wall,
                         });
                     }
                 }
-                if hand.capstones > 0 && self.action_history.len() >= 2 {
+                if hand.capstones > 0 && self.turn_index >= 2 {
                     moves.push(TakAction::PlacePiece {
                         pos,
                         variant: TakPieceVariant::Capstone,
@@ -421,7 +433,7 @@ impl TakGame {
             }
         }
 
-        if self.action_history.len() < 2 {
+        if self.turn_index < 2 {
             return moves;
         }
 
@@ -433,7 +445,11 @@ impl TakGame {
                         if !offset_pos.is_valid(self.board.size) {
                             break;
                         }
-                        let drops_vec = partition_number(take, drop_len);
+                        let drops_vec = if partition_memo.len() > take {
+                            partition_memo[take][drop_len].clone()
+                        } else {
+                            partition_number(take, drop_len)
+                        };
                         for drops in drops_vec {
                             if self.board.try_get_tower(offset_pos).is_some_and(|t| {
                                 t.variant == TakPieceVariant::Capstone
@@ -466,98 +482,137 @@ impl TakGame {
         moves
     }
 
-    pub fn to_tps(&self) -> String {
-        format!(
-            "{} {}",
+    pub fn to_tps(&self) -> TakTps {
+        TakTps::new(
             self.board.to_partial_tps(),
-            match self.current_player {
-                TakPlayer::White => " 1",
-                TakPlayer::Black => " 2",
-            }
+            self.current_player,
+            self.turn_index + 1,
         )
     }
 
-    pub fn try_from_tps(tps: &str, komi: TakKomi) -> Option<Self> {
-        let mut parts = tps.split_whitespace();
-        let board_str = parts.next()?;
-        let player_str = parts.next()?;
-        let player = match player_str {
-            "1" => TakPlayer::White,
-            "2" => TakPlayer::Black,
-            _ => return None,
-        };
-        let turn_index = parts.next()?.parse::<usize>().ok()? - 1;
-        let board = TakBoard::try_from_partial_tps(board_str)?;
-        let white_stones = board.count_stones(TakPlayer::White);
-        let black_stones = board.count_stones(TakPlayer::Black);
-        let stones = TakStones::from_size(board.size);
-        Some(TakGame {
-            komi,
-            board,
-            current_player: player,
-            action_history: vec![
-                TakActionRecord::PlacePiece {
-                    pos: TakCoord::new(0, 0),       // Placeholder, will not be used
-                    variant: TakPieceVariant::Flat, // Placeholder, will not be used
-                    player: TakPlayer::White,       // Placeholder, will not be used
-                };
-                turn_index
-            ],
-            hands: [
-                TakHand::new(&TakStones::new(
-                    stones.stones - white_stones.0,
-                    stones.capstones - white_stones.1,
-                )),
-                TakHand::new(&TakStones::new(
-                    stones.stones - black_stones.0,
-                    stones.capstones - black_stones.1,
-                )),
-            ],
-            game_state: TakGameState::Ongoing,
-            clock: None,
-        })
+    pub fn to_ptn(&self) -> Option<TakPtn> {
+        let turns = self
+            .action_history
+            .iter()
+            .map(|x| x.to_ptn())
+            .collect::<Vec<_>>();
+        let mut attributes = vec![
+            TakPtnAttr::Size(self.board.size),
+            TakPtnAttr::Komi(self.settings.komi.amount, self.settings.komi.tiebreak),
+            TakPtnAttr::Flats(self.settings.stones.stones),
+            TakPtnAttr::Caps(self.settings.stones.capstones),
+        ];
+        if let Some(time_mode) = &self.settings.time_mode {
+            attributes.push(TakPtnAttr::Clock(time_mode.time, time_mode.increment));
+        }
+        if self.settings.start_position != TakTps::new_empty(self.board.size) {
+            attributes.push(TakPtnAttr::TPS(self.settings.start_position.clone()));
+        }
+        let mut ptn = TakPtn::new(
+            turns,
+            self.settings.start_position.turn_index,
+            self.game_state.clone(),
+        );
+        ptn.attributes = attributes;
+        Some(ptn)
     }
 
-    pub fn validate(&self, stones: &TakStones) {
+    pub fn try_from_ptn(ptn: TakPtn) -> Option<Self> {
+        println!("ptn: {:?}", ptn);
+        let settings = ptn.get_settings()?;
+        println!("settings: {:?}", settings);
+        let mut game = Self::new(settings)?;
+
+        let mut actions = Vec::new();
+        for (i, (_, white_turn, black_turn)) in ptn.turns.iter().enumerate() {
+            println!("{:?}, {:?}, {:?}", i, white_turn, black_turn);
+            if let Some(white_turn) = white_turn {
+                actions.push(TakAction::from_ptn(game.board.size as i32, &white_turn)?);
+            } else if i != 0 {
+                return None;
+            }
+            if let Some(black_turn) = black_turn {
+                actions.push(TakAction::from_ptn(game.board.size as i32, &black_turn)?);
+            } else if i != ptn.turns.len() - 1 {
+                return None;
+            }
+        }
+
+        for action in actions {
+            println!("action: {:?}", action);
+            let res = game.try_do_action(action);
+            println!("board: {}", game.board.to_partial_tps());
+            if let Err(e) = res {
+                eprintln!(
+                    "Error applying action to game: {}, error: {:?}",
+                    game.board.to_partial_tps(),
+                    e
+                );
+                return None;
+            }
+        }
+        Some(game)
+    }
+
+    pub fn validate(&self, stones: &TakStones) -> Result<(), String> {
+        self.board.validate()?;
         let stone_count = self.board.count_stones(TakPlayer::White);
         if stone_count.0 + self.hands[0].stones != stones.stones
             || stone_count.1 + self.hands[0].capstones != stones.capstones
         {
-            println!("{:?}", self.action_history);
-            println!("{}", self.to_tps());
-            panic!(
+            return Err(format!(
                 "Invalid stone count for White: {} in board, {} in hand, should be {}",
                 stone_count.0, self.hands[0].stones, stones.stones
-            );
+            ));
         }
         let stone_count = self.board.count_stones(TakPlayer::Black);
         if stone_count.0 + self.hands[1].stones != stones.stones
             || stone_count.1 + self.hands[1].capstones != stones.capstones
         {
-            println!("{:?}", self);
-            panic!(
+            return Err(format!(
                 "Invalid stone count for Black: {} in board, {} in hand, should be {}",
                 stone_count.0, self.hands[1].stones, stones.stones
-            );
+            ));
         }
+        if self.action_history.len() > self.turn_index {
+            return Err(format!(
+                "Action history length {} exceeds turn index {}",
+                self.action_history.len(),
+                self.turn_index
+            ));
+        }
+        if self.current_player.index() != self.turn_index % 2 {
+            return Err(format!(
+                "Current player {:?} does not match turn index {}",
+                self.current_player, self.turn_index
+            ));
+        }
+
+        Ok(())
     }
 }
 
-fn partition_number(num: usize, n: usize) -> Vec<Vec<usize>> {
-    if n == 0 {
-        if num == 0 {
-            Vec::new()
-        } else {
-            Vec::new()
+pub fn compute_partition_memo(max_take: usize) -> Vec<Vec<Vec<Vec<usize>>>> {
+    let mut partition_memo = Vec::new();
+    for take in 0..=max_take {
+        let mut vec = Vec::new();
+        for drop_len in 0..=take {
+            vec.push(partition_number(take, drop_len));
         }
+        partition_memo.push(vec);
+    }
+    partition_memo
+}
+
+fn partition_number(num: usize, n: usize) -> Vec<Vec<usize>> {
+    if num < n || n == 0 || num == 0 {
+        Vec::new()
     } else if n == 1 {
         if num == 0 {
             Vec::new()
         } else {
             vec![vec![num]]
         }
-    } else if num < n {
-        Vec::new()
     } else {
         let mut result = Vec::new();
         for first in 1..=(num - n + 1) {
@@ -570,6 +625,7 @@ fn partition_number(num: usize, n: usize) -> Vec<Vec<usize>> {
         result
     }
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -627,12 +683,76 @@ mod tests {
     }
 
     #[test]
-    fn precompute_values() {
-        for num in 0..=10 {
-            for n in 1..=num {
-                let partitions = partition_number(num, n);
-                println!("partition_number({}, {}) = {:?}", num, n, partitions.len());
-            }
-        }
+    fn test_from_ptn() {
+        let ptn = r#"
+[Site "PlayTak.com"]
+[Event "Online Play"]
+[Date "2025.06.26"]
+[Time "19:32:14"]
+[Player1 "Abyss"]
+[Rating1 "2100"]
+[Player2 "alion02"]
+[Rating2 "2240"]
+[Clock "15:0 +10"]
+[Result "0-F"]
+[Size "6"]
+[Komi "2"]
+[Flats "30"]
+[Caps "1"]
+[Opening "swap"]
+
+1. a6 f1
+2. d3 c4
+3. d4 d5
+4. c3 b3
+5. c5 b4
+6. c2 b2
+7. c1 Cd2
+8. b1 d1
+9. c6 d2<
+10. Cb5 d2
+11. e3 e2
+12. f3 a4
+13. b5- a3
+14. 2b4- a2
+15. 3b3- a1
+16. b1< b4
+17. f2 2c2+
+18. e5 e2+
+19. a5 f4
+20. e4 3c3>
+21. c3 d6
+22. c1> e6
+23. f5 4d3+
+24. 4b2+13 f6
+25. 4b4> c2
+26. Sd3 b2
+27. e2 b5
+28. b4 b1
+29. b4+ b4
+30. c1 b6
+31. e2< d6<
+32. c5+ b6>
+33. Sb6 Sd6
+34. b6> Sb6
+35. 4c6- e1
+36. c1+ d6<
+37. d3> d6
+38. 3e3-12 b6-
+39. c1 b6
+40. 5c4< c4 0-F
+"#;
+        let ptn = TakPtn::try_from_str(ptn).expect("Failed to parse PTN");
+        let game = TakGame::try_from_ptn(ptn).expect("Failed to create game from PTN");
+        assert_eq!(game.board.size, 6);
+        assert_eq!(game.settings.komi.amount, 2);
+        assert_eq!(game.settings.stones.stones, 30);
+        assert_eq!(game.settings.stones.capstones, 1);
+        assert_eq!(game.current_player, TakPlayer::White);
+        assert_eq!(game.turn_index, 80);
+        assert_eq!(
+            game.game_state,
+            TakGameState::Win(TakPlayer::Black, TakWinReason::Flat)
+        );
     }
 }
