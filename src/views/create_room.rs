@@ -1,9 +1,9 @@
 use crate::server::room::{create_room, CreateRoomResponse, RoomSettings};
-use crate::tak::{TakKomi, TakSettings, TakStones, TakTimeMode};
 use crate::Route;
 use dioxus::prelude::*;
 use dioxus_free_icons::icons::fa_solid_icons::{FaBolt, FaChessBoard, FaClock};
 use dioxus_free_icons::Icon;
+use tak_core::{TakGameSettings, TakKomi, TakTimeMode};
 
 #[component]
 pub fn CreateRoom() -> Element {
@@ -23,12 +23,12 @@ pub fn CreateRoom() -> Element {
         let time_mode = TakTimeMode::new(time_mode.0 * 60, time_mode.1);
         let board_size = *board_size.read();
         let create_room_params = RoomSettings {
-            game_settings: TakSettings {
-                size: board_size,
-                time_mode: time_mode.clone(),
-                komi: TakKomi::default(),
-                stones: TakStones::default_from_size(board_size),
-            },
+            game_settings: TakGameSettings::new(
+                board_size,
+                None,
+                TakKomi::new(0, false),
+                Some(time_mode),
+            ),
         };
         spawn(async move {
             let res = create_room(create_room_params).await;
@@ -38,6 +38,9 @@ pub fn CreateRoom() -> Element {
                 }
                 Ok(CreateRoomResponse::Success(_)) => {
                     nav.push(Route::PlayOnline {});
+                }
+                Ok(CreateRoomResponse::InvalidSettings) => {
+                    dioxus::logger::tracing::error!("Invalid settings provided.");
                 }
                 Ok(CreateRoomResponse::AlreadyInRoom) => {
                     dioxus::logger::tracing::error!("Already in a room, cannot create a new one.");

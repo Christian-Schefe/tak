@@ -71,6 +71,13 @@ impl TakBoard {
         }
     }
 
+    /// Resets the board to its initial state, clearing all pieces and resetting the ID counter.
+    pub fn reset(&mut self) {
+        self.board.fill(None);
+        self.id_counter = 0;
+        self.empty_spaces = self.size * self.size;
+    }
+
     /// Checks if a piece can be placed at the given position.
     /// Returns `Ok(())` if the position is valid and empty, or an error if the position is occupied or invalid.
     pub fn can_place(&self, pos: TakCoord) -> Result<(), TakInvalidPlaceError> {
@@ -676,10 +683,13 @@ impl TakBoard {
     /// Returns an iterator over all pieces of the specified player on the board.
     /// Each item in the iterator is a tuple containing the position and a reference to the tower
     /// at that position.
-    pub fn iter_pieces(&self, player: TakPlayer) -> impl Iterator<Item = (TakCoord, &TakTower)> {
+    pub fn iter_pieces(
+        &self,
+        player: Option<TakPlayer>,
+    ) -> impl Iterator<Item = (TakCoord, &TakTower)> {
         TakCoord::iter_board(self.size).filter_map(move |pos| {
             if let Some(tower) = pos.get(&self.board, self.size) {
-                if tower.player() == player {
+                if player.is_none_or(|p| tower.player() == p) {
                     Some((pos, tower))
                 } else {
                     None

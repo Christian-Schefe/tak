@@ -3,41 +3,40 @@ use crate::components::tak_flats_counter::TakFlatsCounter;
 use crate::components::tak_hand::TakHand;
 use crate::components::tak_piece::TakPiece;
 use crate::components::tak_tile::TakTile;
-use crate::components::Clock;
-use crate::tak::{TakCoord, TakPieceType, TakPlayer};
+use crate::components::TakClock;
 use dioxus::core_macro::{component, rsx};
 use dioxus::dioxus_core::Element;
 use dioxus::prelude::*;
+use tak_core::{TakCoord, TakPieceVariant, TakPlayer};
 
 #[component]
 pub fn TakBoard() -> Element {
     let state = use_context::<TakBoardState>();
+    let state_clone = state.clone();
 
-    let pieces_lock = state.pieces.read();
-    let pieces_rendered = (0..pieces_lock.len()).map(|id| {
-        rsx! {
-            TakPiece {
-                key: "{id}",
-                id: id,
-            }
-        }
+    let data = use_memo(move || {
+        let _ = state_clone.on_change.read();
+        state_clone.with_game(|game| {
+            (
+                game.game().current_player,
+                game.game().board.size,
+                game.pieces.iter().map(|(id, _)| *id).collect::<Vec<_>>(),
+            )
+        })
     });
 
-    let state_clone = state.clone();
-    let highlighted_tiles = use_memo(move || state_clone.get_highlighted_tiles());
-    let state_clone = state.clone();
-    let selected_tiles = use_memo(move || state_clone.get_selected_tiles());
-    let state_clone = state.clone();
-    let bridges = use_memo(move || state_clone.get_bridges());
+    let (player, size, mut piece_ids) = data.read().clone();
+    piece_ids.sort_unstable();
 
-    let size = state.size.read();
-    let tile_coords = (0..*size)
-        .rev()
-        .flat_map(|j| (0..*size).map(move |i| (format!("{},{}", i, j), TakCoord::new(i, j))))
+    let tile_coords = (0..size)
+        .flat_map(|j| {
+            (0..size).map(move |i| (format!("{},{}", i, j), TakCoord::new(i as i32, j as i32)))
+        })
         .collect::<Vec<_>>();
 
+    let state_clone = state.clone();
     let player_names = use_memo(move || {
-        let player_info = state.player_info.read();
+        let player_info = state_clone.player_info.read();
         let white_player_name = player_info
             .get(&TakPlayer::White)
             .map_or("Waiting...".to_string(), |info| info.name.clone());
@@ -49,25 +48,31 @@ pub fn TakBoard() -> Element {
         (white_player_name, black_player_name)
     });
 
+    let mut state_clone = state.clone();
+    use_effect(move || {
+        let _ = state_clone.on_change.read();
+        state_clone.correct_selected_piece_type();
+    });
+
     rsx! {
         div {
             class: "tak-board-container",
             div {
                 class: "tak-game-info",
-                Clock {
+                TakClock {
                     player: TakPlayer::White,
                 }
                 p {
                     class: "tak-player-info left",
-                    class: if *state.player.read() == TakPlayer::White {"current-player"} else {""},
+                    class: if player == TakPlayer::White {"current-player"} else {""},
                     "{player_names.read().0}"
                 }
                 p {
                     class: "tak-player-info right",
-                    class: if *state.player.read() == TakPlayer::Black {"current-player"} else {""},
+                    class: if player == TakPlayer::Black {"current-player"} else {""},
                     "{player_names.read().1}"
                 }
-                Clock {
+                TakClock {
                     player: TakPlayer::Black,
                 }
             }
@@ -78,12 +83,14 @@ pub fn TakBoard() -> Element {
                     TakTile {
                         key: "{key}",
                         pos,
-                        is_selected: selected_tiles.read().contains(&pos),
-                        is_highlighted: highlighted_tiles.read().contains(&pos),
-                        bridges: bridges.read().get(&pos).cloned(),
                     }
                 }
-                {pieces_rendered}
+                for id in piece_ids {
+                    TakPiece {
+                        key: "{id}",
+                        id,
+                    }
+                }
             }
             div {
                 class: "tak-piece-hand-container",
@@ -98,13 +105,13 @@ pub fn TakBoard() -> Element {
             div {
                 class: "tak-piece-selector",
                 PieceTypeSelectorButton {
-                    piece_type: TakPieceType::Flat
+                    piece_type: TakPieceVariant::Flat
                 },
                 PieceTypeSelectorButton {
-                    piece_type: TakPieceType::Wall
+                    piece_type: TakPieceVariant::Wall
                 },
                 PieceTypeSelectorButton {
-                    piece_type: TakPieceType::Capstone
+                    piece_type: TakPieceVariant::Capstone
                 }
             }
         }
@@ -112,19 +119,33 @@ pub fn TakBoard() -> Element {
 }
 
 #[component]
-fn PieceTypeSelectorButton(piece_type: TakPieceType) -> Element {
-    let mut state = use_context::<TakBoardState>();
-    let available_piece_types = state.available_piece_types.read();
-    let can_place = available_piece_types.contains(&piece_type);
+fn PieceTypeSelectorButton(piece_type: TakPieceVariant) -> Element {
+    let state = use_context::<TakBoardState>();
+    let mut selected_piece_type = state.selected_piece_type.clone();
+
+    let data = use_memo(move || {
+        let _ = state.on_change.read();
+        let player = state.get_active_local_player();
+        state.with_game(|game| {
+            (
+                game.available_piece_types[player.index()].contains(&piece_type),
+                piece_type == *state.selected_piece_type.read(),
+            )
+        })
+    });
+
+    let (can_place, is_selected) = data.read().clone();
+
     let text = match piece_type {
-        TakPieceType::Flat => "Flat",
-        TakPieceType::Wall => "Wall",
-        TakPieceType::Capstone => "Cap",
+        TakPieceVariant::Flat => "Flat",
+        TakPieceVariant::Wall => "Wall",
+        TakPieceVariant::Capstone => "Cap",
     };
+
     rsx! {
         button {
             class: "piece-selector",
-            class: if *state.selected_piece_type.read() == piece_type {
+            class: if is_selected {
                 "piece-selector-current"
             } else {
                 ""
@@ -136,7 +157,7 @@ fn PieceTypeSelectorButton(piece_type: TakPieceType) -> Element {
             },
             disabled: !can_place,
             onclick: move |_| {
-                state.selected_piece_type.set(piece_type);
+                selected_piece_type.set(piece_type);
             },
             {text}
         }

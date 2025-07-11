@@ -64,6 +64,28 @@ impl TakCoord {
         self.try_get_mut(board, size)
             .expect("TakCoord should be valid")
     }
+
+    pub fn is_adjacent(&self, other: &TakCoord) -> Option<TakDir> {
+        if self.x == other.x {
+            if self.y == other.y - 1 {
+                Some(TakDir::Up)
+            } else if self.y == other.y + 1 {
+                Some(TakDir::Down)
+            } else {
+                None
+            }
+        } else if self.y == other.y {
+            if self.x == other.x - 1 {
+                Some(TakDir::Left)
+            } else if self.x == other.x + 1 {
+                Some(TakDir::Right)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -77,4 +99,20 @@ pub enum TakDir {
 
 impl TakDir {
     pub const ALL: [TakDir; 4] = [TakDir::Up, TakDir::Down, TakDir::Left, TakDir::Right];
+    pub fn index(&self) -> usize {
+        match self {
+            TakDir::Up => 0,
+            TakDir::Down => 1,
+            TakDir::Left => 2,
+            TakDir::Right => 3,
+        }
+    }
+    pub fn opposite(&self) -> TakDir {
+        match self {
+            TakDir::Up => TakDir::Down,
+            TakDir::Down => TakDir::Up,
+            TakDir::Left => TakDir::Right,
+            TakDir::Right => TakDir::Left,
+        }
+    }
 }

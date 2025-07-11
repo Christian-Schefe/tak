@@ -1,10 +1,10 @@
-use crate::tak::TakPlayer;
 use crate::components::tak_board_state::TakBoardState;
 use dioxus::core_macro::component;
 use dioxus::prelude::*;
+use tak_core::TakPlayer;
 
 #[component]
-pub fn Clock(player: TakPlayer) -> Element {
+pub fn TakClock(player: TakPlayer) -> Element {
     let board = use_context::<TakBoardState>();
     let time_remaining = use_signal_sync(|| None);
 
@@ -24,11 +24,22 @@ pub fn Clock(player: TakPlayer) -> Element {
         TakPlayer::Black => "dark",
     };
 
+    let time_remaining_str = time_remaining
+        .read()
+        .as_ref()
+        .map_or("0:00".to_string(), |&t| {
+            if t >= 20000 {
+                format!("{}:{:02}", (t / 1000) / 60, (t / 1000) % 60)
+            } else {
+                format!("0:{:02}.{}", t / 1000, (t / 100) % 10)
+            }
+        });
+
     rsx! {
         div {
             class: "clock clock-{class_name}",
             p {
-                {if let Some(t) = time_remaining.read().as_ref() { format!("{:02}:{:02}", t.as_secs() / 60, t.as_secs() % 60) } else { "00:00".to_string() }}
+                {time_remaining_str}
             }
         }
     }

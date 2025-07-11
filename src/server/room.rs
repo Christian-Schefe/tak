@@ -1,5 +1,4 @@
 use crate::components::ServerGameMessage;
-use crate::tak::{TakGame, TakPlayer, TakSettings};
 use dioxus::prelude::*;
 use futures_util::SinkExt;
 use rand::distributions::Alphanumeric;
@@ -9,6 +8,8 @@ use std::collections::HashMap;
 use std::ops::DerefMut;
 use std::sync::Arc;
 use std::time::Duration;
+use tak_core::TakGameSettings;
+use tak_core::{TakGame, TakPlayer};
 
 pub type PlayerId = String;
 pub type RoomId = String;
@@ -38,12 +39,13 @@ impl Room {
         if self.game.is_some() {
             return;
         }
-        self.game = Some(TakGame::new(self.settings.game_settings.clone()))
+        self.game = Some(
+            TakGame::new(self.settings.game_settings.clone()).expect("Settings should be valid"),
+        );
     }
 
     fn is_ready(&self) -> bool {
-        let all_player_types = TakPlayer::all();
-        all_player_types
+        TakPlayer::ALL
             .iter()
             .all(|pt| self.players.iter().any(|(p, _)| p == pt))
     }
@@ -112,6 +114,9 @@ impl Rooms {
         let Some(id) = self.try_generate_room_id() else {
             return CreateRoomResponse::FailedToGenerateId;
         };
+        if TakGame::new(settings.game_settings.clone()).is_none() {
+            return CreateRoomResponse::InvalidSettings;
+        }
         self.rooms.insert(
             id.clone(),
             Arc::new(tokio::sync::Mutex::new(Room::new(owner.clone(), settings))),
@@ -132,8 +137,7 @@ impl Rooms {
             return JoinRoomResponse::RoomNotFound;
         };
         let mut room_lock = room.lock().await;
-        let all_player_types = TakPlayer::all();
-        let Some(player_type) = all_player_types
+        let Some(player_type) = TakPlayer::ALL
             .into_iter()
             .find(|x| !room_lock.players.iter().any(|(p, _)| *p == *x))
         else {
@@ -295,12 +299,13 @@ pub enum CreateRoomResponse {
     Success(RoomId),
     AlreadyInRoom,
     FailedToGenerateId,
+    InvalidSettings,
     Unauthorized,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoomSettings {
-    pub game_settings: TakSettings,
+    pub game_settings: TakGameSettings,
 }
 
 #[server]
@@ -371,11 +376,12 @@ pub async fn join_room(
 async fn maybe_start_game(rooms: &mut Rooms, room_id: &RoomId) {
     if !rooms
         .with_room_mut(room_id, |room| {
-            let is_ready = room.is_ready();
-            if is_ready {
+            if room.is_ready() {
                 room.start_game();
+                true
+            } else {
+                false
             }
-            is_ready
         })
         .await
     {
@@ -469,7 +475,7 @@ pub async fn get_players() -> Result<GetPlayersResponse, ServerFnError> {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum GetGameStateResponse {
-    Success(Option<(String, Vec<(TakPlayer, Duration)>)>),
+    Success(Option<(String, Vec<(TakPlayer, u64)>)>),
     NotInARoom,
     Unauthorized,
 }
@@ -491,9 +497,9 @@ pub async fn get_game_state() -> Result<GetGameStateResponse, ServerFnError> {
     let room_lock = room.lock().await;
     if let Some(game) = &room_lock.game {
         let game_state = game.to_ptn();
-        let time_remaining = TakPlayer::all()
+        let time_remaining = TakPlayer::ALL
             .into_iter()
-            .map(|x| (x, game.get_time_remaining(x)))
+            .map(|x| (x, game.get_time_remaining(x, true).unwrap()))
             .collect::<Vec<_>>();
         Ok(GetGameStateResponse::Success(Some((
             game_state.to_str(),

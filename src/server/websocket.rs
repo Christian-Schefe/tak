@@ -8,13 +8,12 @@ use futures_util::{SinkExt, StreamExt};
 use std::net::SocketAddr;
 use std::ops::DerefMut;
 use std::sync::Arc;
+use tak_core::{TakAction, TakPlayer};
 use tokio::sync::Mutex;
 
 use crate::components::ServerGameMessage;
 use crate::server::auth::SessionStore;
 use crate::server::room::{PlayerSocketMap, Room, Rooms};
-use crate::tak::action::TakAction;
-use crate::tak::TakPlayer;
 use crate::views::ClientGameMessage;
 use axum_extra::TypedHeader;
 use futures_util::stream::{SplitSink, SplitStream};
@@ -176,22 +175,25 @@ async fn handle_socket(
 }
 
 async fn on_room_receive_move(sockets: Arc<PlayerSocketMap>, room: &mut Room, action: &str) {
-    if let Some(action) = TakAction::from_ptn(action) {
-        let Some(game) = &mut room.game else {
-            println!("Game hasn't started yet");
-            return;
-        };
-        let move_index = game.get_current_move_index();
+    let Some(game) = &mut room.game else {
+        println!("Game hasn't started yet");
+        return;
+    };
+    if let Some(action) = TakAction::from_ptn(game.board.size as i32, action) {
+        let move_index = game.turn_index;
         let res = match game.try_do_action(action) {
-            Ok(res) => res,
+            Ok(()) => game
+                .get_last_action()
+                .expect("Action history should not be empty"),
             Err(e) => {
                 println!("Error processing action: {e:?}");
                 return;
             }
-        };
-        let time_remaining = TakPlayer::all()
+        }
+        .clone();
+        let time_remaining = TakPlayer::ALL
             .into_iter()
-            .map(|x| (x, game.get_time_remaining(x)))
+            .map(|x| (x, game.get_time_remaining(x, true).unwrap()))
             .collect::<Vec<_>>();
         let msg = serde_json::to_string(&ServerGameMessage::Move(
             move_index,

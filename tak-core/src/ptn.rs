@@ -40,53 +40,47 @@ impl TakPtnAttr {
         if str.is_empty() || !str.starts_with('[') || !str.ends_with(']') {
             return None;
         }
-        let str = str[1..str.len() - 1].trim();
-        let parts: Vec<&str> = str.split_whitespace().collect();
-        if parts.is_empty() {
-            return None;
-        }
+        let patterns = ["Size", "Clock", "Komi", "Flats", "Caps", "TPS"];
+        let mut matching = None;
 
-        match parts[0] {
-            "Size" => parts
-                .get(1)
-                .and_then(|s| s.trim_matches(|c| c == '"').parse::<usize>().ok())
-                .map(TakPtnAttr::Size),
+        for pattern in patterns {
+            if str.starts_with(&format!("[{} \"", pattern)) && str.ends_with("\"]") {
+                let inner = &str[pattern.len() + 3..str.len() - 2];
+                matching = Some((pattern, inner));
+                break;
+            }
+        }
+        if matching.is_none() {
+            let inner = &str[1..str.len() - 1];
+            return Some(TakPtnAttr::Unknown(inner.to_string()));
+        }
+        let (pattern, inner) = matching?;
+
+        match pattern {
+            "Size" => inner.parse::<usize>().ok().map(TakPtnAttr::Size),
             "Clock" => {
-                if parts.len() < 3 {
+                let parts = inner
+                    .split(|c| c == ':' || c == '+')
+                    .map(str::trim)
+                    .collect::<Vec<&str>>();
+                if parts.len() != 3 {
                     return None;
                 }
-                let time_parts: Vec<&str> =
-                    parts[1].trim_matches(|c| c == '"').split(':').collect();
-                if time_parts.len() != 2 {
-                    return None;
-                }
-                let mins = time_parts[0].parse::<usize>().ok()?;
-                let secs = time_parts[1].parse::<usize>().ok()?;
-                let increment = parts[2]
-                    .trim_matches(|c| c == '"' || c == '+')
-                    .parse::<usize>()
-                    .ok()?;
+                let mins = parts[0].parse::<usize>().ok()?;
+                let secs = parts[1].parse::<usize>().ok()?;
+                let increment = parts[2].parse::<usize>().ok()?;
                 Some(TakPtnAttr::Clock(mins * 60 + secs, increment))
             }
             "Komi" => {
-                if parts.len() < 2 {
-                    return None;
-                }
-                let num = parts[1].trim_matches(|c| c == '"').parse::<f32>().ok()?;
+                let num = inner.parse::<f32>().ok()?;
                 let add_half = num.trunc() != num;
                 let num = num.trunc() as usize;
                 Some(TakPtnAttr::Komi(num, add_half))
             }
-            "Flats" => parts
-                .get(1)
-                .and_then(|s| s.trim_matches(|c| c == '"').parse::<usize>().ok())
-                .map(TakPtnAttr::Flats),
-            "Caps" => parts
-                .get(1)
-                .and_then(|s| s.trim_matches(|c| c == '"').parse::<usize>().ok())
-                .map(TakPtnAttr::Caps),
-            "TPS" => TakTps::try_from_str(str.trim_start_matches("TPS ")).map(TakPtnAttr::TPS),
-            _ => Some(TakPtnAttr::Unknown(str.to_string())),
+            "Flats" => inner.parse::<usize>().ok().map(TakPtnAttr::Flats),
+            "Caps" => inner.parse::<usize>().ok().map(TakPtnAttr::Caps),
+            "TPS" => TakTps::try_from_str(inner).map(TakPtnAttr::TPS),
+            _ => unreachable!(),
         }
     }
 }

@@ -8,6 +8,7 @@ pub struct TakTimeMode {
 }
 
 impl TakTimeMode {
+    /// Creates a new TakTimeMode with the given time in seconds and increment in seconds.
     pub fn new(time: usize, increment: usize) -> Self {
         TakTimeMode { time, increment }
     }
@@ -85,5 +86,9 @@ impl TakClock {
             .map(|t| now.elapsed_since(t))
             .unwrap_or(0);
         time_left.saturating_sub(elapsed)
+    }
+
+    pub fn set_time_remaining(&mut self, player: TakPlayer, time_remaining: u64) {
+        self.time_remaining_millis[player.index()] = time_remaining;
     }
 }

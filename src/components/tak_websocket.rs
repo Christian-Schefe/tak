@@ -1,19 +1,17 @@
 use crate::components::tak_board_state::TakBoardState;
 use crate::server::room::{get_game_state, GetGameStateResponse};
-use crate::tak::action::TakAction;
-use crate::tak::TakPlayer;
 use dioxus::core_macro::component;
 use dioxus::prelude::*;
 use futures_util::{SinkExt, StreamExt};
 use gloo::net::websocket::futures::WebSocket;
 use gloo::net::websocket::{Message, WebSocketError};
-use std::time::Duration;
+use tak_core::TakPlayer;
 use wasm_bindgen_futures::spawn_local;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
 pub enum ServerGameMessage {
     StartGame,
-    Move(usize, Vec<(TakPlayer, Duration)>, String),
+    Move(usize, Vec<(TakPlayer, u64)>, String),
 }
 
 #[component]
@@ -24,7 +22,7 @@ pub fn TakWebSocket(session_id: String) -> Element {
 
     let handle_game_message = move |board: &mut TakBoardState, msg: ServerGameMessage| {
         let mut board_clone = board.clone();
-        let should_resync = match msg {
+        match msg {
             ServerGameMessage::StartGame => {
                 dioxus::logger::tracing::info!("[WebSocket] Starting game");
                 let mut board_clone = board_clone.clone();
@@ -32,42 +30,29 @@ pub fn TakWebSocket(session_id: String) -> Element {
                     board_clone.update_player_info().await;
                     board_clone.has_started.set(true);
                 });
-                false
             }
-            ServerGameMessage::Move(move_index, time_remaining, action) => 'move_branch: {
+            ServerGameMessage::Move(move_index, time_remaining, action) => {
                 dioxus::logger::tracing::info!("[WebSocket] Processing move action: {action}");
-                let Some(action) = TakAction::from_ptn(&action) else {
+                let Some(action) = board.try_parse_action(&action) else {
                     dioxus::logger::tracing::error!(
                         "[WebSocket] Invalid action received: {action}"
                     );
-                    break 'move_branch true;
+                    return;
                 };
-                let should_resync = match board.maybe_try_do_remote_action(move_index, &action) {
-                    None => {
-                        dioxus::logger::tracing::error!(
-                            "[WebSocket] Board state mismatch: {action:?}"
-                        );
-                        true
-                    }
-                    Some(Ok(())) => false,
-                    Some(Err(e)) => {
-                        dioxus::logger::tracing::error!(
-                            "[WebSocket] Error processing action: {e:?}"
-                        );
-                        true
-                    }
-                };
+                let should_resync = board
+                    .maybe_try_do_remote_action(move_index, action)
+                    .is_err();
                 for (player, duration) in time_remaining {
                     board_clone.set_time_remaining(player, duration);
                 }
-                should_resync
+                if should_resync {
+                    dioxus::logger::tracing::info!(
+                        "[WebSocket] Resyncing game state after message"
+                    );
+                    resync_game_state(board_clone);
+                }
             }
         };
-
-        if should_resync {
-            dioxus::logger::tracing::info!("[WebSocket] Resyncing game state after message");
-            resync_game_state(board_clone);
-        }
     };
 
     let ws = use_coroutine(move |mut rx: UnboundedReceiver<Message>| {
@@ -168,14 +153,15 @@ fn resync_game_state(mut board: TakBoardState) {
         let res = get_game_state().await;
         dioxus::logger::tracing::info!("[WebSocket] Game state resyncing: {:?}", res);
         if let Ok(GetGameStateResponse::Success(game_state)) = res {
-            board.has_started.set(game_state.is_some());
             if let Some((ptn, time_remaining)) = game_state {
-                board.set_game_from_ptn(ptn.to_string());
+                board.try_set_from_ptn(ptn.to_string());
                 for (player, duration) in time_remaining {
                     board.set_time_remaining(player, duration);
                 }
+                board.has_started.set(true);
             } else {
-                board.reset_game();
+                dioxus::logger::tracing::warn!("[WebSocket] Game hasn't started yet");
+                board.reset();
             }
         }
         dioxus::logger::tracing::info!("[WebSocket] Game state resynced.");

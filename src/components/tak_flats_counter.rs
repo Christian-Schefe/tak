@@ -1,22 +1,28 @@
-use crate::components::tak_board_state::TakBoardState;
-use crate::tak::TakPlayer;
 use dioxus::prelude::*;
+
+use crate::components::tak_board_state::TakBoardState;
 
 #[component]
 pub fn TakFlatsCounter() -> Element {
-    let board = use_context::<TakBoardState>();
+    let state = use_context::<TakBoardState>();
 
-    let flats = use_memo(move || {
-        let _ = board.pieces.read();
-        let flats = board.count_flats();
-        (
-            *flats.get(&TakPlayer::White).unwrap_or(&0),
-            *flats.get(&TakPlayer::Black).unwrap_or(&0),
-        )
+    let data = use_memo(move || {
+        let _ = state.on_change.read();
+        state.with_game(|game| {
+            let komi = &game.game().settings.komi;
+            (
+                game.flat_counts[0],
+                game.flat_counts[1],
+                if komi.tiebreak {
+                    format!("{}.5", komi.amount)
+                } else {
+                    komi.amount.to_string()
+                },
+            )
+        })
     });
 
-    let (white_flats, black_flats) = *flats.read();
-    let komi_flats = 2;
+    let (white_flats, black_flats, komi_flats) = data.read().clone();
 
     rsx! {
         div {
@@ -35,7 +41,7 @@ pub fn TakFlatsCounter() -> Element {
                     "{black_flats}"
                 }
             }
-            if komi_flats > 0 {
+            if komi_flats != "0" {
                 div {
                     class: "flats-bar flats-bar-komi",
                     style: "flex-grow: {komi_flats};",

@@ -16,6 +16,12 @@ impl TakKomi {
     pub fn new(amount: usize, tiebreak: bool) -> Self {
         TakKomi { amount, tiebreak }
     }
+    pub fn none() -> Self {
+        TakKomi {
+            amount: 0,
+            tiebreak: false,
+        }
+    }
     pub fn determine_winner(&self, counts: [usize; 2]) -> Option<TakPlayer> {
         let white_score = counts[0];
         let black_score = counts[1] + self.amount;
@@ -82,6 +88,7 @@ impl TakGameSettings {
             start_position: TakTps::new_empty(size),
         }
     }
+
     pub fn new_with_position(
         size: usize,
         start_position: TakTps,
@@ -206,6 +213,22 @@ impl TakGame {
         })
     }
 
+    pub fn reset(&mut self) {
+        *self = TakGame::new(self.settings.clone()).expect("Game should be valid");
+    }
+
+    pub fn get_time_remaining(&self, player: TakPlayer, apply_elapsed: bool) -> Option<u64> {
+        self.clock
+            .as_ref()
+            .map(|clock| clock.get_time_remaining(player, apply_elapsed))
+    }
+
+    pub fn set_time_remaining(&mut self, player: TakPlayer, time_remaining: u64) {
+        if let Some(clock) = &mut self.clock {
+            clock.set_time_remaining(player, time_remaining);
+        }
+    }
+
     pub fn check_timeout(&mut self) -> bool {
         if let Some(clock) = &mut self.clock {
             if clock.get_time_remaining(self.current_player, true) == 0 {
@@ -281,6 +304,10 @@ impl TakGame {
         }
     }
 
+    pub fn get_last_action(&self) -> Option<&TakActionRecord> {
+        self.action_history.last()
+    }
+
     pub fn undo_action(&mut self) -> Result<(), TakInvalidUndoActionError> {
         let last_action = self
             .action_history
@@ -320,7 +347,7 @@ impl TakGame {
         Ok(())
     }
 
-    pub fn try_place(
+    fn try_place(
         &mut self,
         pos: TakCoord,
         variant: TakPieceVariant,
@@ -364,7 +391,7 @@ impl TakGame {
         Ok(())
     }
 
-    pub fn try_move(
+    fn try_move(
         &mut self,
         pos: TakCoord,
         dir: TakDir,
@@ -437,7 +464,7 @@ impl TakGame {
             return moves;
         }
 
-        for (pos, tower) in self.board.iter_pieces(player) {
+        for (pos, tower) in self.board.iter_pieces(Some(player)) {
             for take in 1..=tower.height().min(self.board.size) {
                 for &dir in &[TakDir::Up, TakDir::Down, TakDir::Left, TakDir::Right] {
                     for drop_len in 1..=take {
@@ -490,7 +517,7 @@ impl TakGame {
         )
     }
 
-    pub fn to_ptn(&self) -> Option<TakPtn> {
+    pub fn to_ptn(&self) -> TakPtn {
         let turns = self
             .action_history
             .iter()
@@ -514,18 +541,15 @@ impl TakGame {
             self.game_state.clone(),
         );
         ptn.attributes = attributes;
-        Some(ptn)
+        ptn
     }
 
     pub fn try_from_ptn(ptn: TakPtn) -> Option<Self> {
-        println!("ptn: {:?}", ptn);
         let settings = ptn.get_settings()?;
-        println!("settings: {:?}", settings);
         let mut game = Self::new(settings)?;
 
         let mut actions = Vec::new();
         for (i, (_, white_turn, black_turn)) in ptn.turns.iter().enumerate() {
-            println!("{:?}, {:?}, {:?}", i, white_turn, black_turn);
             if let Some(white_turn) = white_turn {
                 actions.push(TakAction::from_ptn(game.board.size as i32, &white_turn)?);
             } else if i != 0 {
@@ -539,9 +563,7 @@ impl TakGame {
         }
 
         for action in actions {
-            println!("action: {:?}", action);
             let res = game.try_do_action(action);
-            println!("board: {}", game.board.to_partial_tps());
             if let Err(e) = res {
                 eprintln!(
                     "Error applying action to game: {}, error: {:?}",

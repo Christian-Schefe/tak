@@ -4,7 +4,6 @@ use views::{CreateRoom, Home, More, Navbar, PlayComputer, PlayOnline, Puzzles};
 
 mod components;
 mod server;
-mod tak;
 mod views;
 
 #[derive(Debug, Clone, Routable, PartialEq)]

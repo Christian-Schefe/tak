@@ -5,6 +5,7 @@ mod game;
 mod ptn;
 mod time;
 mod tps;
+mod ui;
 
 pub use action::*;
 pub use board::*;
@@ -13,6 +14,7 @@ pub use game::*;
 pub use ptn::*;
 pub use time::*;
 pub use tps::*;
+pub use ui::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -30,6 +32,7 @@ pub enum TakPlayer {
 }
 
 impl TakPlayer {
+    pub const ALL: [TakPlayer; 2] = [TakPlayer::White, TakPlayer::Black];
     pub fn other(&self) -> Self {
         match self {
             TakPlayer::White => TakPlayer::Black,
