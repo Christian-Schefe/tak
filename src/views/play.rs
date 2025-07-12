@@ -30,7 +30,7 @@ pub fn PlayComputer() -> Element {
         let settings =
             TakGameSettings::new(5, None, TakKomi::none(), Some(TakTimeMode::new(30, 5)));
         state
-            .try_set_from_settings(settings, false)
+            .try_set_from_settings(settings)
             .expect("Settings should be valid");
         state.has_started.set(true);
         state
@@ -75,7 +75,7 @@ pub fn PlayOnline() -> Element {
         dioxus::logger::tracing::info!("room: {:?}", room.read());
         match room.read().as_ref() {
             Some(Ok(GetRoomResponse::Success(_, settings))) => {
-                board_clone.try_set_from_settings(settings.game_settings.clone(), true);
+                board_clone.try_set_from_settings(settings.game_settings.clone());
             }
             Some(Ok(GetRoomResponse::Unauthorized)) => {
                 nav.replace(Route::Auth {});
@@ -90,6 +90,7 @@ pub fn PlayOnline() -> Element {
     let board_clone = board.clone();
     let show_board = use_memo(move || {
         let _ = board_clone.on_change.read();
+        dioxus::logger::tracing::info!("Checking if board has game, {}", board.has_game());
         board.has_game()
     });
 

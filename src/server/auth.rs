@@ -84,9 +84,26 @@ mod server {
         password_hash: String,
     }
 
-    pub async fn connect_db() -> Result<(), error::Error> {
-        DB.connect::<Ws>("localhost:8000").await?;
+    async fn retry_connect_db(url: &str, max_attempts: usize) -> Result<(), error::Error> {
+        let mut attempts = 0;
+        loop {
+            match DB.connect::<Ws>(url).await {
+                Ok(_) => return Ok(()),
+                Err(e) if attempts < max_attempts => {
+                    attempts += 1;
+                    eprintln!("Failed to connect to database, retrying... ({})", e);
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                }
+                Err(e) => return Err(error::Error::InternalServerError(e.to_string())),
+            }
+        }
+    }
 
+    pub async fn connect_db(url: &str) -> Result<(), error::Error> {
+        println!("Connecting to database at {}...", url);
+        retry_connect_db(url, 5).await?;
+
+        println!("Connected to database");
         DB.signin(Root {
             username: "root",
             password: "secret",

@@ -521,7 +521,7 @@ impl TakGame {
         let turns = self
             .action_history
             .iter()
-            .map(|x| x.to_ptn())
+            .map(|x| x.to_ptn(self.board.size as i32))
             .collect::<Vec<_>>();
         let mut attributes = vec![
             TakPtnAttr::Size(self.board.size),

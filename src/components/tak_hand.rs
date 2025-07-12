@@ -8,10 +8,16 @@ pub fn TakHand(player: TakPlayer) -> Element {
 
     let data = use_memo(move || {
         let _ = state.on_change.read();
-        state.with_game(|game| {
-            let hand = &game.game().hands[player.index()];
-            (game.game().current_player == player, hand.stones, hand.capstones)
-        })
+        state
+            .with_game(|game| {
+                let hand = &game.game().hands[player.index()];
+                (
+                    game.game().current_player == player,
+                    hand.stones,
+                    hand.capstones,
+                )
+            })
+            .expect("Game should exist to get hand data")
     });
 
     let (current_player, flats, caps) = data.read().clone();

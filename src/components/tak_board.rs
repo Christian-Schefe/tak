@@ -16,13 +16,15 @@ pub fn TakBoard() -> Element {
 
     let data = use_memo(move || {
         let _ = state_clone.on_change.read();
-        state_clone.with_game(|game| {
-            (
-                game.game().current_player,
-                game.game().board.size,
-                game.pieces.iter().map(|(id, _)| *id).collect::<Vec<_>>(),
-            )
-        })
+        state_clone
+            .with_game(|game| {
+                (
+                    game.game().current_player,
+                    game.game().board.size,
+                    game.pieces.iter().map(|(id, _)| *id).collect::<Vec<_>>(),
+                )
+            })
+            .expect("Game should exist to get board data")
     });
 
     let (player, size, mut piece_ids) = data.read().clone();
@@ -126,12 +128,14 @@ fn PieceTypeSelectorButton(piece_type: TakPieceVariant) -> Element {
     let data = use_memo(move || {
         let _ = state.on_change.read();
         let player = state.get_active_local_player();
-        state.with_game(|game| {
-            (
-                game.available_piece_types[player.index()].contains(&piece_type),
-                piece_type == *state.selected_piece_type.read(),
-            )
-        })
+        state
+            .with_game(|game| {
+                (
+                    game.available_piece_types[player.index()].contains(&piece_type),
+                    piece_type == *state.selected_piece_type.read(),
+                )
+            })
+            .expect("Game should exist to get piece selector data")
     });
 
     let (can_place, is_selected) = data.read().clone();

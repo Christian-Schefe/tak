@@ -58,8 +58,9 @@ pub fn TakWebSocket(session_id: String) -> Element {
     let ws = use_coroutine(move |mut rx: UnboundedReceiver<Message>| {
         let mut board_clone = board_clone.clone();
         let session_id = session_id.clone();
+        let url = option_env!("WEBSOCKET_URL").unwrap_or("ws://localhost:8080/ws");
+        dioxus::logger::tracing::info!("[WebSocket] Connecting to WebSocket at: {url}, {:?}", option_env!("WEBSOCKET_URL"));
         async move {
-            let url = "ws://localhost:8080/ws";
             let Ok(mut ws) = WebSocket::open(url) else {
                 return;
             };

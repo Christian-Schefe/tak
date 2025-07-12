@@ -30,6 +30,9 @@ const MAIN_CSS: Asset = asset!("/assets/styling/main.scss");
 
 #[cfg(not(feature = "server"))]
 fn main() {
+    let server_url = option_env!("SERVER_URL").unwrap_or("http://localhost:8080");
+    dioxus::logger::tracing::info!("[Client] Using server URL: {server_url}");
+    server_fn::client::set_server_url(server_url);
     launch(App);
 }
 
@@ -41,7 +44,9 @@ async fn main() {
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     use tower_cookies::CookieManagerLayer;
 
-    if let Err(e) = server::auth::connect_db().await {
+    let db_url = std::env::var("DB_URL").unwrap_or_else(|_| "ws://localhost:8000".to_string());
+
+    if let Err(e) = server::auth::connect_db(&db_url).await {
         eprintln!("Failed to connect to database: {}", e);
     }
 

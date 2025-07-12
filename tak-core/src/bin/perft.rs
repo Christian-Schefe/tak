@@ -75,7 +75,7 @@ mod tests {
     #[test]
     fn test_perft() {
         assert_eq!(
-            perft(3, "x3/x3/x3 1 1", 6),
+            perft(3, "x3/x3/x3 1 1", 7),
             vec![1, 9, 72, 1200, 17792, 271812, 3712952]
         )
     }

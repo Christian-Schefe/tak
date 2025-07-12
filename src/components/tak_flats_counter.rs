@@ -19,7 +19,7 @@ pub fn TakFlatsCounter() -> Element {
                     komi.amount.to_string()
                 },
             )
-        })
+        }).expect("Game should exist to get flats counter data")
     });
 
     let (white_flats, black_flats, komi_flats) = data.read().clone();

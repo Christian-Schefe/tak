@@ -11,7 +11,7 @@ use tak_core::{
 
 #[derive(Clone)]
 pub struct TakBoardState {
-    game: Option<Arc<Mutex<TakUIState>>>,
+    game: Arc<Mutex<Option<TakUIState>>>,
     pub has_started: Signal<bool>,
     pub on_change: Signal<bool>,
 
@@ -43,7 +43,7 @@ impl PlayerInfo {
 impl TakBoardState {
     pub fn new(player_info: HashMap<TakPlayer, PlayerInfo>) -> Self {
         TakBoardState {
-            game: None,
+            game: Arc::new(Mutex::new(None)),
             has_started: Signal::new(false),
             on_change: Signal::new(false),
             player_info: Signal::new(player_info),
@@ -52,62 +52,65 @@ impl TakBoardState {
         }
     }
 
-    pub fn try_set_from_settings(
-        &mut self,
-        settings: TakGameSettings,
-        cause_update: bool,
-    ) -> Option<()> {
-        let mut game = TakUIState::new(TakGame::new(settings)?);
+    pub fn trigger_change(&mut self) {
+        let new_val = !*self.on_change.peek();
+        self.on_change.set(new_val);
+    }
+
+    pub fn try_set_from_settings(&mut self, settings: TakGameSettings) -> Option<()> {
+        let mut new_game = TakUIState::new(TakGame::new(settings)?);
         let mut on_change = self.on_change.clone();
-        game.add_listener(move || {
-            on_change.toggle();
+        new_game.add_listener(move || {
+            let new_val = !*on_change.peek();
+            on_change.set(new_val);
         });
-        self.game = Some(Arc::new(Mutex::new(game)));
-        if cause_update {
-            on_change.toggle();
-        }
+        let mut game_lock = self.game.lock().unwrap();
+        *game_lock = Some(new_game);
+        drop(game_lock);
+        tracing::info!("Game initialized with settings, {}", self.has_game());
+        self.trigger_change();
         Some(())
     }
 
     pub fn try_set_from_ptn(&mut self, ptn: String) -> Option<()> {
         tracing::info!("from ptn str: {:?}", ptn);
         let ptn = TakPtn::try_from_str(&ptn)?;
-        let mut game = TakUIState::new(TakGame::try_from_ptn(ptn)?);
+        let mut new_game = TakUIState::new(TakGame::try_from_ptn(ptn)?);
         let mut on_change = self.on_change.clone();
-        game.add_listener(move || {
-            on_change.toggle();
+        new_game.add_listener(move || {
+            let new_val = !*on_change.peek();
+            on_change.set(new_val);
         });
-        self.game = Some(Arc::new(Mutex::new(game)));
-        on_change.toggle();
+        let mut game_lock = self.game.lock().unwrap();
+        *game_lock = Some(new_game);
+        drop(game_lock);
+        tracing::info!("Game initialized with ptn, {}", self.has_game());
+        self.trigger_change();
         Some(())
     }
 
-    pub fn with_game<F, R>(&self, f: F) -> R
+    pub fn with_game<F, R>(&self, f: F) -> Result<R, ()>
     where
         F: FnOnce(&TakUIState) -> R,
     {
-        if let Some(game) = &self.game {
-            let game_lock = game.lock().unwrap();
-            f(&game_lock)
-        } else {
-            panic!("Game not initialized");
-        }
+        let game_lock = self.game.lock().unwrap();
+        let game = game_lock.as_ref().ok_or(())?;
+        Ok(f(game))
     }
 
-    pub fn with_game_mut<F, R>(&mut self, f: F) -> R
+    pub fn with_game_mut<F, R>(&mut self, f: F) -> Result<R, ()>
     where
         F: FnOnce(&mut TakUIState) -> R,
     {
-        if let Some(game) = &self.game {
-            let mut game_lock = game.lock().unwrap();
-            f(&mut game_lock)
-        } else {
-            panic!("Game not initialized");
-        }
+        let mut game_lock = self.game.lock().unwrap();
+        let game = game_lock.as_mut().ok_or(())?;
+        Ok(f(game))
     }
 
     pub fn get_active_local_player(&self) -> TakPlayer {
-        let current_player = self.with_game(|game| game.game().current_player);
+        let current_player = self
+            .with_game(|game| game.game().current_player)
+            .expect("Game should exist to get current player");
         if let Some(info) = self.player_info.read().get(&current_player) {
             if info.player_type == PlayerType::Local {
                 return current_player;
@@ -123,19 +126,19 @@ impl TakBoardState {
 
     pub fn reset(&mut self) {
         self.has_started.set(false);
-        if let Some(game) = &self.game {
-            let mut game_lock = game.lock().unwrap();
-            game_lock.game_mut().reset();
-            self.has_started.set(false);
-            self.selected_piece_type.set(TakPieceVariant::Flat);
-            self.on_change.toggle();
-        }
+        let mut game_lock = self.game.lock().unwrap();
+        game_lock.as_mut().map(|x| x.game_mut().reset());
+        drop(game_lock);
+        self.has_started.set(false);
+        self.selected_piece_type.set(TakPieceVariant::Flat);
+        self.trigger_change();
     }
 
     pub fn set_time_remaining(&mut self, player: TakPlayer, time_remaining: u64) {
         self.with_game_mut(|game| {
             game.game_mut().set_time_remaining(player, time_remaining);
-        });
+        })
+        .expect("Game should exist to set time remaining");
     }
 
     pub async fn update_player_info(&mut self) {
@@ -165,17 +168,22 @@ impl TakBoardState {
     }
 
     pub fn has_game(&self) -> bool {
-        self.game.is_some()
+        let lock = self.game.lock().unwrap();
+        lock.is_some()
     }
 
     pub fn has_ongoing_game(&self) -> bool {
-        self.game.is_some()
+        self.has_game()
             && *self.has_started.read()
-            && self.with_game(|game| game.game().game_state == TakGameState::Ongoing)
+            && self
+                .with_game(|game| game.game().game_state == TakGameState::Ongoing)
+                .expect("Game should exist to check ongoing state")
     }
 
     pub fn is_local_player_turn(&self) -> bool {
-        let current_player = self.with_game(|game| game.game().current_player);
+        let current_player = self
+            .with_game(|game| game.game().current_player)
+            .expect("Game should exist to check current player");
         if let Some(info) = self.player_info.read().get(&current_player) {
             return info.player_type == PlayerType::Local;
         }
@@ -186,6 +194,7 @@ impl TakBoardState {
         self.with_game(|game| {
             game.partial_move.is_none() && game.game().board.try_get_tower(pos).is_none()
         })
+        .expect("Game should exist to check place action")
     }
 
     pub fn get_time_remaining(&self, player: TakPlayer) -> u64 {
@@ -196,12 +205,16 @@ impl TakBoardState {
                 .get_time_remaining(player, apply_elapsed)
                 .unwrap_or_default()
         })
+        .expect("Game should exist to get time remaining")
     }
 
     fn send_move_message(&mut self, action: TakActionRecord) {
         println!("local move: {:?}", action);
+        let board_size = self
+            .with_game(|game| game.game().board.size as i32)
+            .expect("Game should exist to get board size");
         self.message_queue
-            .push(ClientGameMessage::Move(action.to_ptn()));
+            .push(ClientGameMessage::Move(action.to_ptn(board_size)));
     }
 
     pub fn correct_selected_piece_type(&mut self) {
@@ -237,13 +250,13 @@ impl TakBoardState {
                 }
                 _ => {}
             }
-        });
+        })
+        .expect("Game should exist to correct selected piece type");
     }
 
     pub fn try_parse_action(&self, action: &str) -> Option<TakAction> {
-        let game = self.game.as_ref()?;
-        let game_lock = game.lock().unwrap();
-        TakAction::from_ptn(game_lock.game().board.size as i32, action)
+        self.with_game(|game| TakAction::from_ptn(game.game().board.size as i32, action))
+            .expect("Game should exist to parse action")
     }
 
     pub fn maybe_try_do_remote_action(
@@ -265,12 +278,14 @@ impl TakBoardState {
                 Ok(())
             }
         })
+        .expect("Game should exist to try do remote action")
     }
 
     pub fn try_do_local_place(&mut self, pos: TakCoord, variant: TakPieceVariant) -> Option<()> {
         let tak_move = TakAction::PlacePiece { pos, variant };
-        let game = self.game.clone()?;
-        let mut game = game.lock().unwrap();
+        let game = self.game.clone();
+        let mut lock = game.lock().unwrap();
+        let game = lock.as_mut()?;
 
         if !self.is_current_player_local(game.game()) {
             tracing::error!("Current player is not local, cannot perform action");
@@ -279,12 +294,13 @@ impl TakBoardState {
         let res = game.try_do_action(tak_move);
         match res {
             Ok(_) => {
-                self.send_move_message(
-                    game.game()
-                        .get_last_action()
-                        .expect("Last action should exist")
-                        .clone(),
-                );
+                let last_action = game
+                    .game()
+                    .get_last_action()
+                    .expect("Last action should exist")
+                    .clone();
+                drop(lock);
+                self.send_move_message(last_action);
                 Some(())
             }
             Err(e) => {
@@ -295,20 +311,22 @@ impl TakBoardState {
     }
 
     pub fn try_do_local_move(&mut self, pos: TakCoord) -> Option<()> {
-        let game = self.game.clone()?;
-        let mut game = game.lock().unwrap();
+        let game = self.game.clone();
+        let mut lock = game.lock().unwrap();
+        let game = lock.as_mut()?;
 
         if !self.is_current_player_local(game.game()) {
             tracing::error!("Current player is not local, cannot perform action");
             return None;
         }
         if let Some(()) = game.add_square_to_partial_move(pos) {
-            self.send_move_message(
-                game.game()
-                    .get_last_action()
-                    .expect("Last action should exist")
-                    .clone(),
-            );
+            let last_action = game
+                .game()
+                .get_last_action()
+                .expect("Last action should exist")
+                .clone();
+            drop(lock);
+            self.send_move_message(last_action);
             return Some(());
         }
         None
@@ -322,63 +340,4 @@ impl TakBoardState {
             false
         }
     }
-    /*
-    pub fn get_bridges(&self) -> HashMap<TakCoord, (TakPlayer, Vec<TakDir>)> {
-        let _ = self.player.read();
-        let game_lock = self.game.lock().unwrap();
-        let mut bridges = Vec::new();
-        let size = game_lock.size();
-        for y in 0..size {
-            for x in 0..size {
-                let pos = TakCoord::new(x, y);
-                let Some(tower) = game_lock.try_get_tower(pos) else {
-                    continue;
-                };
-                let player = tower.controlling_player();
-                if tower.top_type == TakPieceVariant::Wall {
-                    continue;
-                }
-                let mut check_positions = vec![
-                    (TakCoord::new(x + 1, y), Direction::Right),
-                    (TakCoord::new(x, y + 1), Direction::Up),
-                ];
-                if x > 0 {
-                    check_positions.push((TakCoord::new(x - 1, y), Direction::Left));
-                }
-                if y > 0 {
-                    check_positions.push((TakCoord::new(x, y - 1), Direction::Down));
-                }
-                for (other_pos, direction) in check_positions {
-                    if let Some(other_tower) = game_lock.try_get_tower(other_pos) {
-                        if other_tower.controlling_player() == player
-                            && other_tower.top_type != TakPieceVariant::Wall
-                        {
-                            bridges.push((pos, player, direction));
-                        }
-                    }
-                }
-                if x + 1 == size {
-                    bridges.push((pos, player, Direction::Right));
-                }
-                if x == 0 {
-                    bridges.push((pos, player, Direction::Left));
-                }
-                if y + 1 == size {
-                    bridges.push((pos, player, Direction::Up));
-                }
-                if y == 0 {
-                    bridges.push((pos, player, Direction::Down));
-                }
-            }
-        }
-        let mut bridge_map = HashMap::new();
-        for (pos, player, direction) in bridges {
-            bridge_map
-                .entry(pos)
-                .or_insert_with(|| (player, vec![]))
-                .1
-                .push(direction);
-        }
-        bridge_map
-    }*/
 }

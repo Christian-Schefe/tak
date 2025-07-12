@@ -1,0 +1,71 @@
+services:
+  surrealdb:
+    image: surrealdb/surrealdb:latest
+    container_name: surrealdb
+    restart: always
+    command: start --user root --pass secret rocksdb:/data/database.db
+    ports:
+      - 8000:8000
+    volumes:
+      - ./data:/data
+    networks:
+      - internal
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  db-wait:
+    image: curlimages/curl:latest
+    depends_on:
+      - surrealdb
+    command: >
+      sh -c '
+        for i in $(seq 1 20); do
+          echo "⏳ Waiting for SurrealDB...";
+          curl -f http://surrealdb:8000/health && echo "✅ SurrealDB is healthy" && exit 0;
+          sleep 2;
+        done;
+        echo "❌ SurrealDB did not become healthy in time";
+        exit 1;
+      '
+    networks:
+      - internal
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    expose:
+      - 8080
+    networks:
+      - internal
+    depends_on:
+      db-wait:
+        condition: service_completed_successfully
+        restart: true
+
+  caddy:
+    image: caddy:latest
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - internal
+      - public
+    depends_on:
+      - app
+
+networks:
+  internal:
+  public:
+
+
+volumes:
+  caddy_data:
+  caddy_config:

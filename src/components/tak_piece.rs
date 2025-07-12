@@ -8,12 +8,14 @@ pub fn TakPiece(id: usize) -> Element {
 
     let data = use_memo(move || {
         let _ = state.on_change.read();
-        state.with_game(|game| {
-            (
-                game.game().board.size,
-                game.pieces.get(&id).expect("Piece should exist").clone(),
-            )
-        })
+        state
+            .with_game(|game| {
+                (
+                    game.game().board.size,
+                    game.pieces.get(&id).expect("Piece should exist").clone(),
+                )
+            })
+            .expect("Game should exist to get piece data")
     });
 
     let (

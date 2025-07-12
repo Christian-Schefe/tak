@@ -10,12 +10,14 @@ pub fn TakTile(pos: TakCoord) -> Element {
 
     let data = use_memo(move || {
         let _ = state.on_change.read();
-        state.with_game(|game| {
-            (
-                game.game().board.size,
-                game.tiles.get(&pos).expect("Tile should exist").clone(),
-            )
-        })
+        state
+            .with_game(|game| {
+                (
+                    game.game().board.size,
+                    game.tiles.get(&pos).expect("Tile should exist").clone(),
+                )
+            })
+            .expect("Game should exist to get tile data")
     });
 
     let (size, tile) = data.read().clone();

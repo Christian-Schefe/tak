@@ -313,7 +313,9 @@ pub async fn check_login() -> Result<Option<String>, ServerFnError> {
 pub async fn get_session_id() -> Result<Option<String>, ServerFnError> {
     use axum::extract::Extension;
 
-    let crate::server::auth::AuthenticatedUser(user) = extract().await?;
+    let Ok(crate::server::auth::AuthenticatedUser(user)) = extract().await else {
+        return Ok(None);
+    };
     let Extension(session_store): Extension<crate::server::auth::SessionStore> = extract().await?;
     let lock = session_store.lock().await;
     if let Some(session_id) = lock.get(&user) {
