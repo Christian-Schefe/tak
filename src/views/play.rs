@@ -1,5 +1,5 @@
 use crate::components::tak_board_state::{PlayerInfo, PlayerType, TakBoardState};
-use crate::components::{TakBoard, TakWebSocket};
+use crate::components::{TakBoard, TakWebSocket, TakWinModal};
 use crate::server::room::{get_room, GetRoomResponse};
 use crate::views::get_session_id;
 use crate::Route;
@@ -25,21 +25,24 @@ pub fn PlayComputer() -> Element {
         PlayerInfo::new("Computer".to_string(), PlayerType::Local),
     );
 
-    use_context_provider(|| {
+    let mut state = use_context_provider(|| {
         let mut state = TakBoardState::new(player_info);
         let settings =
             TakGameSettings::new(5, None, TakKomi::none(), Some(TakTimeMode::new(30, 5)));
         state
             .try_set_from_settings(settings)
             .expect("Settings should be valid");
-        state.has_started.set(true);
         state
     });
 
+    use_effect(move || {
+        state.has_started.set(true);
+    });
+
     rsx! {
-        div {
-            id: "play-view",
+        div { id: "play-view",
             TakBoard {}
+            TakWinModal { is_local: true }
         }
     }
 }
@@ -95,17 +98,15 @@ pub fn PlayOnline() -> Element {
     });
 
     rsx! {
-        div {
-            id: "play-view",
+        div { id: "play-view",
             if let Some(room) = room_id.read().as_ref() {
-                h2 {
-                    "Room ID: {room}"
-                }
+                h2 { "Room ID: {room}" }
                 if *show_board.read() {
                     TakBoard {
                     }
+                    TakWinModal { is_local: false }
                     if let Some(Ok(Some(session_id))) = session_id.read().as_ref() {
-                        TakWebSocket {session_id}
+                        TakWebSocket { session_id }
                     }
                 }
             } else {

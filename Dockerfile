@@ -15,13 +15,15 @@ COPY . .
 RUN curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
 RUN cargo binstall dioxus-cli --root /.cargo -y --force
 ENV PATH="/.cargo/bin:$PATH"
-ENV SERVER_URL=https://localhost
-ENV WEBSOCKET_URL=wss://localhost/ws
+
+ARG SERVER_HOSTNAME
+ENV SERVER_URL=https://${SERVER_HOSTNAME}
+ENV WEBSOCKET_URL=wss://${SERVER_HOSTNAME}/ws
 
 # Create the final bundle folder. Bundle always executes in release mode with optimizations enabled
 RUN dx bundle --platform web
 
-FROM chef AS runtime
+FROM debian:bookworm-slim AS runtime
 COPY --from=builder /app/target/dx/tak/release/web/ /usr/local/app
 
 # set our port and make sure to listen for all connections

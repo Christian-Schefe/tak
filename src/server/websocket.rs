@@ -8,7 +8,7 @@ use futures_util::{SinkExt, StreamExt};
 use std::net::SocketAddr;
 use std::ops::DerefMut;
 use std::sync::Arc;
-use tak_core::{TakAction, TakPlayer};
+use tak_core::{TakAction, TakGameState, TakPlayer};
 use tokio::sync::Mutex;
 
 use crate::components::ServerGameMessage;
@@ -179,43 +179,68 @@ async fn on_room_receive_move(sockets: Arc<PlayerSocketMap>, room: &mut Room, ac
         println!("Game hasn't started yet");
         return;
     };
+    if game.game_state != TakGameState::Ongoing {
+        return;
+    }
     if let Some(action) = TakAction::from_ptn(action) {
-        println!("Received action: {action:?}");
-        let move_index = game.ply_index;
-        let res = match game.try_do_action(action) {
-            Ok(()) => game
-                .get_last_action()
-                .expect("Action history should not be empty"),
-            Err(e) => {
-                println!(
-                    "Error processing action: {e:?}, {}",
-                    game.to_tps().to_string()
-                );
-                return;
-            }
-        }
-        .clone();
-        let time_remaining = TakPlayer::ALL
-            .into_iter()
-            .map(|x| (x, game.get_time_remaining(x, true).unwrap()))
-            .collect::<Vec<_>>();
-        let msg = serde_json::to_string(&ServerGameMessage::Move(
-            move_index,
-            time_remaining,
-            res.to_ptn(),
-        ))
-        .unwrap();
-        for other_player in room.get_broadcast_player_ids() {
-            if let Some(socket) = sockets.get(&other_player) {
-                let socket = socket.clone();
-                let sender = &mut socket.lock().await.sender;
-                if sender.send(Message::Text(msg.clone())).await.is_err() {
-                    println!("Failed to send message to player {other_player}");
-                } else {
-                    println!("Sent move action to player {other_player}: {res:?}");
+        let game_state = if !game.check_timeout() {
+            println!("Received action: {action:?}");
+            let move_index = game.ply_index;
+            let res = match game.try_do_action(action) {
+                Ok(()) => game
+                    .get_last_action()
+                    .expect("Action history should not be empty"),
+                Err(e) => {
+                    println!(
+                        "Error processing action: {e:?}, {}",
+                        game.to_tps().to_string()
+                    );
+                    return;
                 }
             }
-        }
+            .clone();
+            let time_remaining = TakPlayer::ALL
+                .into_iter()
+                .map(|x| (x, game.get_time_remaining(x, true).unwrap()))
+                .collect::<Vec<_>>();
+            let msg = serde_json::to_string(&ServerGameMessage::Move(
+                move_index,
+                time_remaining,
+                res.to_ptn(),
+            ))
+            .unwrap();
+            let game_state = game.game_state.clone();
+            for other_player in room.get_broadcast_player_ids() {
+                if let Some(socket) = sockets.get(&other_player) {
+                    let socket = socket.clone();
+                    let sender = &mut socket.lock().await.sender;
+                    if sender.send(Message::Text(msg.clone())).await.is_err() {
+                        println!("Failed to send message to player {other_player}");
+                    } else {
+                        println!("Sent move action to player {other_player}: {res:?}");
+                    }
+                }
+            }
+            game_state
+        } else {
+            game.game_state.clone()
+        };
+
+        if game_state != TakGameState::Ongoing {
+            let msg =
+                serde_json::to_string(&ServerGameMessage::GameOver(game_state.clone())).unwrap();
+            for other_player in room.get_broadcast_player_ids() {
+                if let Some(socket) = sockets.get(&other_player) {
+                    let socket = socket.clone();
+                    let sender = &mut socket.lock().await.sender;
+                    if sender.send(Message::Text(msg.clone())).await.is_err() {
+                        println!("Failed to send message to player {other_player}");
+                    } else {
+                        println!("Sent game over to player {other_player}");
+                    }
+                }
+            }
+        };
     } else {
         println!("Invalid action received: {action}");
     }

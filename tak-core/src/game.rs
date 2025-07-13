@@ -1,8 +1,7 @@
 use crate::{
     TakAction, TakActionRecord, TakBoard, TakClock, TakCoord, TakDir, TakGameState,
-    TakInvalidActionError, TakInvalidMoveError, TakInvalidPlaceError, TakInvalidUndoActionError,
-    TakInvalidUndoMoveError, TakInvalidUndoPlaceError, TakPieceVariant, TakPlayer, TakPtn,
-    TakPtnAttr, TakTimeMode, TakTimestamp, TakTps, TakWinReason,
+    TakInvalidActionError, TakInvalidMoveError, TakInvalidPlaceError, TakPieceVariant, TakPlayer,
+    TakPtn, TakPtnAttr, TakTimeMode, TakTimestamp, TakTps, TakWinReason,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -227,6 +226,7 @@ impl TakGame {
         if let Some(clock) = &mut self.clock {
             clock.set_time_remaining(player, time_remaining);
         }
+        self.check_timeout();
     }
 
     pub fn check_timeout(&mut self) -> bool {
@@ -234,6 +234,9 @@ impl TakGame {
             if clock.get_time_remaining(self.current_player, true) == 0 {
                 self.game_state =
                     TakGameState::Win(self.current_player.other(), TakWinReason::Timeout);
+                return true;
+            } else if clock.get_time_remaining(self.current_player.other(), false) == 0 {
+                self.game_state = TakGameState::Win(self.current_player, TakWinReason::Timeout);
                 return true;
             }
         }
@@ -275,20 +278,22 @@ impl TakGame {
             }
         }
 
-        if let Some(clock) = &mut self.clock {
-            clock.update(TakTimestamp::now(), self.current_player);
-            if clock.get_time_remaining(self.current_player, false) == 0 {
-                self.game_state =
-                    TakGameState::Win(self.current_player.other(), TakWinReason::Timeout);
-            }
-        }
-
         self.action_history.push(record);
         self.ply_index += 1;
         self.current_player = self.current_player.other();
     }
 
     pub fn try_do_action(&mut self, action: TakAction) -> Result<(), TakInvalidActionError> {
+        let now = if let Some(clock) = &mut self.clock {
+            let now = TakTimestamp::now();
+            if clock.get_time_remaining_at(self.current_player, now) == 0 {
+                self.game_state =
+                    TakGameState::Win(self.current_player.other(), TakWinReason::Timeout);
+            }
+            Some(now)
+        } else {
+            None
+        };
         match action {
             TakAction::PlacePiece { pos, variant } => self
                 .try_place(pos, variant)
@@ -301,50 +306,15 @@ impl TakGame {
             } => self
                 .try_move(pos, dir, take, &drops)
                 .map_err(TakInvalidActionError::InvalidMove),
+        }?;
+        if let Some(clock) = &mut self.clock {
+            clock.update(now.expect("Should have now timestamp"), self.current_player);
         }
+        Ok(())
     }
 
     pub fn get_last_action(&self) -> Option<&TakActionRecord> {
         self.action_history.last()
-    }
-
-    pub fn undo_action(&mut self) -> Result<(), TakInvalidUndoActionError> {
-        let last_action = self
-            .action_history
-            .pop()
-            .ok_or(TakInvalidUndoActionError::NoLastAction)?;
-        self.ply_index -= 1;
-        self.current_player = self.current_player.other();
-        self.game_state = TakGameState::Ongoing;
-
-        match last_action.clone() {
-            TakActionRecord::PlacePiece {
-                pos,
-                variant,
-                player,
-            } => self
-                .try_undo_place(pos, variant, player)
-                .map_err(TakInvalidUndoActionError::InvalidPlace),
-            TakActionRecord::MovePiece {
-                pos,
-                dir,
-                take,
-                drops,
-                flattened,
-            } => self
-                .try_undo_move(pos, dir, take, &drops, flattened)
-                .map_err(TakInvalidUndoActionError::InvalidMove),
-        }
-        .expect(
-            format!(
-                "Undo action should not fail: {:?}, {:?}, {}",
-                last_action,
-                self.action_history,
-                self.board.to_partial_tps()
-            )
-            .as_str(),
-        );
-        Ok(())
     }
 
     fn try_place(
@@ -379,18 +349,6 @@ impl TakGame {
         Ok(())
     }
 
-    fn try_undo_place(
-        &mut self,
-        pos: TakCoord,
-        variant: TakPieceVariant,
-        player: TakPlayer,
-    ) -> Result<(), TakInvalidUndoPlaceError> {
-        self.board.try_undo_place(pos, variant, player)?;
-        let hand = &mut self.hands[player.index()];
-        hand.undo_take(variant);
-        Ok(())
-    }
-
     fn try_move(
         &mut self,
         pos: TakCoord,
@@ -415,17 +373,6 @@ impl TakGame {
         };
         self.on_end_move(record);
         Ok(())
-    }
-
-    fn try_undo_move(
-        &mut self,
-        pos: TakCoord,
-        dir: TakDir,
-        take: usize,
-        drops: &[usize],
-        flattened: bool,
-    ) -> Result<(), TakInvalidUndoMoveError> {
-        self.board.try_undo_move(pos, dir, take, drops, flattened)
     }
 
     pub fn to_tps(&self) -> TakTps {
@@ -488,10 +435,21 @@ impl TakGame {
                 return None;
             }
         }
+
+        if let TakGameState::Win(_, TakWinReason::Timeout) = &ptn.game_state {
+            game.game_state = ptn.game_state;
+        } else if ptn.game_state != game.game_state {
+            eprintln!(
+                "PTN game state does not match actual game state: {:?} != {:?}",
+                ptn.game_state, game.game_state
+            );
+            return None;
+        }
+
         Some(game)
     }
 
-    pub fn validate(&self, stones: &TakStones) -> Result<(), String> {
+    pub fn validate(&self) -> Result<(), String> {
         self.board.validate()?;
         match self.ply_index % 2 {
             0 if self.current_player == TakPlayer::White => {}
@@ -503,6 +461,7 @@ impl TakGame {
                 ));
             }
         }
+        let stones = &self.settings.stones;
         let stone_count = self.board.count_stones(TakPlayer::White);
         if stone_count.0 + self.hands[0].stones != stones.stones
             || stone_count.1 + self.hands[0].capstones != stones.capstones

@@ -75,6 +75,15 @@ impl TakClock {
         }
     }
 
+    pub fn get_time_remaining_at(&self, player: TakPlayer, now: TakTimestamp) -> u64 {
+        let time_left = self.time_remaining_millis[player.index()];
+        let elapsed = self
+            .last_action_timestamp
+            .map(|t| now.elapsed_since(t))
+            .unwrap_or(0);
+        time_left.saturating_sub(elapsed)
+    }
+
     pub fn get_time_remaining(&self, player: TakPlayer, apply_elapsed: bool) -> u64 {
         let time_left = self.time_remaining_millis[player.index()];
         if !apply_elapsed {

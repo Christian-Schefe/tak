@@ -1,18 +1,21 @@
 use crate::components::ServerGameMessage;
+#[cfg(feature = "server")]
+use crate::server::websocket::SharedState;
 use dioxus::prelude::*;
 use futures_util::SinkExt;
-use rand::distributions::Alphanumeric;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::ops::DerefMut;
 use std::sync::Arc;
 use std::time::Duration;
-use tak_core::TakGameSettings;
 use tak_core::{TakGame, TakPlayer};
+use tak_core::{TakGameSettings, TakGameState};
 
 pub type PlayerId = String;
 pub type RoomId = String;
+
+pub const ROOM_ID_LEN: usize = 4;
 
 #[cfg(feature = "server")]
 pub struct Room {
@@ -85,12 +88,10 @@ impl Rooms {
     }
 
     fn generate_room_id() -> String {
-        rand::thread_rng()
-            .sample_iter(&Alphanumeric)
-            .filter(|c| c.is_ascii_alphanumeric())
-            .map(|c| c.to_ascii_uppercase() as char)
-            .take(6)
-            .collect()
+        let mut rng = rand::thread_rng();
+        (0..ROOM_ID_LEN)
+            .map(|_| rng.gen_range(b'A'..=b'Z') as char)
+            .collect::<String>()
     }
 
     fn try_generate_room_id(&self) -> Option<RoomId> {
@@ -365,15 +366,15 @@ pub async fn join_room(
         );
         tokio::spawn(async move {
             tokio::time::sleep(Duration::from_secs(1)).await;
-            let mut rooms = state.rooms.lock().await;
-            maybe_start_game(&mut rooms, &room_id).await;
+            maybe_start_game(state, &room_id).await;
         });
     }
     Ok(res)
 }
 
 #[cfg(feature = "server")]
-async fn maybe_start_game(rooms: &mut Rooms, room_id: &RoomId) {
+async fn maybe_start_game(state: SharedState, room_id: &RoomId) {
+    let mut rooms = state.rooms.lock().await;
     if !rooms
         .with_room_mut(room_id, |room| {
             if room.is_ready() {
@@ -400,6 +401,50 @@ async fn maybe_start_game(rooms: &mut Rooms, room_id: &RoomId) {
     }
 
     println!("Sent start game message");
+
+    let Some(room) = rooms.rooms.get(room_id).cloned() else {
+        println!("Room {} not found", room_id);
+        return;
+    };
+    let sockets = rooms.player_sockets.clone();
+    drop(rooms);
+    room_check_timeout_task(room, sockets).await;
+}
+
+#[cfg(feature = "server")]
+async fn room_check_timeout_task(
+    room: Arc<tokio::sync::Mutex<Room>>,
+    sockets: Arc<PlayerSocketMap>,
+) {
+    loop {
+        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+        let mut room_lock = room.lock().await;
+        let game_state = room_lock.game.as_mut().map(|game| {
+            game.check_timeout();
+            game.game_state.clone()
+        });
+
+        if !matches!(game_state, Some(TakGameState::Ongoing) | None) {
+            let msg =
+                serde_json::to_string(&ServerGameMessage::GameOver(game_state.unwrap())).unwrap();
+            for other_player in room_lock.get_broadcast_player_ids() {
+                if let Some(socket) = sockets.get(&other_player) {
+                    let socket = socket.clone();
+                    let sender = &mut socket.lock().await.sender;
+                    if sender
+                        .send(axum::extract::ws::Message::Text(msg.clone()))
+                        .await
+                        .is_err()
+                    {
+                        println!("Failed to send message to player {other_player}");
+                    } else {
+                        println!("Sent game over to player {other_player}");
+                    }
+                }
+            }
+            break;
+        };
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

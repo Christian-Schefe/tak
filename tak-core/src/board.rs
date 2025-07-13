@@ -1,8 +1,7 @@
 use std::collections::VecDeque;
 
 use crate::{
-    TakCoord, TakDir, TakInvalidMoveError, TakInvalidPlaceError, TakInvalidUndoMoveError,
-    TakInvalidUndoPlaceError, TakPieceVariant, TakPlayer,
+    TakCoord, TakDir, TakInvalidMoveError, TakInvalidPlaceError, TakPieceVariant, TakPlayer,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -114,52 +113,6 @@ impl TakBoard {
         self.id_counter += 1;
         self.empty_spaces -= 1;
         *pos.get_mut(&mut self.board, self.size) = Some(stack);
-    }
-
-    /// Checks if the placement of a piece at the given position can be undone.
-    /// This requires that the piece is the last placed piece.
-    pub fn can_undo_place(
-        &mut self,
-        pos: TakCoord,
-        variant: TakPieceVariant,
-        player: TakPlayer,
-    ) -> Result<(), TakInvalidUndoPlaceError> {
-        match pos.try_get_mut(&mut self.board, self.size) {
-            Some(Some(stack)) => {
-                if stack.variant == variant
-                    && stack.composition.len() == 1
-                    && stack.player() == player
-                    && stack.composition[0].id + 1 == self.id_counter
-                {
-                    Ok(())
-                } else {
-                    Err(TakInvalidUndoPlaceError::NotAllowed)
-                }
-            }
-            Some(None) => Err(TakInvalidUndoPlaceError::PositionEmpty),
-            None => Err(TakInvalidUndoPlaceError::InvalidPosition),
-        }
-    }
-
-    /// Attempts to undo the placement of a piece at the given position.
-    pub fn try_undo_place(
-        &mut self,
-        pos: TakCoord,
-        variant: TakPieceVariant,
-        player: TakPlayer,
-    ) -> Result<(), TakInvalidUndoPlaceError> {
-        self.can_undo_place(pos, variant, player)?;
-        self.undo_place_unchecked(pos);
-        Ok(())
-    }
-
-    /// Undoes the placement of a piece at the given position without checking if the undo is valid.
-    /// Using this method can lead to an invalid board state or panic if the position or undo is not valid.
-    pub fn undo_place_unchecked(&mut self, pos: TakCoord) {
-        let stack = pos.get_mut(&mut self.board, self.size);
-        *stack = None;
-        self.id_counter -= 1;
-        self.empty_spaces += 1;
     }
 
     /// Checks if a move can be made from the given position in the specified direction,
@@ -278,138 +231,6 @@ impl TakBoard {
                     other_stack.composition.extend(moved_pieces);
                     other_stack.variant = new_variant;
                 }
-            }
-        }
-    }
-
-    /// Checks if a move can be undone from the given position in the specified direction,
-    /// taking a specified number of pieces and drops into account.
-    /// Returns an error if the move cannot be undone, or `Ok(())` if it can be undone.
-    pub fn can_undo_move(
-        &mut self,
-        pos: TakCoord,
-        dir: TakDir,
-        take: usize,
-        drops: &[usize],
-        flattened: bool,
-    ) -> Result<(), TakInvalidUndoMoveError> {
-        if take < 1 || take > self.size {
-            return Err(TakInvalidUndoMoveError::InvalidTakeCount);
-        }
-        match pos.try_get(&self.board, self.size) {
-            Some(Some(stack)) => {
-                if stack.variant != TakPieceVariant::Flat {
-                    return Err(TakInvalidUndoMoveError::ActionMismatch);
-                }
-            }
-            Some(None) => {}
-            None => return Err(TakInvalidUndoMoveError::InvalidPosition),
-        }
-        let drop_len = drops.len();
-        let mut drop_sum = 0;
-        let mut current_pos = pos;
-        for i in 0..drop_len {
-            let drop = drops[i];
-            drop_sum += drop;
-            if drop < 1 || drop_sum > take {
-                return Err(TakInvalidUndoMoveError::InvalidDropCount);
-            }
-            current_pos = current_pos.offset_dir(dir);
-            match current_pos.try_get(&self.board, self.size) {
-                Some(Some(other_stack)) => {
-                    if other_stack.height() < drop {
-                        return Err(TakInvalidUndoMoveError::InvalidDropCount);
-                    }
-                    if i != drop_len - 1 {
-                        match other_stack.variant {
-                            TakPieceVariant::Flat => {}
-                            TakPieceVariant::Capstone => {
-                                return Err(TakInvalidUndoMoveError::ActionMismatch);
-                            }
-                            TakPieceVariant::Wall => {
-                                return Err(TakInvalidUndoMoveError::ActionMismatch);
-                            }
-                        };
-                    } else if flattened
-                        && (other_stack.variant != TakPieceVariant::Capstone
-                            || other_stack.height() < 2)
-                    {
-                        return Err(TakInvalidUndoMoveError::ActionMismatch);
-                    }
-                }
-                Some(None) => return Err(TakInvalidUndoMoveError::ActionMismatch),
-                None => return Err(TakInvalidUndoMoveError::InvalidPosition),
-            }
-        }
-        if drop_sum != take {
-            return Err(TakInvalidUndoMoveError::InvalidDropCount);
-        }
-        Ok(())
-    }
-
-    /// Attempts to undo a move from the given position in the specified direction,
-    /// taking a specified number of pieces and drops into account.
-    /// Returns `Ok(())` if the undo is successful, or an error if it fails.
-    pub fn try_undo_move(
-        &mut self,
-        pos: TakCoord,
-        dir: TakDir,
-        take: usize,
-        drops: &[usize],
-        flattened: bool,
-    ) -> Result<(), TakInvalidUndoMoveError> {
-        self.can_undo_move(pos, dir, take, drops, flattened)?;
-        self.undo_move_unchecked(pos, dir, drops, flattened);
-        Ok(())
-    }
-
-    /// Undoes a move from the given position in the specified direction,
-    /// taking a specified number of pieces and drops into account.
-    /// This method does not check if the undo is valid and can lead to an invalid board state.
-    fn undo_move_unchecked(
-        &mut self,
-        pos: TakCoord,
-        dir: TakDir,
-        drops: &[usize],
-        flattened: bool,
-    ) {
-        let drop_len = drops.len();
-        let mut current_pos = pos;
-        let mut moved_pieces = Vec::new();
-        let mut original_variant = TakPieceVariant::Flat;
-        for i in 0..drop_len {
-            current_pos = current_pos.offset_dir(dir);
-            let tile = current_pos.get_mut(&mut self.board, self.size);
-            let stack = tile.as_mut().expect("Tile should contain a stack");
-            if i == drop_len - 1 {
-                original_variant = stack.variant;
-            }
-
-            moved_pieces.extend(
-                stack
-                    .composition
-                    .drain(stack.composition.len() - drops[i]..),
-            );
-            if stack.composition.is_empty() {
-                *tile = None;
-                self.empty_spaces += 1;
-            } else {
-                stack.variant = if i == drop_len - 1 && flattened {
-                    TakPieceVariant::Wall
-                } else {
-                    TakPieceVariant::Flat
-                };
-            }
-        }
-        let tile = pos.get_mut(&mut self.board, self.size);
-        match tile {
-            Some(original_stack) => {
-                original_stack.composition.extend(moved_pieces);
-                original_stack.variant = original_variant;
-            }
-            None => {
-                *tile = Some(TakStack::new(original_variant, moved_pieces));
-                self.empty_spaces -= 1;
             }
         }
     }
@@ -830,42 +651,6 @@ mod tests {
     }
 
     #[test]
-    fn test_can_undo_place() {
-        let mut board = TakBoard::try_from_partial_tps("x3/2C,1S,112S/x,111C,x").unwrap();
-        let pos = TakCoord::new(0, 2);
-        assert!(board
-            .try_place(pos, TakPieceVariant::Capstone, TakPlayer::White)
-            .is_ok());
-
-        assert_eq!(
-            board.can_undo_place(pos, TakPieceVariant::Wall, TakPlayer::White),
-            Err(TakInvalidUndoPlaceError::NotAllowed)
-        );
-        assert_eq!(
-            board.can_undo_place(pos, TakPieceVariant::Capstone, TakPlayer::Black),
-            Err(TakInvalidUndoPlaceError::NotAllowed)
-        );
-        assert_eq!(
-            board.can_undo_place(TakCoord::new(1, 1), TakPieceVariant::Wall, TakPlayer::White),
-            Err(TakInvalidUndoPlaceError::NotAllowed)
-        );
-
-        assert!(board
-            .can_undo_place(pos, TakPieceVariant::Capstone, TakPlayer::White)
-            .is_ok());
-        assert!(board
-            .try_undo_place(pos, TakPieceVariant::Capstone, TakPlayer::White)
-            .is_ok());
-        assert!(board.can_place(pos).is_ok());
-        assert_eq!(board.to_partial_tps(), "x3/2C,1S,112S/x,111C,x");
-
-        assert_eq!(
-            board.can_undo_place(pos, TakPieceVariant::Capstone, TakPlayer::White),
-            Err(TakInvalidUndoPlaceError::PositionEmpty)
-        );
-    }
-
-    #[test]
     fn test_new_board_is_empty() {
         let board = TakBoard::new(5);
         for y in 0..5 {
@@ -1007,32 +792,6 @@ mod tests {
             .is_ok());
         assert!(board.can_move(pos, TakDir::Right, 1, &[1]).is_err());
         assert!(board.try_move(pos, TakDir::Right, 1, &[1]).is_err());
-    }
-
-    #[test]
-    fn test_try_undo_place() {
-        let mut board = TakBoard::try_from_partial_tps("x,1221C,x,21,2S/x5/x5/x5/x5").unwrap();
-        assert!(board
-            .try_place(TakCoord::new(2, 4), TakPieceVariant::Wall, TakPlayer::White)
-            .is_ok());
-        assert_eq!(board.to_partial_tps(), "x,1221C,1S,21,2S/x5/x5/x5/x5");
-        assert!(board
-            .try_undo_place(TakCoord::new(2, 4), TakPieceVariant::Wall, TakPlayer::White)
-            .is_ok());
-        assert_eq!(board.to_partial_tps(), "x,1221C,x,21,2S/x5/x5/x5/x5");
-    }
-
-    #[test]
-    fn test_try_undo_move() {
-        let mut board = TakBoard::try_from_partial_tps("x,1221C,x,21,2S/x5/x5/x5/x5").unwrap();
-        assert!(board
-            .try_move(TakCoord::new(1, 4), TakDir::Right, 3, &[1, 1, 1])
-            .is_ok());
-        assert_eq!(board.to_partial_tps(), "x,1,2,212,21C/x5/x5/x5/x5");
-        assert!(board
-            .try_undo_move(TakCoord::new(1, 4), TakDir::Right, 3, &[1, 1, 1], true)
-            .is_ok());
-        assert_eq!(board.to_partial_tps(), "x,1221C,x,21,2S/x5/x5/x5/x5");
     }
 
     #[test]

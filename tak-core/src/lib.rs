@@ -62,15 +62,6 @@ pub enum TakInvalidPlaceError {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub enum TakInvalidUndoPlaceError {
-    NotAllowed,
-    InvalidPosition,
-    PositionEmpty,
-    ActionMismatch,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum TakInvalidMoveError {
     NotAllowed,
     InvalidPosition,
@@ -82,29 +73,11 @@ pub enum TakInvalidMoveError {
     Blocked,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub enum TakInvalidUndoMoveError {
-    NotAllowed,
-    InvalidPosition,
-    InvalidTakeCount,
-    InvalidDropCount,
-    ActionMismatch,
-}
-
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum TakInvalidActionError {
     InvalidPlace(TakInvalidPlaceError),
     InvalidMove(TakInvalidMoveError),
-}
-
-#[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub enum TakInvalidUndoActionError {
-    InvalidPlace(TakInvalidUndoPlaceError),
-    InvalidMove(TakInvalidUndoMoveError),
-    NoLastAction,
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -13,13 +13,13 @@ fn perft(size: usize, pos: &str, depth: usize) -> Vec<usize> {
     let tps = TakTps::try_from_str(pos).expect("Failed to parse position");
     let settings =
         TakGameSettings::new_with_position(size, tps, None, TakKomi::new(0, false), None);
-    let mut game = TakGame::new(settings).expect("Failed to create game from position");
+    let game = TakGame::new(settings).expect("Failed to create game from position");
     let mut memo = HashMap::new();
     let partition_memo = compute_partition_memo(15);
 
     let mut results = vec![];
     for i in 0..depth {
-        let res = run(&mut game, &mut memo, &partition_memo, i);
+        let res = run(&game, &mut memo, &partition_memo, i);
         println!("Depth {}: {}", i, res);
         results.push(res);
     }
@@ -27,7 +27,7 @@ fn perft(size: usize, pos: &str, depth: usize) -> Vec<usize> {
 }
 
 fn run(
-    game: &mut TakGame,
+    game: &TakGame,
     memo: &mut HashMap<(String, usize), usize>,
     partition_memo: &Vec<Vec<Vec<Vec<usize>>>>,
     depth: usize,
@@ -35,10 +35,10 @@ fn run(
     if depth == 0 {
         return 1;
     }
-    //game.validate(&TakStones::from_size(game.board.size)).unwrap();
+    game.validate().expect("Game should be valid");
     let tps = game.to_tps().to_string();
-    if memo.contains_key(&(tps.clone(), depth)) {
-        return *memo.get(&(tps, depth)).unwrap();
+    if let Some(memo_val) = memo.get(&(tps.clone(), depth)) {
+        return *memo_val;
     }
 
     let mut count = 0;
@@ -48,18 +48,18 @@ fn run(
         return moves.len();
     }
     for action in moves {
-        match game.try_do_action(action) {
+        let mut clone = game.clone();
+        match clone.try_do_action(action) {
             Ok(_) => {
-                let res = run(game, memo, partition_memo, depth - 1);
+                let res = run(&clone, memo, partition_memo, depth - 1);
                 count += res;
-                game.undo_action().expect("Undo should succeed");
             }
             Err(e) => {
                 eprintln!(
                     "Error performing action: {:?}, {:?}, {:?}",
                     e,
-                    game,
-                    game.to_tps()
+                    clone,
+                    clone.to_tps()
                 );
             }
         }

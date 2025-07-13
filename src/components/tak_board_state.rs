@@ -136,7 +136,7 @@ impl TakBoardState {
 
     pub fn set_time_remaining(&mut self, player: TakPlayer, time_remaining: u64) {
         self.with_game_mut(|game| {
-            game.game_mut().set_time_remaining(player, time_remaining);
+            game.set_time_remaining(player, time_remaining);
         })
         .expect("Game should exist to set time remaining");
     }

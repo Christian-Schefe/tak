@@ -24,15 +24,16 @@
   width: 100%;
   gap: 10px;
 
-  input {
-    letter-spacing: 6px;
-    font-family: monospace;
-    text-align: center;
-    width: 130px;
-  }
-
   button {
     width: auto;
     flex-grow: 1;
   }
+}
+
+#home-room-id-input {
+  font-family: monospace;
+  text-align: left;
+  width: 100px;
+  padding: 10px;
+  letter-spacing: 0.15em;
 }

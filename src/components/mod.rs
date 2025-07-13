@@ -1,14 +1,16 @@
 mod nav_button;
 mod tak_board;
-mod tak_piece;
+pub mod tak_board_state;
 mod tak_clock;
-mod tak_websocket;
 mod tak_flats_counter;
 mod tak_hand;
-pub mod tak_board_state;
+mod tak_piece;
 mod tak_tile;
+mod tak_websocket;
+mod tak_win_modal;
 
 pub use nav_button::*;
 pub use tak_board::*;
 pub use tak_clock::*;
 pub use tak_websocket::*;
+pub use tak_win_modal::*;

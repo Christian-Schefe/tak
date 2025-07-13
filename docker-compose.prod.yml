@@ -34,9 +34,6 @@ services:
       - internal
 
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
     image: tak-app:latest
     expose:
       - 8080
@@ -53,11 +50,12 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile
+      - ./Caddyfile.prod:/etc/caddy/Caddyfile
+      - ./certs:/certs
       - caddy_data:/data
       - caddy_config:/config
     environment:
-      - SITE_ADDRESS=localhost
+      - SITE_ADDRESS=tak.meeshroom.xyz
     networks:
       - internal
       - public

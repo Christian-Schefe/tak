@@ -5,13 +5,14 @@ use dioxus::prelude::*;
 use futures_util::{SinkExt, StreamExt};
 use gloo::net::websocket::futures::WebSocket;
 use gloo::net::websocket::{Message, WebSocketError};
-use tak_core::{TakAction, TakPlayer};
+use tak_core::{TakAction, TakGameState, TakPlayer};
 use wasm_bindgen_futures::spawn_local;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
 pub enum ServerGameMessage {
     StartGame,
     Move(usize, Vec<(TakPlayer, u64)>, String),
+    GameOver(TakGameState),
 }
 
 #[component]
@@ -49,6 +50,15 @@ pub fn TakWebSocket(session_id: String) -> Element {
                     dioxus::logger::tracing::info!(
                         "[WebSocket] Resyncing game state after message"
                     );
+                    resync_game_state(board_clone);
+                }
+            }
+            ServerGameMessage::GameOver(game_state) => {
+                dioxus::logger::tracing::info!("[WebSocket] Game over: {game_state:?}");
+                if board_clone
+                    .with_game(|game| game.game().game_state != game_state)
+                    .unwrap_or(true)
+                {
                     resync_game_state(board_clone);
                 }
             }
@@ -159,10 +169,10 @@ fn resync_game_state(mut board: TakBoardState) {
         if let Ok(GetGameStateResponse::Success(game_state)) = res {
             if let Some((ptn, time_remaining)) = game_state {
                 board.try_set_from_ptn(ptn.to_string());
+                board.has_started.set(true);
                 for (player, duration) in time_remaining {
                     board.set_time_remaining(player, duration);
                 }
-                board.has_started.set(true);
             } else {
                 dioxus::logger::tracing::warn!("[WebSocket] Game hasn't started yet");
                 board.reset();

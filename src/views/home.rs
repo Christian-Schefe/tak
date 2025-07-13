@@ -1,26 +1,15 @@
 use crate::server::room::{
     get_room, join_room, leave_room, GetRoomResponse, JoinRoomResponse, LeaveRoomResponse,
+    ROOM_ID_LEN,
 };
 use crate::Route;
 use dioxus::prelude::*;
 
 #[component]
 pub fn Home() -> Element {
-    let room_id_length = 6;
-
     let nav = use_navigator();
 
     let mut room = use_resource(|| get_room());
-
-    use_effect(move || {
-        match &*room.read() {
-            Some(Ok(GetRoomResponse::Unauthorized)) => {
-                dioxus::logger::tracing::error!("Unauthorized access to room.");
-                nav.push(Route::Auth {});
-            }
-            _ => {}
-        };
-    });
 
     let on_click_create = move |_| {
         nav.push(Route::CreateRoom {});
@@ -30,7 +19,7 @@ pub fn Home() -> Element {
 
     let join_valid = use_memo(move || {
         let room_id = room_id_input.read().trim().to_ascii_uppercase();
-        room_id.len() == room_id_length && room_id.chars().all(|c| c.is_ascii_alphanumeric())
+        room_id.len() == ROOM_ID_LEN && room_id.chars().all(|c| c.is_ascii_alphanumeric())
     });
 
     let on_click_join = move |_| {
@@ -102,10 +91,10 @@ pub fn Home() -> Element {
                 div {
                     id: "home-join-bar",
                     input {
+                        id: "home-room-id-input",
                         type: "text",
-                        placeholder: vec!['_'; room_id_length].into_iter().collect::<String>(),
                         value: "{room_id_input}",
-                        maxlength: room_id_length,
+                        maxlength: ROOM_ID_LEN,
                         oninput: move |e| {
                             let new_str = e.value().trim().to_ascii_uppercase();
                             room_id_input.set(new_str);
