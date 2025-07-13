@@ -11,16 +11,11 @@ pub fn TakTile(pos: TakCoord) -> Element {
     let data = use_memo(move || {
         let _ = state.on_change.read();
         state
-            .with_game(|game| {
-                (
-                    game.game().board.size,
-                    game.tiles.get(&pos).expect("Tile should exist").clone(),
-                )
-            })
+            .with_game(|game| game.tiles.get(&pos).expect("Tile should exist").clone())
             .expect("Game should exist to get tile data")
     });
 
-    let (size, tile) = data.read().clone();
+    let tile = data.read().clone();
 
     let make_on_tile_click = move |pos: TakCoord| {
         let mut cloned_state = state_clone.clone();
@@ -74,49 +69,32 @@ pub fn TakTile(pos: TakCoord) -> Element {
                 "tak-bridge-none"
             };
             rsx! {
-                div {
-                    class: "tak-bridge {player_class} tak-bridge-{direction_class}",
-                }
+                div { class: "tak-bridge {player_class} tak-bridge-{direction_class}" }
             }
         })
         .collect::<Vec<_>>();
+
     rendered_bridges.push({
         let center_corner_classes = center_corner_classes.join(" ");
         rsx! {
-            div {
-                class: "tak-bridge tak-bridge-center {player_class} {center_corner_classes}",
-            }
+            div { class: "tak-bridge tak-bridge-center {player_class} {center_corner_classes}" }
         }
     });
 
     rsx! {
         div {
             onclick: make_on_tile_click(pos),
-            class: if (pos.x + pos.y) % 2 == 0 {
-                "tak-tile tak-tile-light"
-            } else {
-                "tak-tile tak-tile-dark"
-            },
-            class: if tile.highlighted || tile.last_action {
-                "tak-tile-highlight"
-            } else {
-                ""
-            },
-            class: if tile.selectable {
-                "tak-tile-selected"
-            } else {
-                ""
-            },
-            if pos.y == size as i32 - 1 {
-                div {
-                    class: "tak-tile-label tak-tile-label-rank",
+            class: if (pos.x + pos.y) % 2 == 1 { "tak-tile tak-tile-light" } else { "tak-tile tak-tile-dark" },
+            class: if tile.highlighted || tile.last_action { "tak-tile-highlight" } else { "" },
+            class: if tile.selectable { "tak-tile-selected" } else { "" },
+            if pos.y == 0 {
+                div { class: "tak-tile-label tak-tile-label-rank",
                     {format!("{}", ('A' as u8 + pos.x as u8) as char)}
                 }
             }
             if pos.x == 0 {
-                div {
-                    class: "tak-tile-label tak-tile-label-file",
-                    {format!("{}", size as i32 - pos.y)}
+                div { class: "tak-tile-label tak-tile-label-file",
+                    {format!("{}", pos.y + 1)}
                 }
             }
             {rendered_bridges.iter()}

@@ -33,7 +33,7 @@ pub enum TakAction {
 }
 
 impl TakActionRecord {
-    pub fn to_ptn(&self, size: i32) -> String {
+    pub fn to_ptn(&self) -> String {
         match self {
             Self::PlacePiece {
                 pos,
@@ -46,7 +46,7 @@ impl TakActionRecord {
                     TakPieceVariant::Capstone => "C",
                 };
                 let file = (b'a' + pos.x as u8) as char;
-                let rank = size - pos.y;
+                let rank = pos.y + 1;
                 format!("{}{}{}", prefix, file, rank)
             }
             Self::MovePiece {
@@ -62,7 +62,7 @@ impl TakActionRecord {
                     format!("{}", take)
                 };
                 let file = (b'a' + pos.x as u8) as char;
-                let rank = size - pos.y;
+                let rank = pos.y + 1;
                 let direction_str = match dir {
                     TakDir::Up => "+",
                     TakDir::Down => "-",
@@ -85,7 +85,7 @@ impl TakActionRecord {
 }
 
 impl TakAction {
-    fn parse_place(size: i32, input: &str) -> Option<TakAction> {
+    fn parse_place(input: &str) -> Option<TakAction> {
         let chars: Vec<char> = input.chars().collect();
         let (variant, file, rank) = match chars.as_slice() {
             [prefix @ ('S' | 'C'), file @ 'a'..='z', rank @ '1'..='9'] => (
@@ -102,14 +102,14 @@ impl TakAction {
             _ => return None,
         };
         let file_index = (file as u8 - b'a') as i32;
-        let rank_index = size - (rank as u8 - b'0') as i32;
+        let rank_index = (rank as u8 - b'1') as i32;
         Some(TakAction::PlacePiece {
             pos: TakCoord::new(file_index, rank_index),
             variant,
         })
     }
 
-    fn parse_move(size: i32, input: &str) -> Option<TakAction> {
+    fn parse_move(input: &str) -> Option<TakAction> {
         let mut chars = input.chars().peekable();
 
         let take = if let Some(c @ '1'..='9') = chars.peek().copied() {
@@ -124,12 +124,10 @@ impl TakAction {
             _ => return None,
         } as i32;
 
-        let rank = size
-            - 1
-            - match chars.next()? {
-                c @ '1'..='9' => c as u8 - b'1',
-                _ => return None,
-            } as i32;
+        let rank = match chars.next()? {
+            c @ '1'..='9' => c as u8 - b'1',
+            _ => return None,
+        } as i32;
 
         let dir = match chars.next()? {
             '+' => TakDir::Up,
@@ -164,14 +162,14 @@ impl TakAction {
         })
     }
 
-    pub fn from_ptn(size: i32, ptn: &str) -> Option<Self> {
+    pub fn from_ptn(ptn: &str) -> Option<Self> {
         if ptn.is_empty() {
             return None;
         }
-        if let Some(action) = Self::parse_place(size, ptn) {
+        if let Some(action) = Self::parse_place(ptn) {
             return Some(action);
         }
-        Self::parse_move(size, ptn)
+        Self::parse_move(ptn)
     }
 }
 
@@ -181,17 +179,16 @@ mod tests {
 
     #[test]
     fn test_roundtrip_ptn() {
-        let size = 5;
         let actions = vec![
             (
                 TakActionRecord::PlacePiece {
-                    pos: TakCoord::new(0, 4),
+                    pos: TakCoord::new(0, 0),
                     variant: TakPieceVariant::Flat,
                     player: TakPlayer::White,
                 },
                 "a1",
                 TakAction::PlacePiece {
-                    pos: TakCoord::new(0, 4),
+                    pos: TakCoord::new(0, 0),
                     variant: TakPieceVariant::Flat,
                 },
             ),
@@ -203,7 +200,7 @@ mod tests {
                     drops: vec![2, 1],
                     flattened: false,
                 },
-                "3b2+21",
+                "3b4+21",
                 TakAction::MovePiece {
                     pos: TakCoord::new(1, 3),
                     dir: TakDir::Up,
@@ -214,8 +211,8 @@ mod tests {
         ];
 
         for (record, ptn, action) in actions {
-            assert_eq!(record.to_ptn(size), ptn);
-            let parsed_action = TakAction::from_ptn(size, &ptn).expect("Failed to parse PTN");
+            assert_eq!(record.to_ptn(), ptn);
+            let parsed_action = TakAction::from_ptn(&ptn).expect("Failed to parse PTN");
             assert_eq!(action, parsed_action);
         }
     }

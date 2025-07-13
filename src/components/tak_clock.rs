@@ -36,11 +36,8 @@ pub fn TakClock(player: TakPlayer) -> Element {
         });
 
     rsx! {
-        div {
-            class: "clock clock-{class_name}",
-            p {
-                {time_remaining_str}
-            }
+        div { class: "clock clock-{class_name}",
+            p { {time_remaining_str} }
         }
     }
 }

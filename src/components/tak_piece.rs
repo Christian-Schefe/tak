@@ -40,18 +40,29 @@ pub fn TakPiece(id: usize) -> Element {
     rsx! {
         div {
             class: "tak-piece tak-piece-height-{height}",
-            style: format!("width: {}%; height: {}%; transform: translate({}%, calc({}% - {}%)); z-index: {}", 100f32 / size as f32, 100f32 / size as f32, pos.x * 100, pos.y * 100, height * 7, z_index),
-            div {
-                class: "tak-piece-wrapper",
+            style: format!(
+                "width: {}%; height: {}%; transform: translate({}%, calc({}% - {}%)); z-index: {}",
+                100f32 / size as f32,
+                100f32 / size as f32,
+                pos.x * 100,
+                (size as i32 - 1 - pos.y) * 100,
+                height * 7,
+                z_index,
+            ),
+            div { class: "tak-piece-wrapper",
                 div {
-                    class: format!("tak-piece-inner tak-piece-inner-{} tak-piece-inner-{}", match variant {
-                        TakPieceVariant::Flat => "flat",
-                        TakPieceVariant::Wall => "wall",
-                        TakPieceVariant::Capstone => "cap",
-                    }, match player {
-                        TakPlayer::White => "light",
-                        TakPlayer::Black => "dark",
-                    }),
+                    class: format!(
+                        "tak-piece-inner tak-piece-inner-{} tak-piece-inner-{}",
+                        match variant {
+                            TakPieceVariant::Flat => "flat",
+                            TakPieceVariant::Wall => "wall",
+                            TakPieceVariant::Capstone => "cap",
+                        },
+                        match player {
+                            TakPlayer::White => "light",
+                            TakPlayer::Black => "dark",
+                        },
+                    ),
                 }
             }
         }

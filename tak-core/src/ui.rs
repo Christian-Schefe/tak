@@ -173,7 +173,7 @@ impl TakUIState {
             pos,
         }) = &mut self.partial_move
         {
-            let Some(tower) = self.actual_game.board.try_get_tower(*pos) else {
+            let Some(stack) = self.actual_game.board.try_get_stack(*pos) else {
                 self.partial_move = None;
                 return;
             };
@@ -199,14 +199,14 @@ impl TakUIState {
                         return;
                     }
                 }
-                if let Some(other_tower) = self.actual_game.board.try_get_tower(new_pos) {
-                    if other_tower.variant == TakPieceVariant::Capstone {
+                if let Some(other_stack) = self.actual_game.board.try_get_stack(new_pos) {
+                    if other_stack.variant == TakPieceVariant::Capstone {
                         self.partial_move = None;
                         return;
                     }
-                    if other_tower.variant == TakPieceVariant::Wall {
+                    if other_stack.variant == TakPieceVariant::Wall {
                         let pieces_to_drop = *take - drops.iter().sum::<usize>();
-                        if pieces_to_drop != 1 || tower.variant != TakPieceVariant::Capstone {
+                        if pieces_to_drop != 1 || stack.variant != TakPieceVariant::Capstone {
                             self.partial_move = None;
                             return;
                         }
@@ -216,11 +216,11 @@ impl TakUIState {
                 drops.push(1);
             }
         } else {
-            let Some(tower) = self.actual_game.board.try_get_tower(new_pos) else {
+            let Some(stack) = self.actual_game.board.try_get_stack(new_pos) else {
                 return;
             };
-            if tower.player() == self.actual_game.current_player {
-                let take = tower.height().min(self.actual_game.board.size);
+            if stack.player() == self.actual_game.current_player {
+                let take = stack.height().min(self.actual_game.board.size);
                 self.partial_move = Some(TakPartialMove::new(take, new_pos));
             }
         }
@@ -233,7 +233,7 @@ impl TakUIState {
         match last_action {
             TakActionRecord::PlacePiece { pos, .. } => vec![
                 game.board
-                    .try_get_tower(*pos)
+                    .try_get_stack(*pos)
                     .unwrap()
                     .composition
                     .last()
@@ -246,9 +246,9 @@ impl TakUIState {
                 let mut stones = vec![];
                 for i in 0..drops.len() {
                     let new_pos = pos.offset_dir_many(*dir, (i + 1) as i32);
-                    let tower = game.board.try_get_tower(new_pos).unwrap();
+                    let stack = game.board.try_get_stack(new_pos).unwrap();
                     stones.extend(
-                        tower.composition[tower.height() - drops[i]..]
+                        stack.composition[stack.height() - drops[i]..]
                             .iter()
                             .map(|s| s.id),
                     );
@@ -281,12 +281,12 @@ impl TakUIState {
         } else {
             Self::get_stones_from_last_action_in_order(&self.game)
         };
-        for (pos, tower) in self.game.board.iter_pieces(None) {
-            let tower_height = tower.height();
+        for (pos, stack) in self.game.board.iter_pieces(None) {
+            let stack_height = stack.height();
             let floating_threshold = drop_diff
                 .filter(|x| x.0 == pos)
-                .map(|x| tower_height.saturating_sub(x.1));
-            for (height, stone) in tower.composition.iter().enumerate() {
+                .map(|x| stack_height.saturating_sub(x.1));
+            for (height, stone) in stack.composition.iter().enumerate() {
                 let priority_index = priority_stones.iter().position(|&id| id == stone.id);
                 self.pieces.insert(
                     stone.id,
@@ -296,8 +296,8 @@ impl TakUIState {
                         height,
                         is_floating: floating_threshold.is_some_and(|x| height >= x),
                         z_priority: priority_index,
-                        variant: if height + 1 == tower_height {
-                            tower.variant
+                        variant: if height + 1 == stack_height {
+                            stack.variant
                         } else {
                             TakPieceVariant::Flat
                         },
@@ -320,18 +320,18 @@ impl TakUIState {
                 if !new_pos.is_valid(self.game.board.size) {
                     continue;
                 }
-                if let Some(other_tower) = self.game.board.try_get_tower(new_pos) {
-                    if other_tower.variant == TakPieceVariant::Flat {
+                if let Some(other_stack) = self.game.board.try_get_stack(new_pos) {
+                    if other_stack.variant == TakPieceVariant::Flat {
                         click_options.push(new_pos);
-                    } else if other_tower.variant == TakPieceVariant::Wall {
-                        let tower = self
+                    } else if other_stack.variant == TakPieceVariant::Wall {
+                        let stack = self
                             .actual_game
                             .board
-                            .try_get_tower(partial_move.pos)
-                            .expect("Partial move position should have a tower");
+                            .try_get_stack(partial_move.pos)
+                            .expect("Partial move position should have a stack");
                         let drops_diff =
                             partial_move.take - partial_move.drops.iter().sum::<usize>();
-                        if drops_diff == 1 && tower.variant == TakPieceVariant::Capstone {
+                        if drops_diff == 1 && stack.variant == TakPieceVariant::Capstone {
                             click_options.push(new_pos);
                         }
                     }
@@ -344,33 +344,37 @@ impl TakUIState {
         let mut highlighted_tiles = Vec::new();
         if let TakGameState::Win(player, TakWinReason::Road) = self.actual_game.game_state {
             let all_positions =
-                TakCoord::iter_board(self.game.board.size).collect::<Vec<TakCoord>>();
+                TakCoord::iter_board(self.actual_game.board.size).collect::<Vec<TakCoord>>();
             let road = self
-                .game
+                .actual_game
                 .board
                 .check_for_road(&all_positions, player)
                 .expect("Player should have a road");
             highlighted_tiles = self
-                .game
+                .actual_game
                 .board
                 .find_shortest_path(road.0, road.1)
                 .expect("Should find a path for road");
+            #[cfg(feature="wasm")]
+            dioxus::logger::tracing::info!("{:?}", highlighted_tiles);
         }
 
         let mut last_action_tiles = Vec::new();
-        if let Some(last_action) = self.actual_game.action_history.last() {
-            last_action_tiles = match last_action {
-                TakActionRecord::PlacePiece { pos, .. } => vec![*pos],
-                TakActionRecord::MovePiece {
-                    pos, dir, drops, ..
-                } => {
-                    let mut tiles = vec![*pos];
-                    for i in 1..=drops.len() {
-                        tiles.push(pos.offset_dir_many(*dir, i as i32));
+        if highlighted_tiles.len() == 0 {
+            if let Some(last_action) = self.actual_game.action_history.last() {
+                last_action_tiles = match last_action {
+                    TakActionRecord::PlacePiece { pos, .. } => vec![*pos],
+                    TakActionRecord::MovePiece {
+                        pos, dir, drops, ..
+                    } => {
+                        let mut tiles = vec![*pos];
+                        for i in 1..=drops.len() {
+                            tiles.push(pos.offset_dir_many(*dir, i as i32));
+                        }
+                        tiles
                     }
-                    tiles
-                }
-            };
+                };
+            }
         }
 
         for pos in TakCoord::iter_board(self.game.board.size) {
@@ -385,9 +389,9 @@ impl TakUIState {
                     )
                 })
                 .collect::<Vec<_>>();
-            if let Some(tower) = self.game.board.try_get_tower(pos) {
-                if tower.variant == TakPieceVariant::Flat {
-                    self.flat_counts[tower.player().index()] += 1;
+            if let Some(stack) = self.game.board.try_get_stack(pos) {
+                if stack.variant == TakPieceVariant::Flat {
+                    self.flat_counts[stack.player().index()] += 1;
                 }
             }
             self.tiles.insert(
@@ -411,7 +415,7 @@ impl TakUIState {
             self.tiles.get_mut(&pos).unwrap().last_action = true;
         }
 
-        if self.actual_game.turn_index < 2 {
+        if self.actual_game.ply_index < 2 {
             self.available_piece_types = [vec![TakPieceVariant::Flat], vec![TakPieceVariant::Flat]];
         } else {
             self.available_piece_types =
@@ -439,11 +443,11 @@ impl TakUIState {
         let mut bridges = Vec::new();
         let size = self.game.board.size;
 
-        let Some(tower) = self.game.board.try_get_tower(pos) else {
+        let Some(stack) = self.game.board.try_get_stack(pos) else {
             return None;
         };
-        let player = tower.player();
-        if tower.variant == TakPieceVariant::Wall {
+        let player = stack.player();
+        if stack.variant == TakPieceVariant::Wall {
             return None;
         }
         for dir in TakDir::ALL {
@@ -452,8 +456,8 @@ impl TakUIState {
                 bridges.push(dir);
                 continue;
             }
-            if let Some(other_tower) = self.game.board.try_get_tower(new_pos) {
-                if other_tower.variant != TakPieceVariant::Wall && other_tower.player() == player {
+            if let Some(other_stack) = self.game.board.try_get_stack(new_pos) {
+                if other_stack.variant != TakPieceVariant::Wall && other_stack.player() == player {
                     bridges.push(dir);
                 }
             }

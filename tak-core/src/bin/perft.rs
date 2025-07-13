@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use tak_core::{compute_partition_memo, TakGame, TakGameSettings, TakKomi, TakTps};
+use tak_core::{compute_partition_memo, gen_moves, TakGame, TakGameSettings, TakKomi, TakTps};
 
 fn main() {
     println!("{:?}", perft(6, "x,2,2,22S,2,111S/21S,22C,112,x,1112S,11S/x,2,112212,2,2S,2/x,2,121122,x,1112,211/21C,x,1,2S,21S,x/2S,x,212,1S,12S,1S 1 33", 2));
@@ -42,7 +42,7 @@ fn run(
     }
 
     let mut count = 0;
-    let moves = game.gen_moves(partition_memo);
+    let moves = gen_moves(game, partition_memo);
     if depth == 1 {
         memo.insert((tps, depth), moves.len());
         return moves.len();

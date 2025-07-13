@@ -25,12 +25,8 @@ pub fn TakHand(player: TakPlayer) -> Element {
     rsx! {
         div {
             class: "tak-piece-hand",
-            class: if current_player {
-                "tak-piece-hand-current"
-            } else {
-                ""
-            },
-            {format!("{}/{}",flats, caps)}
+            class: if current_player { "tak-piece-hand-current" } else { "" },
+            {format!("{}/{}", flats, caps)}
         }
     }
 }

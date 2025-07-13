@@ -34,16 +34,13 @@ pub fn NavButton(to: Route, label: String, icon: NavButtonIcon) -> Element {
                 width: 30,
                 height: 30,
                 fill: "black",
-                icon: FaBars
+                icon: FaBars,
             }
         },
     };
     rsx! {
-        Link {
-            to,
-            class: "nav-button",
-            active_class: "nav-button-active",
-            {icon},
+        Link { to, class: "nav-button", active_class: "nav-button-active",
+            {icon}
             "{label}"
         }
     }

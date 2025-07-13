@@ -164,7 +164,7 @@ pub struct TakGame {
     pub settings: TakGameSettings,
     pub board: TakBoard,
     pub current_player: TakPlayer,
-    pub turn_index: usize,
+    pub ply_index: usize,
     pub action_history: Vec<TakActionRecord>,
     pub hands: [TakHand; 2],
     pub game_state: TakGameState,
@@ -203,8 +203,8 @@ impl TakGame {
         let clock = settings.time_mode.as_ref().map(|mode| TakClock::new(mode));
         Some(TakGame {
             board,
-            current_player: TakPlayer::White,
-            turn_index: settings.start_position.turn_index,
+            current_player: settings.start_position.player,
+            ply_index: settings.start_position.get_ply_index(),
             action_history: Vec::new(),
             hands,
             game_state: TakGameState::Ongoing,
@@ -284,7 +284,7 @@ impl TakGame {
         }
 
         self.action_history.push(record);
-        self.turn_index += 1;
+        self.ply_index += 1;
         self.current_player = self.current_player.other();
     }
 
@@ -313,7 +313,7 @@ impl TakGame {
             .action_history
             .pop()
             .ok_or(TakInvalidUndoActionError::NoLastAction)?;
-        self.turn_index -= 1;
+        self.ply_index -= 1;
         self.current_player = self.current_player.other();
         self.game_state = TakGameState::Ongoing;
 
@@ -357,7 +357,7 @@ impl TakGame {
         }
 
         self.board.can_place(pos)?;
-        let player = if self.turn_index < 2 {
+        let player = if self.ply_index < 2 {
             if variant != TakPieceVariant::Flat {
                 return Err(TakInvalidPlaceError::InvalidVariant);
             }
@@ -402,7 +402,7 @@ impl TakGame {
             return Err(TakInvalidMoveError::NotAllowed);
         }
 
-        if self.turn_index < 2 {
+        if self.ply_index < 2 {
             return Err(TakInvalidMoveError::NotAllowed);
         }
         let flattened = self.board.try_move(pos, dir, take, drops)?;
@@ -428,100 +428,15 @@ impl TakGame {
         self.board.try_undo_move(pos, dir, take, drops, flattened)
     }
 
-    pub fn gen_moves(&self, partition_memo: &Vec<Vec<Vec<Vec<usize>>>>) -> Vec<TakAction> {
-        if self.game_state != TakGameState::Ongoing {
-            return Vec::new();
-        }
-
-        let mut moves = Vec::new();
-        let player = self.current_player;
-        let hand = &self.hands[player.index()];
-
-        for pos in TakCoord::iter_board(self.board.size) {
-            if self.board.can_place(pos).is_ok() {
-                if hand.stones > 0 {
-                    moves.push(TakAction::PlacePiece {
-                        pos,
-                        variant: TakPieceVariant::Flat,
-                    });
-                    if self.turn_index >= 2 {
-                        moves.push(TakAction::PlacePiece {
-                            pos,
-                            variant: TakPieceVariant::Wall,
-                        });
-                    }
-                }
-                if hand.capstones > 0 && self.turn_index >= 2 {
-                    moves.push(TakAction::PlacePiece {
-                        pos,
-                        variant: TakPieceVariant::Capstone,
-                    });
-                }
-            }
-        }
-
-        if self.turn_index < 2 {
-            return moves;
-        }
-
-        for (pos, tower) in self.board.iter_pieces(Some(player)) {
-            for take in 1..=tower.height().min(self.board.size) {
-                for &dir in &[TakDir::Up, TakDir::Down, TakDir::Left, TakDir::Right] {
-                    for drop_len in 1..=take {
-                        let offset_pos = pos.offset_dir_many(dir, drop_len as i32);
-                        if !offset_pos.is_valid(self.board.size) {
-                            break;
-                        }
-                        let drops_vec = if partition_memo.len() > take {
-                            partition_memo[take][drop_len].clone()
-                        } else {
-                            partition_number(take, drop_len)
-                        };
-                        for drops in drops_vec {
-                            if self.board.try_get_tower(offset_pos).is_some_and(|t| {
-                                t.variant == TakPieceVariant::Capstone
-                                    || (t.variant == TakPieceVariant::Wall
-                                        && !(*drops.last().expect("Drops should not be empty")
-                                            == 1
-                                            && tower.variant == TakPieceVariant::Capstone))
-                            }) {
-                                break;
-                            }
-                            moves.push(TakAction::MovePiece {
-                                pos,
-                                dir,
-                                take,
-                                drops,
-                            });
-                        }
-                        if self
-                            .board
-                            .try_get_tower(offset_pos)
-                            .is_some_and(|t| t.variant != TakPieceVariant::Flat)
-                        {
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-
-        moves
-    }
-
     pub fn to_tps(&self) -> TakTps {
-        TakTps::new(
-            self.board.to_partial_tps(),
-            self.current_player,
-            self.turn_index + 1,
-        )
+        TakTps::new(self.board.to_partial_tps(), self.ply_index)
     }
 
     pub fn to_ptn(&self) -> TakPtn {
         let turns = self
             .action_history
             .iter()
-            .map(|x| x.to_ptn(self.board.size as i32))
+            .map(|x| x.to_ptn())
             .collect::<Vec<_>>();
         let mut attributes = vec![
             TakPtnAttr::Size(self.board.size),
@@ -537,7 +452,7 @@ impl TakGame {
         }
         let mut ptn = TakPtn::new(
             turns,
-            self.settings.start_position.turn_index,
+            self.settings.start_position.move_index,
             self.game_state.clone(),
         );
         ptn.attributes = attributes;
@@ -551,12 +466,12 @@ impl TakGame {
         let mut actions = Vec::new();
         for (i, (_, white_turn, black_turn)) in ptn.turns.iter().enumerate() {
             if let Some(white_turn) = white_turn {
-                actions.push(TakAction::from_ptn(game.board.size as i32, &white_turn)?);
+                actions.push(TakAction::from_ptn(&white_turn)?);
             } else if i != 0 {
                 return None;
             }
             if let Some(black_turn) = black_turn {
-                actions.push(TakAction::from_ptn(game.board.size as i32, &black_turn)?);
+                actions.push(TakAction::from_ptn(&black_turn)?);
             } else if i != ptn.turns.len() - 1 {
                 return None;
             }
@@ -578,6 +493,16 @@ impl TakGame {
 
     pub fn validate(&self, stones: &TakStones) -> Result<(), String> {
         self.board.validate()?;
+        match self.ply_index % 2 {
+            0 if self.current_player == TakPlayer::White => {}
+            1 if self.current_player == TakPlayer::Black => {}
+            _ => {
+                return Err(format!(
+                    "Current player {:?} does not match ply index {}",
+                    self.current_player, self.ply_index
+                ));
+            }
+        }
         let stone_count = self.board.count_stones(TakPlayer::White);
         if stone_count.0 + self.hands[0].stones != stones.stones
             || stone_count.1 + self.hands[0].capstones != stones.capstones
@@ -596,17 +521,17 @@ impl TakGame {
                 stone_count.0, self.hands[1].stones, stones.stones
             ));
         }
-        if self.action_history.len() > self.turn_index {
+        if self.action_history.len() > self.ply_index {
             return Err(format!(
                 "Action history length {} exceeds turn index {}",
                 self.action_history.len(),
-                self.turn_index
+                self.ply_index
             ));
         }
-        if self.current_player.index() != self.turn_index % 2 {
+        if self.current_player.index() != self.ply_index % 2 {
             return Err(format!(
                 "Current player {:?} does not match turn index {}",
-                self.current_player, self.turn_index
+                self.current_player, self.ply_index
             ));
         }
 
@@ -614,95 +539,9 @@ impl TakGame {
     }
 }
 
-pub fn compute_partition_memo(max_take: usize) -> Vec<Vec<Vec<Vec<usize>>>> {
-    let mut partition_memo = Vec::new();
-    for take in 0..=max_take {
-        let mut vec = Vec::new();
-        for drop_len in 0..=take {
-            vec.push(partition_number(take, drop_len));
-        }
-        partition_memo.push(vec);
-    }
-    partition_memo
-}
-
-fn partition_number(num: usize, n: usize) -> Vec<Vec<usize>> {
-    if num < n || n == 0 || num == 0 {
-        Vec::new()
-    } else if n == 1 {
-        if num == 0 {
-            Vec::new()
-        } else {
-            vec![vec![num]]
-        }
-    } else {
-        let mut result = Vec::new();
-        for first in 1..=(num - n + 1) {
-            for mut rest in partition_number(num - first, n - 1) {
-                let mut partition = vec![first];
-                partition.append(&mut rest);
-                result.push(partition);
-            }
-        }
-        result
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_partition_number_basic() {
-        // partition 5 into 2 parts: should be [[1,4], [2,3], [3,2], [4,1]]
-        let mut result = partition_number(5, 2);
-        result.sort();
-        let mut expected = vec![vec![1, 4], vec![2, 3], vec![3, 2], vec![4, 1]];
-        expected.sort();
-        assert_eq!(result, expected);
-    }
-
-    #[test]
-    fn test_partition_number_three_parts() {
-        // partition 6 into 3 parts: should be [[1,1,4], [1,2,3], [1,3,2], [1,4,1], [2,1,3], [2,2,2], [2,3,1], [3,1,2], [3,2,1], [4,1,1]]
-        let mut result = partition_number(6, 3);
-        result.sort();
-        let mut expected = vec![
-            vec![1, 1, 4],
-            vec![1, 2, 3],
-            vec![1, 3, 2],
-            vec![1, 4, 1],
-            vec![2, 1, 3],
-            vec![2, 2, 2],
-            vec![2, 3, 1],
-            vec![3, 1, 2],
-            vec![3, 2, 1],
-            vec![4, 1, 1],
-        ];
-        expected.sort();
-        assert_eq!(result, expected);
-    }
-
-    #[test]
-    fn test_partition_number_single_part() {
-        // partition 7 into 1 part: should be [[7]]
-        let result = partition_number(7, 1);
-        assert_eq!(result, vec![vec![7]]);
-    }
-
-    #[test]
-    fn test_partition_number_no_parts() {
-        // partition 0 into 0 parts: should be []
-        let result = partition_number(0, 0);
-        assert_eq!(result, Vec::<Vec<usize>>::new());
-    }
-
-    #[test]
-    fn test_partition_number_invalid() {
-        // partition 3 into 5 parts: not possible, should be []
-        let result = partition_number(3, 5);
-        assert_eq!(result, Vec::<Vec<usize>>::new());
-    }
 
     #[test]
     fn test_from_ptn() {
@@ -771,10 +610,11 @@ mod tests {
         assert_eq!(game.settings.stones.stones, 30);
         assert_eq!(game.settings.stones.capstones, 1);
         assert_eq!(game.current_player, TakPlayer::White);
-        assert_eq!(game.turn_index, 80);
+        assert_eq!(game.ply_index, 80);
         assert_eq!(
             game.game_state,
             TakGameState::Win(TakPlayer::Black, TakWinReason::Flat)
         );
+        assert_eq!(game.to_tps().to_string(), "2,2,12S,2,2,2/1,212S,2121S,2,1,1/2,222221C,2,11112C,1,2/2,2,1,x2,1/2,2,21,21,1,1/21,2,1,21,221S,1 1 41");
     }
 }

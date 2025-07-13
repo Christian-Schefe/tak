@@ -20,14 +20,14 @@ impl TakPiece {
 
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct TakTower {
+pub struct TakStack {
     pub variant: TakPieceVariant,
     pub composition: Vec<TakPiece>,
 }
 
-impl TakTower {
+impl TakStack {
     pub fn new(variant: TakPieceVariant, composition: Vec<TakPiece>) -> Self {
-        TakTower {
+        TakStack {
             variant,
             composition,
         }
@@ -40,22 +40,22 @@ impl TakTower {
     pub fn player(&self) -> TakPlayer {
         self.composition
             .last()
-            .expect("TakTower should not be empty")
+            .expect("TakStack should not be empty")
             .player
     }
 }
 
-/// Represents a Tak board with a specified size and a vector of towers.
+/// Represents a Tak board with a specified size and a vector of stacks.
 /// It provides methods to place, move, and undo moves of pieces on the board,
 /// as well as to check for valid placements and moves.
 /// It also includes methods to check for roads, count stones, and convert the board to a partial TPS (Tak Position String) representation.
-/// The board is represented as a flat vector of optional `TakTower` instances, where each position can either be empty (`None`) or occupied by a `TakTower`.
+/// The board is represented as a flat vector of optional `TakStack` instances, where each position can either be empty (`None`) or occupied by a `TakStack`.
 /// Each piece can be identified by a unique ID.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TakBoard {
     pub size: usize,
-    board: Vec<Option<TakTower>>,
+    board: Vec<Option<TakStack>>,
     id_counter: usize,
     empty_spaces: usize,
 }
@@ -110,10 +110,10 @@ impl TakBoard {
         variant: TakPieceVariant,
         player: TakPlayer,
     ) {
-        let tower = TakTower::new(variant, vec![TakPiece::new(self.id_counter, player)]);
+        let stack = TakStack::new(variant, vec![TakPiece::new(self.id_counter, player)]);
         self.id_counter += 1;
         self.empty_spaces -= 1;
-        *pos.get_mut(&mut self.board, self.size) = Some(tower);
+        *pos.get_mut(&mut self.board, self.size) = Some(stack);
     }
 
     /// Checks if the placement of a piece at the given position can be undone.
@@ -125,11 +125,11 @@ impl TakBoard {
         player: TakPlayer,
     ) -> Result<(), TakInvalidUndoPlaceError> {
         match pos.try_get_mut(&mut self.board, self.size) {
-            Some(Some(tower)) => {
-                if tower.variant == variant
-                    && tower.composition.len() == 1
-                    && tower.player() == player
-                    && tower.composition[0].id + 1 == self.id_counter
+            Some(Some(stack)) => {
+                if stack.variant == variant
+                    && stack.composition.len() == 1
+                    && stack.player() == player
+                    && stack.composition[0].id + 1 == self.id_counter
                 {
                     Ok(())
                 } else {
@@ -156,8 +156,8 @@ impl TakBoard {
     /// Undoes the placement of a piece at the given position without checking if the undo is valid.
     /// Using this method can lead to an invalid board state or panic if the position or undo is not valid.
     pub fn undo_place_unchecked(&mut self, pos: TakCoord) {
-        let tower = pos.get_mut(&mut self.board, self.size);
-        *tower = None;
+        let stack = pos.get_mut(&mut self.board, self.size);
+        *stack = None;
         self.id_counter -= 1;
         self.empty_spaces += 1;
     }
@@ -174,12 +174,12 @@ impl TakBoard {
         if take < 1 || take > self.size {
             return Err(TakInvalidMoveError::InvalidTakeCount);
         }
-        let tower = match pos.try_get(&self.board, self.size) {
-            Some(Some(tower)) => tower,
+        let stack = match pos.try_get(&self.board, self.size) {
+            Some(Some(stack)) => stack,
             Some(None) => return Err(TakInvalidMoveError::InvalidPosition),
             None => return Err(TakInvalidMoveError::PositionEmpty),
         };
-        if tower.height() < take {
+        if stack.height() < take {
             return Err(TakInvalidMoveError::NotEnoughPieces);
         }
         let drop_len = drops.len();
@@ -195,7 +195,7 @@ impl TakBoard {
             current_pos = current_pos.offset_dir(dir);
             match current_pos.try_get(&self.board, self.size) {
                 Some(None) => {}
-                Some(Some(other_tower)) => match other_tower.variant {
+                Some(Some(other_stack)) => match other_stack.variant {
                     TakPieceVariant::Flat => {}
                     TakPieceVariant::Capstone => {
                         return Err(TakInvalidMoveError::Blocked);
@@ -203,7 +203,7 @@ impl TakBoard {
                     TakPieceVariant::Wall => {
                         if i != drop_len - 1
                             || drop != 1
-                            || tower.variant != TakPieceVariant::Capstone
+                            || stack.variant != TakPieceVariant::Capstone
                         {
                             return Err(TakInvalidMoveError::Blocked);
                         } else {
@@ -241,21 +241,21 @@ impl TakBoard {
     pub fn do_move_unchecked(&mut self, pos: TakCoord, dir: TakDir, take: usize, drops: &[usize]) {
         let drop_len = drops.len();
         let tile = pos.get_mut(&mut self.board, self.size);
-        let tower = tile.as_mut().expect("Tile should contain a tower");
-        let variant = tower.variant;
-        let mut moved_pieces = if tower.height() == take {
+        let stack = tile.as_mut().expect("Tile should contain a stack");
+        let variant = stack.variant;
+        let mut moved_pieces = if stack.height() == take {
             self.empty_spaces += 1;
             let mut composition = tile
                 .take()
-                .expect("Tile should contain a tower")
+                .expect("Tile should contain a stack")
                 .composition;
             composition.reverse();
             composition
         } else {
-            tower.variant = TakPieceVariant::Flat;
-            tower
+            stack.variant = TakPieceVariant::Flat;
+            stack
                 .composition
-                .drain(tower.composition.len() - take..)
+                .drain(stack.composition.len() - take..)
                 .rev()
                 .collect::<Vec<_>>()
         };
@@ -271,12 +271,12 @@ impl TakBoard {
             };
             match other_tile {
                 None => {
-                    *other_tile = Some(TakTower::new(new_variant, moved_pieces.collect()));
+                    *other_tile = Some(TakStack::new(new_variant, moved_pieces.collect()));
                     self.empty_spaces -= 1;
                 }
-                Some(other_tower) => {
-                    other_tower.composition.extend(moved_pieces);
-                    other_tower.variant = new_variant;
+                Some(other_stack) => {
+                    other_stack.composition.extend(moved_pieces);
+                    other_stack.variant = new_variant;
                 }
             }
         }
@@ -297,8 +297,8 @@ impl TakBoard {
             return Err(TakInvalidUndoMoveError::InvalidTakeCount);
         }
         match pos.try_get(&self.board, self.size) {
-            Some(Some(tower)) => {
-                if tower.variant != TakPieceVariant::Flat {
+            Some(Some(stack)) => {
+                if stack.variant != TakPieceVariant::Flat {
                     return Err(TakInvalidUndoMoveError::ActionMismatch);
                 }
             }
@@ -316,12 +316,12 @@ impl TakBoard {
             }
             current_pos = current_pos.offset_dir(dir);
             match current_pos.try_get(&self.board, self.size) {
-                Some(Some(other_tower)) => {
-                    if other_tower.height() < drop {
+                Some(Some(other_stack)) => {
+                    if other_stack.height() < drop {
                         return Err(TakInvalidUndoMoveError::InvalidDropCount);
                     }
                     if i != drop_len - 1 {
-                        match other_tower.variant {
+                        match other_stack.variant {
                             TakPieceVariant::Flat => {}
                             TakPieceVariant::Capstone => {
                                 return Err(TakInvalidUndoMoveError::ActionMismatch);
@@ -331,8 +331,8 @@ impl TakBoard {
                             }
                         };
                     } else if flattened
-                        && (other_tower.variant != TakPieceVariant::Capstone
-                            || other_tower.height() < 2)
+                        && (other_stack.variant != TakPieceVariant::Capstone
+                            || other_stack.height() < 2)
                     {
                         return Err(TakInvalidUndoMoveError::ActionMismatch);
                     }
@@ -380,21 +380,21 @@ impl TakBoard {
         for i in 0..drop_len {
             current_pos = current_pos.offset_dir(dir);
             let tile = current_pos.get_mut(&mut self.board, self.size);
-            let tower = tile.as_mut().expect("Tile should contain a tower");
+            let stack = tile.as_mut().expect("Tile should contain a stack");
             if i == drop_len - 1 {
-                original_variant = tower.variant;
+                original_variant = stack.variant;
             }
 
             moved_pieces.extend(
-                tower
+                stack
                     .composition
-                    .drain(tower.composition.len() - drops[i]..),
+                    .drain(stack.composition.len() - drops[i]..),
             );
-            if tower.composition.is_empty() {
+            if stack.composition.is_empty() {
                 *tile = None;
                 self.empty_spaces += 1;
             } else {
-                tower.variant = if i == drop_len - 1 && flattened {
+                stack.variant = if i == drop_len - 1 && flattened {
                     TakPieceVariant::Wall
                 } else {
                     TakPieceVariant::Flat
@@ -403,12 +403,12 @@ impl TakBoard {
         }
         let tile = pos.get_mut(&mut self.board, self.size);
         match tile {
-            Some(original_tower) => {
-                original_tower.composition.extend(moved_pieces);
-                original_tower.variant = original_variant;
+            Some(original_stack) => {
+                original_stack.composition.extend(moved_pieces);
+                original_stack.variant = original_variant;
             }
             None => {
-                *tile = Some(TakTower::new(original_variant, moved_pieces));
+                *tile = Some(TakStack::new(original_variant, moved_pieces));
                 self.empty_spaces -= 1;
             }
         }
@@ -416,15 +416,15 @@ impl TakBoard {
 
     /// Converts the board to a partial TPS (Tak Position String) representation.
     /// The TPS format is a string representation of the board state.
-    /// The partial TPS format is a simplified version that only includes the occupied positions and their tower compositions.
+    /// The partial TPS format is a simplified version that only includes the occupied positions and their stack compositions.
     pub fn to_partial_tps(&self) -> String {
         let mut tps = String::new();
-        for y in 0..self.size {
+        for y in (0..self.size).rev() {
             let mut empty_count = 0;
             for x in 0..self.size {
                 let pos = TakCoord::new(x as i32, y as i32);
                 match pos.get(&self.board, self.size) {
-                    Some(tower) => {
+                    Some(stack) => {
                         match empty_count {
                             0 => {}
                             1 => tps.push_str("x,"),
@@ -433,7 +433,7 @@ impl TakBoard {
                             }
                         }
                         empty_count = 0;
-                        let composition_chars = tower
+                        let composition_chars = stack
                             .composition
                             .iter()
                             .map(|p| match p.player {
@@ -442,7 +442,7 @@ impl TakBoard {
                             })
                             .collect::<String>();
                         tps.push_str(&composition_chars);
-                        match tower.variant {
+                        match stack.variant {
                             TakPieceVariant::Flat => {}
                             TakPieceVariant::Wall => tps.push('S'),
                             TakPieceVariant::Capstone => tps.push('C'),
@@ -461,7 +461,7 @@ impl TakBoard {
                     tps.push_str(format!("x{}", empty_count).as_str());
                 }
             }
-            if y < self.size - 1 {
+            if y > 0 {
                 tps.push('/');
             }
         }
@@ -469,7 +469,7 @@ impl TakBoard {
     }
 
     /// Attempts to create a TakBoard from a partial TPS string.
-    /// The partial TPS format is a simplified version that only includes the occupied positions and their tower compositions.
+    /// The partial TPS format is a simplified version that only includes the occupied positions and their stack compositions.
     pub fn try_from_partial_tps(tps: &str) -> Option<Self> {
         let mut size = None;
         let mut board = Vec::new();
@@ -477,11 +477,15 @@ impl TakBoard {
         let mut empty_spaces = 0;
         for line in tps.split('/') {
             let mut x = 0;
+            let mut row = match size {
+                None => Vec::new(),
+                Some(s) => Vec::with_capacity(s),
+            };
             for part in line.split(',') {
                 if part.starts_with('x') {
                     let empty_count: usize = part[1..].parse().unwrap_or(1);
                     for _ in 0..empty_count {
-                        board.push(None);
+                        row.push(None);
                     }
                     x += empty_count;
                     empty_spaces += empty_count;
@@ -503,7 +507,7 @@ impl TakBoard {
                             _ => continue,
                         }
                     }
-                    board.push(Some(TakTower::new(variant, composition)));
+                    row.push(Some(TakStack::new(variant, composition)));
                     x += 1;
                 }
             }
@@ -515,11 +519,13 @@ impl TakBoard {
                     }
                 }
             }
+            board.extend(row.into_iter().rev());
         }
         let size = size?;
         if board.len() != size * size {
             return None;
         }
+        board.reverse();
         Some(TakBoard {
             size,
             board,
@@ -538,20 +544,20 @@ impl TakBoard {
         let mut visited = vec![false; self.size * self.size];
         let max_pos_val = self.size as i32 - 1;
         for &pos in positions {
-            let mut stack = vec![pos];
-            let mut found_left = None;
-            let mut found_right = None;
+            let mut position_stack = vec![pos];
             let mut found_top = None;
             let mut found_bottom = None;
-            while let Some(current_pos) = stack.pop() {
+            let mut found_right = None;
+            let mut found_left = None;
+            while let Some(current_pos) = position_stack.pop() {
                 match current_pos.try_get_mut(&mut visited, self.size) {
                     Some(x) if !*x => *x = true,
                     _ => continue,
                 }
-                let Some(Some(tower)) = current_pos.try_get(&self.board, self.size) else {
+                let Some(Some(stack)) = current_pos.try_get(&self.board, self.size) else {
                     continue;
                 };
-                if tower.player() != player || tower.variant == TakPieceVariant::Wall {
+                if stack.player() != player || stack.variant == TakPieceVariant::Wall {
                     continue;
                 }
 
@@ -560,20 +566,21 @@ impl TakBoard {
                 } else if current_pos.x == max_pos_val && found_right.is_none() {
                     found_right = Some(current_pos);
                 }
-                if current_pos.y == 0 && found_top.is_none() {
-                    found_top = Some(current_pos);
-                } else if current_pos.y == max_pos_val && found_bottom.is_none() {
+
+                if current_pos.y == 0 && found_bottom.is_none() {
                     found_bottom = Some(current_pos);
+                } else if current_pos.y == max_pos_val && found_top.is_none() {
+                    found_top = Some(current_pos);
                 }
 
                 if found_left.is_some() && found_right.is_some() {
                     return Some((found_left.unwrap(), found_right.unwrap()));
-                } else if found_top.is_some() && found_bottom.is_some() {
-                    return Some((found_top.unwrap(), found_bottom.unwrap()));
+                } else if found_bottom.is_some() && found_top.is_some() {
+                    return Some((found_bottom.unwrap(), found_top.unwrap()));
                 }
 
                 TakDir::ALL.iter().for_each(|&dir| {
-                    stack.push(current_pos.offset_dir(dir));
+                    position_stack.push(current_pos.offset_dir(dir));
                 });
             }
         }
@@ -585,9 +592,9 @@ impl TakBoard {
     /// and cannot pass through walls.
     pub fn find_shortest_path(&self, start: TakCoord, end: TakCoord) -> Option<Vec<TakCoord>> {
         let Some(player) = self
-            .try_get_tower(start)
-            .filter(|tower| tower.variant != TakPieceVariant::Wall)
-            .map(|tower| tower.player())
+            .try_get_stack(start)
+            .filter(|stack| stack.variant != TakPieceVariant::Wall)
+            .map(|stack| stack.player())
         else {
             return None;
         };
@@ -620,9 +627,9 @@ impl TakBoard {
             }
             for dir in TakDir::ALL.iter() {
                 let next_pos = current_pos.offset_dir(*dir);
-                if let Some(Some(next_tower)) = next_pos.try_get(&self.board, self.size) {
-                    if next_tower.player() == player
-                        && next_tower.variant != TakPieceVariant::Wall
+                if let Some(Some(next_stack)) = next_pos.try_get(&self.board, self.size) {
+                    if next_stack.player() == player
+                        && next_stack.variant != TakPieceVariant::Wall
                         && next_pos.get(&visited, self.size).is_none()
                     {
                         queue.push_back(next_pos);
@@ -645,13 +652,13 @@ impl TakBoard {
         let mut stone_count = 0;
         let mut capstone_count = 0;
         for tile in &self.board {
-            if let Some(tower) = tile {
-                for i in 0..tower.composition.len() {
-                    if tower.composition[i].player != player {
+            if let Some(stack) = tile {
+                for i in 0..stack.composition.len() {
+                    if stack.composition[i].player != player {
                         continue;
                     }
-                    if tower.variant == TakPieceVariant::Capstone
-                        && i == tower.composition.len() - 1
+                    if stack.variant == TakPieceVariant::Capstone
+                        && i == stack.composition.len() - 1
                     {
                         capstone_count += 1;
                     } else {
@@ -669,9 +676,9 @@ impl TakBoard {
     pub fn count_flats(&self) -> [usize; 2] {
         let mut counts = [0, 0];
         for tile in &self.board {
-            if let Some(tower) = tile {
-                if tower.variant == TakPieceVariant::Flat {
-                    for piece in &tower.composition {
+            if let Some(stack) = tile {
+                if stack.variant == TakPieceVariant::Flat {
+                    for piece in &stack.composition {
                         counts[piece.player.index()] += 1;
                     }
                 }
@@ -681,16 +688,16 @@ impl TakBoard {
     }
 
     /// Returns an iterator over all pieces of the specified player on the board.
-    /// Each item in the iterator is a tuple containing the position and a reference to the tower
+    /// Each item in the iterator is a tuple containing the position and a reference to the stack
     /// at that position.
     pub fn iter_pieces(
         &self,
         player: Option<TakPlayer>,
-    ) -> impl Iterator<Item = (TakCoord, &TakTower)> {
+    ) -> impl Iterator<Item = (TakCoord, &TakStack)> {
         TakCoord::iter_board(self.size).filter_map(move |pos| {
-            if let Some(tower) = pos.get(&self.board, self.size) {
-                if player.is_none_or(|p| tower.player() == p) {
-                    Some((pos, tower))
+            if let Some(stack) = pos.get(&self.board, self.size) {
+                if player.is_none_or(|p| stack.player() == p) {
+                    Some((pos, stack))
                 } else {
                     None
                 }
@@ -706,9 +713,9 @@ impl TakBoard {
         TakCoord::iter_board(self.size).filter(|pos| pos.try_get(&self.board, self.size).is_none())
     }
 
-    /// Returns a reference to the tower at the specified position, if it exists.
+    /// Returns a reference to the stack at the specified position, if it exists.
     /// If the position is invalid or empty, it returns `None`.
-    pub fn try_get_tower(&self, pos: TakCoord) -> Option<&TakTower> {
+    pub fn try_get_stack(&self, pos: TakCoord) -> Option<&TakStack> {
         pos.try_get(&self.board, self.size).and_then(|x| x.as_ref())
     }
 
@@ -728,11 +735,11 @@ impl TakBoard {
         let mut id_set = std::collections::HashSet::new();
         let mut empty_count = 0;
         for tile in &self.board {
-            if let Some(tower) = tile {
-                if tower.composition.is_empty() {
-                    return Err("Tower cannot be empty".to_string());
+            if let Some(stack) = tile {
+                if stack.composition.is_empty() {
+                    return Err("Stack cannot be empty".to_string());
                 }
-                for piece in &tower.composition {
+                for piece in &stack.composition {
                     if !id_set.insert(piece.id) {
                         return Err(format!("Duplicate piece ID found: {}", piece.id));
                     }
@@ -772,15 +779,15 @@ mod tests {
     fn test_can_place() {
         let board = TakBoard::try_from_partial_tps("1,2,12112/2C,1S,112S/x,111C,x").unwrap();
         let occupied_cases = vec![
-            TakCoord::new(0, 0),
-            TakCoord::new(1, 0),
-            TakCoord::new(2, 0),
+            TakCoord::new(0, 2),
+            TakCoord::new(1, 2),
+            TakCoord::new(2, 2),
             TakCoord::new(0, 1),
             TakCoord::new(1, 1),
             TakCoord::new(2, 1),
-            TakCoord::new(1, 2),
+            TakCoord::new(1, 0),
         ];
-        let valid_cases = vec![TakCoord::new(0, 2), TakCoord::new(2, 2)];
+        let valid_cases = vec![TakCoord::new(0, 0), TakCoord::new(2, 0)];
         let invalid_cases = vec![
             TakCoord::new(3, 0),
             TakCoord::new(0, 3),
@@ -807,15 +814,15 @@ mod tests {
         assert_eq!(board.empty_spaces, 5);
         assert_eq!(board.id_counter, 8);
         board.do_place_unchecked(
-            TakCoord::new(0, 0),
+            TakCoord::new(0, 2),
             TakPieceVariant::Capstone,
             TakPlayer::White,
         );
         assert_eq!(board.empty_spaces, 4);
         assert_eq!(board.id_counter, 9);
         assert_eq!(board.to_partial_tps(), "1C,x2/2C,1S,112S/x,111C,x");
-        board.do_place_unchecked(TakCoord::new(1, 0), TakPieceVariant::Wall, TakPlayer::Black);
-        board.do_place_unchecked(TakCoord::new(2, 0), TakPieceVariant::Flat, TakPlayer::White);
+        board.do_place_unchecked(TakCoord::new(1, 2), TakPieceVariant::Wall, TakPlayer::Black);
+        board.do_place_unchecked(TakCoord::new(2, 2), TakPieceVariant::Flat, TakPlayer::White);
 
         assert_eq!(board.empty_spaces, 2);
         assert_eq!(board.id_counter, 11);
@@ -825,7 +832,7 @@ mod tests {
     #[test]
     fn test_can_undo_place() {
         let mut board = TakBoard::try_from_partial_tps("x3/2C,1S,112S/x,111C,x").unwrap();
-        let pos = TakCoord::new(0, 0);
+        let pos = TakCoord::new(0, 2);
         assert!(board
             .try_place(pos, TakPieceVariant::Capstone, TakPlayer::White)
             .is_ok());
@@ -890,6 +897,9 @@ mod tests {
             .try_place(pos, TakPieceVariant::Flat, TakPlayer::White)
             .is_ok());
         assert!(board.can_move(pos, TakDir::Right, 1, &[1]).is_ok());
+        assert!(board.can_move(pos, TakDir::Up, 1, &[1]).is_ok());
+        assert!(board.can_move(pos, TakDir::Down, 1, &[1]).is_err());
+        assert!(board.can_move(pos, TakDir::Left, 1, &[1]).is_err());
     }
 
     #[test]
@@ -901,6 +911,9 @@ mod tests {
             .is_ok());
         assert!(board.try_move(pos, TakDir::Right, 1, &[1]).is_ok());
         let new_pos = TakCoord::new(1, 0);
+        assert!(board.can_place(new_pos).is_err());
+        assert!(board.try_move(new_pos, TakDir::Up, 1, &[1]).is_ok());
+        let new_pos = TakCoord::new(1, 1);
         assert!(board.can_place(new_pos).is_err());
     }
 
@@ -931,7 +944,7 @@ mod tests {
         assert!(board
             .try_place(TakCoord::new(1, 0), TakPieceVariant::Wall, TakPlayer::Black)
             .is_ok());
-        assert_eq!(board.to_partial_tps(), "1,2S/x2");
+        assert_eq!(board.to_partial_tps(), "x2/1,2S");
     }
 
     #[test]
@@ -939,7 +952,7 @@ mod tests {
         let tps = "12211C,2S,x/x3/x3";
         let mut board = TakBoard::try_from_partial_tps(tps).unwrap();
         assert!(board
-            .try_move(TakCoord::new(0, 0), TakDir::Down, 3, &[3])
+            .try_move(TakCoord::new(0, 2), TakDir::Down, 3, &[3])
             .is_ok());
         assert_eq!(board.to_partial_tps(), "12,2S,x/211C,x2/x3");
     }
@@ -1000,11 +1013,11 @@ mod tests {
     fn test_try_undo_place() {
         let mut board = TakBoard::try_from_partial_tps("x,1221C,x,21,2S/x5/x5/x5/x5").unwrap();
         assert!(board
-            .try_place(TakCoord::new(2, 0), TakPieceVariant::Wall, TakPlayer::White)
+            .try_place(TakCoord::new(2, 4), TakPieceVariant::Wall, TakPlayer::White)
             .is_ok());
         assert_eq!(board.to_partial_tps(), "x,1221C,1S,21,2S/x5/x5/x5/x5");
         assert!(board
-            .try_undo_place(TakCoord::new(2, 0), TakPieceVariant::Wall, TakPlayer::White)
+            .try_undo_place(TakCoord::new(2, 4), TakPieceVariant::Wall, TakPlayer::White)
             .is_ok());
         assert_eq!(board.to_partial_tps(), "x,1221C,x,21,2S/x5/x5/x5/x5");
     }
@@ -1013,11 +1026,11 @@ mod tests {
     fn test_try_undo_move() {
         let mut board = TakBoard::try_from_partial_tps("x,1221C,x,21,2S/x5/x5/x5/x5").unwrap();
         assert!(board
-            .try_move(TakCoord::new(1, 0), TakDir::Right, 3, &[1, 1, 1])
+            .try_move(TakCoord::new(1, 4), TakDir::Right, 3, &[1, 1, 1])
             .is_ok());
         assert_eq!(board.to_partial_tps(), "x,1,2,212,21C/x5/x5/x5/x5");
         assert!(board
-            .try_undo_move(TakCoord::new(1, 0), TakDir::Right, 3, &[1, 1, 1], true)
+            .try_undo_move(TakCoord::new(1, 4), TakDir::Right, 3, &[1, 1, 1], true)
             .is_ok());
         assert_eq!(board.to_partial_tps(), "x,1221C,x,21,2S/x5/x5/x5/x5");
     }
@@ -1025,21 +1038,21 @@ mod tests {
     #[test]
     fn test_find_shortest_path() {
         let board = TakBoard::try_from_partial_tps("1,1S,1,x/221C,2,221,1/1,1,1,1/x4").unwrap();
-        let start = TakCoord::new(0, 0);
-        let end = TakCoord::new(2, 0);
+        let start = TakCoord::new(0, 3);
+        let end = TakCoord::new(2, 3);
         let path = board.find_shortest_path(start, end);
         assert!(path.is_some());
         let path = path.unwrap();
         assert_eq!(
             path,
             vec![
-                TakCoord::new(0, 0),
-                TakCoord::new(0, 1),
+                TakCoord::new(0, 3),
                 TakCoord::new(0, 2),
-                TakCoord::new(1, 2),
-                TakCoord::new(2, 2),
+                TakCoord::new(0, 1),
+                TakCoord::new(1, 1),
                 TakCoord::new(2, 1),
-                TakCoord::new(2, 0)
+                TakCoord::new(2, 2),
+                TakCoord::new(2, 3)
             ]
         );
     }

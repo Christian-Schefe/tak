@@ -192,7 +192,7 @@ impl TakBoardState {
 
     pub fn is_place_action(&self, pos: TakCoord) -> bool {
         self.with_game(|game| {
-            game.partial_move.is_none() && game.game().board.try_get_tower(pos).is_none()
+            game.partial_move.is_none() && game.game().board.try_get_stack(pos).is_none()
         })
         .expect("Game should exist to check place action")
     }
@@ -210,11 +210,8 @@ impl TakBoardState {
 
     fn send_move_message(&mut self, action: TakActionRecord) {
         println!("local move: {:?}", action);
-        let board_size = self
-            .with_game(|game| game.game().board.size as i32)
-            .expect("Game should exist to get board size");
         self.message_queue
-            .push(ClientGameMessage::Move(action.to_ptn(board_size)));
+            .push(ClientGameMessage::Move(action.to_ptn()));
     }
 
     pub fn correct_selected_piece_type(&mut self) {
@@ -254,18 +251,13 @@ impl TakBoardState {
         .expect("Game should exist to correct selected piece type");
     }
 
-    pub fn try_parse_action(&self, action: &str) -> Option<TakAction> {
-        self.with_game(|game| TakAction::from_ptn(game.game().board.size as i32, action))
-            .expect("Game should exist to parse action")
-    }
-
     pub fn maybe_try_do_remote_action(
         &mut self,
         move_index: usize,
         action: TakAction,
     ) -> Result<(), ()> {
         self.with_game_mut(|game| {
-            let index = game.game().turn_index;
+            let index = game.game().ply_index;
             if index < move_index {
                 return Ok(());
             } else if index > move_index {

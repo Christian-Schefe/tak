@@ -31,10 +31,10 @@ impl TakCoord {
 
     pub fn offset_dir_many(&self, dir: TakDir, count: i32) -> Self {
         match dir {
-            TakDir::Up => self.offset(0, -count),
-            TakDir::Down => self.offset(0, count),
-            TakDir::Left => self.offset(-count, 0),
+            TakDir::Up => self.offset(0, count),
+            TakDir::Down => self.offset(0, -count),
             TakDir::Right => self.offset(count, 0),
+            TakDir::Left => self.offset(-count, 0),
         }
     }
 
@@ -67,18 +67,18 @@ impl TakCoord {
 
     pub fn is_adjacent(&self, other: &TakCoord) -> Option<TakDir> {
         if self.x == other.x {
-            if self.y == other.y - 1 {
+            if self.y == other.y + 1 {
                 Some(TakDir::Up)
-            } else if self.y == other.y + 1 {
+            } else if self.y == other.y - 1 {
                 Some(TakDir::Down)
             } else {
                 None
             }
         } else if self.y == other.y {
-            if self.x == other.x - 1 {
-                Some(TakDir::Left)
-            } else if self.x == other.x + 1 {
+            if self.x == other.x + 1 {
                 Some(TakDir::Right)
+            } else if self.x == other.x - 1 {
+                Some(TakDir::Left)
             } else {
                 None
             }
@@ -93,26 +93,26 @@ impl TakCoord {
 pub enum TakDir {
     Up,
     Down,
-    Left,
     Right,
+    Left,
 }
 
 impl TakDir {
-    pub const ALL: [TakDir; 4] = [TakDir::Up, TakDir::Down, TakDir::Left, TakDir::Right];
+    pub const ALL: [TakDir; 4] = [TakDir::Up, TakDir::Down, TakDir::Right, TakDir::Left];
     pub fn index(&self) -> usize {
         match self {
             TakDir::Up => 0,
             TakDir::Down => 1,
-            TakDir::Left => 2,
-            TakDir::Right => 3,
+            TakDir::Right => 2,
+            TakDir::Left => 3,
         }
     }
     pub fn opposite(&self) -> TakDir {
         match self {
             TakDir::Up => TakDir::Down,
             TakDir::Down => TakDir::Up,
-            TakDir::Left => TakDir::Right,
             TakDir::Right => TakDir::Left,
+            TakDir::Left => TakDir::Right,
         }
     }
 }

@@ -286,8 +286,11 @@ mod tests {
         let attr = TakPtnAttr::Caps(4);
         assert_eq!(attr.to_str(), "[Caps \"4\"]");
 
-        let attr = TakPtnAttr::TPS(TakTps::new("x3/x3/x3".to_string(), TakPlayer::White, 0));
+        let attr = TakPtnAttr::TPS(TakTps::new("x3/x3/x3".to_string(), 0));
         assert_eq!(attr.to_str(), "[TPS \"x3/x3/x3 1 1\"]");
+
+        let attr = TakPtnAttr::TPS(TakTps::new("x3/x2,112C/x3".to_string(), 9));
+        assert_eq!(attr.to_str(), "[TPS \"x3/x2,112C/x3 2 5\"]");
 
         let attr = TakPtnAttr::Unknown("Unknown".to_string());
         assert_eq!(attr.to_str(), "[Unknown]");

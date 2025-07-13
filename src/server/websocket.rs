@@ -179,9 +179,9 @@ async fn on_room_receive_move(sockets: Arc<PlayerSocketMap>, room: &mut Room, ac
         println!("Game hasn't started yet");
         return;
     };
-    if let Some(action) = TakAction::from_ptn(game.board.size as i32, action) {
+    if let Some(action) = TakAction::from_ptn(action) {
         println!("Received action: {action:?}");
-        let move_index = game.turn_index;
+        let move_index = game.ply_index;
         let res = match game.try_do_action(action) {
             Ok(()) => game
                 .get_last_action()
@@ -202,7 +202,7 @@ async fn on_room_receive_move(sockets: Arc<PlayerSocketMap>, room: &mut Room, ac
         let msg = serde_json::to_string(&ServerGameMessage::Move(
             move_index,
             time_remaining,
-            res.to_ptn(game.board.size as i32),
+            res.to_ptn(),
         ))
         .unwrap();
         for other_player in room.get_broadcast_player_ids() {

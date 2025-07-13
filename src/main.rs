@@ -44,7 +44,7 @@ async fn main() {
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     use tower_cookies::CookieManagerLayer;
 
-    let db_url = std::env::var("DB_URL").unwrap_or_else(|_| "ws://localhost:8000".to_string());
+    let db_url = std::env::var("DB_URL").unwrap_or_else(|_| "localhost:8000".to_string());
 
     if let Err(e) = server::auth::connect_db(&db_url).await {
         eprintln!("Failed to connect to database: {}", e);

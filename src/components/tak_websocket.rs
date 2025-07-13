@@ -5,7 +5,7 @@ use dioxus::prelude::*;
 use futures_util::{SinkExt, StreamExt};
 use gloo::net::websocket::futures::WebSocket;
 use gloo::net::websocket::{Message, WebSocketError};
-use tak_core::TakPlayer;
+use tak_core::{TakAction, TakPlayer};
 use wasm_bindgen_futures::spawn_local;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
@@ -33,7 +33,7 @@ pub fn TakWebSocket(session_id: String) -> Element {
             }
             ServerGameMessage::Move(move_index, time_remaining, action) => {
                 dioxus::logger::tracing::info!("[WebSocket] Processing move action: {action}");
-                let Some(action) = board.try_parse_action(&action) else {
+                let Some(action) = TakAction::from_ptn(&action) else {
                     dioxus::logger::tracing::error!(
                         "[WebSocket] Invalid action received: {action}"
                     );
@@ -59,7 +59,10 @@ pub fn TakWebSocket(session_id: String) -> Element {
         let mut board_clone = board_clone.clone();
         let session_id = session_id.clone();
         let url = option_env!("WEBSOCKET_URL").unwrap_or("ws://localhost:8080/ws");
-        dioxus::logger::tracing::info!("[WebSocket] Connecting to WebSocket at: {url}, {:?}", option_env!("WEBSOCKET_URL"));
+        dioxus::logger::tracing::info!(
+            "[WebSocket] Connecting to WebSocket at: {url}, {:?}",
+            option_env!("WEBSOCKET_URL")
+        );
         async move {
             let Ok(mut ws) = WebSocket::open(url) else {
                 return;
