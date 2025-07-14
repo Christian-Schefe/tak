@@ -48,9 +48,10 @@ impl Room {
     }
 
     fn is_ready(&self) -> bool {
-        TakPlayer::ALL
-            .iter()
-            .all(|pt| self.players.iter().any(|(p, _)| p == pt))
+        self.game.is_none()
+            && TakPlayer::ALL
+                .iter()
+                .all(|pt| self.players.iter().any(|(p, _)| p == pt))
     }
 
     fn is_empty(&self) -> bool {
@@ -71,6 +72,7 @@ pub struct Rooms {
     rooms: HashMap<RoomId, Arc<tokio::sync::Mutex<Room>>>,
     player_mapping: HashMap<PlayerId, RoomId>,
     pub player_sockets: Arc<PlayerSocketMap>,
+    username_cache: moka::future::Cache<PlayerId, String>,
 }
 
 #[cfg(feature = "server")]
@@ -84,6 +86,10 @@ impl Rooms {
             rooms: HashMap::new(),
             player_mapping: HashMap::new(),
             player_sockets: Arc::new(dashmap::DashMap::new()),
+            username_cache: moka::future::Cache::builder()
+                .max_capacity(1000)
+                .time_to_live(Duration::from_secs(5 * 60))
+                .build(),
         }
     }
 
@@ -233,7 +239,7 @@ impl Rooms {
         let room_lock = room.lock().await;
         let mut player_info = Vec::with_capacity(room_lock.players.len());
         for (player, id) in &room_lock.players {
-            let Ok(Some(user)) = crate::server::auth::handle_try_get_user(id).await else {
+            let Some(username) = self.get_user_username(id).await else {
                 return Err(crate::server::auth::error::Error::InternalServerError(
                     "Failed to fetch user information".to_string(),
                 ))?;
@@ -242,12 +248,45 @@ impl Rooms {
                 *player,
                 PlayerInfo {
                     player_id: id.clone(),
-                    username: user.username,
+                    username,
                     is_local: id == player_id,
                 },
             ));
         }
         Ok(GetPlayersResponse::Success(player_info))
+    }
+
+    async fn get_user_username(&self, player_id: &PlayerId) -> Option<String> {
+        let cached_username = self.username_cache.get(player_id).await;
+        if let Some(username) = cached_username {
+            return Some(username);
+        }
+        let user: Option<crate::server::auth::User> =
+            crate::server::auth::handle_try_get_user(player_id)
+                .await
+                .ok()?;
+        if user.is_some() {
+            self.username_cache
+                .insert(player_id.clone(), user.as_ref().unwrap().username.clone())
+                .await;
+        }
+        user.map(|u| u.username)
+    }
+
+    async fn get_room_list(&self) -> GetRoomListResponse {
+        let mut room_list = Vec::with_capacity(self.rooms.len());
+        for (id, room) in &self.rooms {
+            let room_lock = room.lock().await;
+            let mut usernames = Vec::new();
+            for (_, player_id) in &room_lock.players {
+                let Some(username) = self.get_user_username(player_id).await else {
+                    continue;
+                };
+                usernames.push(username);
+            }
+            room_list.push((id.clone(), room_lock.settings.clone(), usernames));
+        }
+        GetRoomListResponse::Success(room_list)
     }
 
     pub fn add_socket(
@@ -465,7 +504,12 @@ pub async fn leave_room() -> Result<LeaveRoomResponse, ServerFnError> {
         return Ok(LeaveRoomResponse::Unauthorized);
     };
     let mut rooms = state.rooms.lock().await;
-    Ok(rooms.try_leave_room(user.0.clone()).await)
+    let res = rooms.try_leave_room(user.0.clone()).await;
+    if let LeaveRoomResponse::Success = res {
+        println!("Player {} left the room", user.0);
+        Rooms::try_remove_socket(rooms, &user.0).await;
+    }
+    Ok(res)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -553,4 +597,24 @@ pub async fn get_game_state() -> Result<GetGameStateResponse, ServerFnError> {
     } else {
         Ok(GetGameStateResponse::Success(None))
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum GetRoomListResponse {
+    Success(Vec<(RoomId, RoomSettings, Vec<String>)>),
+    Unauthorized,
+}
+
+#[server]
+pub async fn get_room_list() -> Result<GetRoomListResponse, ServerFnError> {
+    use crate::server::auth::AuthenticatedUser;
+    use crate::server::websocket::SharedState;
+    use axum::Extension;
+
+    let Extension(state): Extension<SharedState> = extract().await?;
+    let Some(_) = extract::<AuthenticatedUser, _>().await.ok() else {
+        return Ok(GetRoomListResponse::Unauthorized);
+    };
+    let rooms = state.rooms.lock().await;
+    Ok(rooms.get_room_list().await)
 }

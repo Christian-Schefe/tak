@@ -1,11 +1,29 @@
 @import "colors";
 @import "params";
 
-*, *::before, *::after {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
-html, body, h1, h2, h3, h4, h5, h6, p, ul, ol, li, figure, figcaption, blockquote, dl, dd {
+html,
+body,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p,
+ul,
+ol,
+li,
+figure,
+figcaption,
+blockquote,
+dl,
+dd {
   margin: 0;
   padding: 0;
 }
@@ -17,6 +35,7 @@ button {
   padding: 10px 10px;
   border: none;
   border-radius: 4px;
+  user-select: none;
 
   &:hover {
     background-color: $clr-surface-light;
@@ -40,6 +59,10 @@ button.primary-button {
   }
 }
 
+button.secondary-button {
+  border: 2px solid $clr-surface-light;
+}
+
 input {
   padding: 10px;
   outline: none;
@@ -52,7 +75,6 @@ input {
     border-color: $clr-primary;
   }
 }
-
 
 @mixin flex-col-center {
   display: flex;

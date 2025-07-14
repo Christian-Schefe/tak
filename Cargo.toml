@@ -16,7 +16,13 @@ edition.workspace = true
 dioxus = { version = "0.6.3", features = ["router", "fullstack"] }
 dioxus-free-icons = { version = "0.9", features = ["font-awesome-solid"] }
 regex = "1.11.1"
-web-sys = { version = "0.3.77", features = ["HtmlDocument"] }
+web-sys = { version = "0.3.77", features = [
+    "HtmlDocument",
+    "Clipboard",
+    "Window",
+    "Navigator",
+    "Permissions",
+] }
 tokio = { version = "1.45.1", features = [
     "time",
     "sync",
@@ -42,6 +48,7 @@ tower-cookies = { version = "0.10.0", features = [
 rand = "0.8.5"
 dashmap = { version = "6.1.0", optional = true }
 tak-core = { path = "tak-core", version = "*", features = ["serde"] }
+moka = { version = "0.12.10", features = ["future"], optional = true }
 
 [features]
 web = ["dioxus/web", "tak-core/wasm"]
@@ -58,6 +65,7 @@ server = [
     "dep:uuid",
     "dioxus-cli-config",
     "dep:axum-extra",
+    "dep:moka",
 ]
 
 [profile]

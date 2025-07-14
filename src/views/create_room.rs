@@ -26,7 +26,7 @@ pub fn CreateRoom() -> Element {
             game_settings: TakGameSettings::new(
                 board_size,
                 None,
-                TakKomi::new(0, false),
+                TakKomi::new(2, false),
                 Some(time_mode),
             ),
         };

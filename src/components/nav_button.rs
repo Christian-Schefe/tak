@@ -1,6 +1,6 @@
 use crate::Route;
 use dioxus::prelude::*;
-use dioxus_free_icons::icons::fa_solid_icons::*;
+use dioxus_free_icons::icons::fa_solid_icons::{FaBars, FaDoorOpen, FaHouse, FaPuzzlePiece};
 use dioxus_free_icons::Icon;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -8,6 +8,7 @@ pub enum NavButtonIcon {
     Home,
     Puzzle,
     More,
+    Room,
 }
 
 #[component]
@@ -35,6 +36,14 @@ pub fn NavButton(to: Route, label: String, icon: NavButtonIcon) -> Element {
                 height: 30,
                 fill: "black",
                 icon: FaBars,
+            }
+        },
+        NavButtonIcon::Room => rsx! {
+            Icon {
+                width: 30,
+                height: 30,
+                fill: "black",
+                icon: FaDoorOpen,
             }
         },
     };

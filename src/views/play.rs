@@ -25,24 +25,31 @@ pub fn PlayComputer() -> Element {
         PlayerInfo::new("Computer".to_string(), PlayerType::Local),
     );
 
-    let mut state = use_context_provider(|| {
-        let mut state = TakBoardState::new(player_info);
+    let mut state = use_context_provider(|| TakBoardState::new(player_info));
+    let board_clone = state.clone();
+
+    use_effect(move || {
         let settings =
-            TakGameSettings::new(5, None, TakKomi::none(), Some(TakTimeMode::new(30, 5)));
+            TakGameSettings::new(5, None, TakKomi::new(2, false), Some(TakTimeMode::new(30, 5)));
         state
             .try_set_from_settings(settings)
             .expect("Settings should be valid");
-        state
+        state.has_started.set(true);
     });
 
-    use_effect(move || {
-        state.has_started.set(true);
+    let show_board = use_memo(move || {
+        let _ = board_clone.on_change.read();
+        dioxus::logger::tracing::info!("Checking if board has game, {}", board_clone.has_game());
+        board_clone.has_game()
     });
 
     rsx! {
         div { id: "play-view",
-            TakBoard {}
-            TakWinModal { is_local: true }
+            if *show_board.read() {
+
+                TakBoard {}
+                TakWinModal { is_local: true }
+            }
         }
     }
 }
@@ -93,8 +100,8 @@ pub fn PlayOnline() -> Element {
     let board_clone = board.clone();
     let show_board = use_memo(move || {
         let _ = board_clone.on_change.read();
-        dioxus::logger::tracing::info!("Checking if board has game, {}", board.has_game());
-        board.has_game()
+        dioxus::logger::tracing::info!("Checking if board has game, {}", board_clone.has_game());
+        board_clone.has_game()
     });
 
     rsx! {

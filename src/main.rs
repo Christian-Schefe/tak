@@ -1,6 +1,6 @@
 use crate::views::Auth;
 use dioxus::prelude::*;
-use views::{CreateRoom, Home, More, Navbar, PlayComputer, PlayOnline, Puzzles};
+use views::{CreateRoom, Home, More, Navbar, PlayComputer, PlayOnline, Puzzles, Rooms};
 
 mod components;
 mod server;
@@ -23,6 +23,8 @@ enum Route {
     PlayOnline {},
     #[route("/createroom")]
     CreateRoom {},
+    #[route("/rooms")]
+    Rooms {},
 }
 
 const FAVICON: Asset = asset!("/assets/favicon.ico");

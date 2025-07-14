@@ -4,10 +4,10 @@
 @use "home";
 @use "create_room";
 @use "board";
+@use "rooms";
 
 @import "settings/colors";
 @import "settings/params";
-
 
 html {
   width: 100%;

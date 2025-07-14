@@ -7,4 +7,4 @@ sleep 1
 echo "Transferring files to server..."
 scp target/tak-app.tar tak_server:/root/app/
 sleep 1
-ssh tak_server "mkdir -p /root/app/data && chmod 777 /root/app/data && docker load -i /root/app/tak-app.tar && docker image prune"
+ssh tak_server "mkdir -p /root/app/data && chmod 777 /root/app/data && docker load -i /root/app/tak-app.tar && docker image prune -f"

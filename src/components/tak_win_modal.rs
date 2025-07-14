@@ -1,5 +1,6 @@
 use dioxus::prelude::*;
 use tak_core::{TakGameState, TakPlayer, TakWinReason};
+use web_sys::window;
 
 use crate::{
     components::tak_board_state::TakBoardState,
@@ -11,6 +12,8 @@ use crate::{
 pub fn TakWinModal(is_local: bool) -> Element {
     let state = use_context::<TakBoardState>();
     let nav = use_navigator();
+
+    let state_clone = state.clone();
 
     let data = use_memo(move || {
         let _ = state.on_change.read();
@@ -64,6 +67,16 @@ pub fn TakWinModal(is_local: bool) -> Element {
         });
     };
 
+    let on_click_copy_ptn = move |_| {
+        state_clone
+            .with_game(|game| {
+                let ptn = game.game().to_ptn().to_str();
+                copy_to_clipboard(&ptn);
+                dioxus::logger::tracing::info!("PTN copied to clipboard: {}", ptn);
+            })
+            .expect("Should be able to copy PTN");
+    };
+
     rsx! {
         div { class: "tak-win-modal",
             div { class: "tak-win-modal-content",
@@ -72,7 +85,28 @@ pub fn TakWinModal(is_local: bool) -> Element {
                     onclick: on_click_leave,
                     "Leave"
                 }
+                button {
+                    onclick: on_click_copy_ptn,
+                    "Copy PTN"
+                }
             }
         }
     }
+}
+
+fn copy_to_clipboard(text: &str) {
+    let Some(window) = window() else {
+        dioxus::logger::tracing::error!("Window not available for clipboard access");
+        return;
+    };
+    let navigator = window.navigator();
+
+    let clipboard = navigator.clipboard();
+    let promise = clipboard.write_text(text);
+    wasm_bindgen_futures::spawn_local(async move {
+        match wasm_bindgen_futures::JsFuture::from(promise).await {
+            Ok(_) => dioxus::logger::tracing::info!("Copied to clipboard"),
+            Err(err) => dioxus::logger::tracing::error!("Failed to copy: {:?}", err),
+        }
+    });
 }

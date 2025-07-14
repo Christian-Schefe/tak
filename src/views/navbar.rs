@@ -47,6 +47,11 @@ pub fn Navbar() -> Element {
                 icon: NavButtonIcon::Home
             }
             NavButton {
+                to: Route::Rooms {},
+                label: "Rooms",
+                icon: NavButtonIcon::Room
+            }
+            NavButton {
                 to: Route::Puzzles {},
                 label: "Puzzles",
                 icon: NavButtonIcon::Puzzle
