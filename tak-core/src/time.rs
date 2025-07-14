@@ -49,7 +49,7 @@ impl TakTimestamp {
 pub struct TakClock {
     pub time_remaining_millis: [u64; 2],
     pub increment_millis: u64,
-    pub last_action_timestamp: Option<TakTimestamp>,
+    pub last_update_timestamp: Option<TakTimestamp>,
 }
 
 impl TakClock {
@@ -58,16 +58,16 @@ impl TakClock {
         TakClock {
             time_remaining_millis: [time_remaining, time_remaining],
             increment_millis: mode.increment as u64 * 1000,
-            last_action_timestamp: None,
+            last_update_timestamp: None,
         }
     }
 
     pub fn update(&mut self, time: TakTimestamp, player: TakPlayer) {
         let elapsed = self
-            .last_action_timestamp
+            .last_update_timestamp
             .map(|t| time.elapsed_since(t))
             .unwrap_or(0);
-        self.last_action_timestamp = Some(time);
+        self.last_update_timestamp = Some(time);
         let time_left = &mut self.time_remaining_millis[player.index()];
         *time_left = time_left.saturating_sub(elapsed);
         if *time_left > 0 {
@@ -78,7 +78,7 @@ impl TakClock {
     pub fn get_time_remaining_at(&self, player: TakPlayer, now: TakTimestamp) -> u64 {
         let time_left = self.time_remaining_millis[player.index()];
         let elapsed = self
-            .last_action_timestamp
+            .last_update_timestamp
             .map(|t| now.elapsed_since(t))
             .unwrap_or(0);
         time_left.saturating_sub(elapsed)
@@ -91,7 +91,7 @@ impl TakClock {
         }
         let now = TakTimestamp::now();
         let elapsed = self
-            .last_action_timestamp
+            .last_update_timestamp
             .map(|t| now.elapsed_since(t))
             .unwrap_or(0);
         time_left.saturating_sub(elapsed)

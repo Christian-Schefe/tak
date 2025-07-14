@@ -20,7 +20,7 @@ pub fn TakTile(pos: TakCoord) -> Element {
     let make_on_tile_click = move |pos: TakCoord| {
         let mut cloned_state = state_clone.clone();
         move |_| {
-            if !cloned_state.has_ongoing_game() || !cloned_state.is_local_player_turn() {
+            if !cloned_state.check_ongoing_game() || !cloned_state.is_local_player_turn() {
                 return;
             }
             tracing::info!("Clicked on tile: {:?}", pos);

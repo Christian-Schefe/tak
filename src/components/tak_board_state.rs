@@ -172,11 +172,14 @@ impl TakBoardState {
         lock.is_some()
     }
 
-    pub fn has_ongoing_game(&self) -> bool {
+    pub fn check_ongoing_game(&mut self) -> bool {
         self.has_game()
             && *self.has_started.read()
             && self
-                .with_game(|game| game.game().game_state == TakGameState::Ongoing)
+                .with_game_mut(|game| {
+                    game.check_timeout();
+                    game.game().game_state == TakGameState::Ongoing
+                })
                 .expect("Game should exist to check ongoing state")
     }
 
@@ -311,7 +314,11 @@ impl TakBoardState {
             tracing::error!("Current player is not local, cannot perform action");
             return None;
         }
-        if let Some(()) = game.add_square_to_partial_move(pos) {
+        if let Some(res) = game.add_square_to_partial_move(pos) {
+            let Ok(()) = res else {
+                tracing::error!("Error processing move action: {:?}", res);
+                return None;
+            };
             let last_action = game
                 .game()
                 .get_last_action()

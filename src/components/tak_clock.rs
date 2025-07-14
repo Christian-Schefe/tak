@@ -10,11 +10,15 @@ pub fn TakClock(player: TakPlayer) -> Element {
 
     let _update_task: Coroutine<()> = use_coroutine(move |_| {
         let mut time_remaining = time_remaining.clone();
-        let board_clone = board.clone();
+        let mut board_clone = board.clone();
         async move {
             loop {
                 gloo::timers::future::sleep(std::time::Duration::from_millis(100)).await;
-                time_remaining.set(Some(board_clone.get_time_remaining(player)));
+                let time = board_clone.get_time_remaining(player);
+                time_remaining.set(Some(time));
+                if time == 0 {
+                    board_clone.check_ongoing_game();
+                }
             }
         }
     });

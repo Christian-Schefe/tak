@@ -225,15 +225,19 @@ impl TakGame {
     pub fn set_time_remaining(&mut self, player: TakPlayer, time_remaining: u64) {
         if let Some(clock) = &mut self.clock {
             clock.set_time_remaining(player, time_remaining);
+            self.check_timeout();
         }
-        self.check_timeout();
     }
 
     pub fn check_timeout(&mut self) -> bool {
+        if self.game_state != TakGameState::Ongoing {
+            return false;
+        }
         if let Some(clock) = &mut self.clock {
             if clock.get_time_remaining(self.current_player, true) == 0 {
                 self.game_state =
                     TakGameState::Win(self.current_player.other(), TakWinReason::Timeout);
+                clock.set_time_remaining(self.current_player, 0);
                 return true;
             } else if clock.get_time_remaining(self.current_player.other(), false) == 0 {
                 self.game_state = TakGameState::Win(self.current_player, TakWinReason::Timeout);
@@ -289,6 +293,7 @@ impl TakGame {
             if clock.get_time_remaining_at(self.current_player, now) == 0 {
                 self.game_state =
                     TakGameState::Win(self.current_player.other(), TakWinReason::Timeout);
+                clock.set_time_remaining(self.current_player, 0);
             }
             Some(now)
         } else {

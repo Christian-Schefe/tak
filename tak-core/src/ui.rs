@@ -50,6 +50,7 @@ pub struct TakUIState {
     pub pieces: HashMap<usize, TakUIPiece>,
     pub tiles: HashMap<TakCoord, TakUITile>,
     pub partial_move: Option<TakPartialMove>,
+    pub priority_pieces: Vec<usize>,
     pub available_piece_types: [Vec<TakPieceVariant>; 2],
     pub flat_counts: [usize; 2],
     pub on_game_update: Vec<Box<dyn FnMut()>>,
@@ -89,6 +90,8 @@ pub struct TakUIPiece {
     pub height: usize,
     pub is_floating: bool,
     pub z_priority: Option<usize>,
+    pub can_be_picked: bool,
+    pub buried_piece_count: usize,
 }
 
 impl TakUIState {
@@ -102,6 +105,7 @@ impl TakUIState {
             available_piece_types: [Vec::new(), Vec::new()],
             flat_counts: [0, 0],
             on_game_update: Vec::new(),
+            priority_pieces: Vec::new(),
         };
         state.on_game_update();
         state
@@ -127,33 +131,50 @@ impl TakUIState {
         self.on_game_update();
     }
 
+    pub fn check_timeout(&mut self) {
+        if self.actual_game.check_timeout() {
+            self.partial_move = None;
+            self.on_game_update();
+        }
+    }
+
+    fn clone_actual_game_into_preview(&mut self) {
+        self.preview_game = self.actual_game.clone();
+        self.preview_game.clock = None;
+    }
+
     pub fn try_do_action(&mut self, action: TakAction) -> Result<(), TakInvalidActionError> {
         self.actual_game.try_do_action(action)?;
-        self.preview_game = self.actual_game.clone();
+        self.clone_actual_game_into_preview();
         self.partial_move = None;
+        self.priority_pieces = Self::get_stones_from_last_action_in_order(&self.actual_game);
         self.on_game_update();
         Ok(())
     }
 
     fn do_partial_move(&mut self, action: TakAction) {
-        self.preview_game = self.actual_game.clone();
+        self.clone_actual_game_into_preview();
         self.preview_game
             .try_do_action(action.clone())
             .expect("Partial move should succeed");
+        self.priority_pieces = Self::get_stones_from_last_action_in_order(&self.preview_game);
         self.on_game_update();
     }
 
-    pub fn add_square_to_partial_move(&mut self, new_pos: TakCoord) -> Option<()> {
+    pub fn add_square_to_partial_move(
+        &mut self,
+        new_pos: TakCoord,
+    ) -> Option<Result<(), TakInvalidActionError>> {
+        self.check_timeout();
         self.update_partial_move(new_pos);
-        self.preview_game = self.actual_game.clone();
+        self.clone_actual_game_into_preview();
 
         if let Some(partial_move) = self.partial_move.as_ref() {
             if let Some(action) = partial_move.try_to_action() {
                 if partial_move.is_valid() {
-                    self.try_do_action(action)
-                        .expect("Applying partial move should succeed");
+                    let res = self.try_do_action(action.clone());
                     self.partial_move = None;
-                    return Some(());
+                    return Some(res);
                 } else {
                     self.do_partial_move(action);
                     return None;
@@ -281,26 +302,30 @@ impl TakUIState {
             _ => None,
         };
 
-        let priority_stones = if self.partial_move.is_none() {
-            Self::get_stones_from_last_action_in_order(&self.actual_game)
-        } else {
-            Self::get_stones_from_last_action_in_order(&self.preview_game)
-        };
         for (pos, stack) in self.preview_game.board.iter_pieces(None) {
             let stack_height = stack.height();
             let floating_threshold = drop_diff
                 .filter(|x| x.0 == pos)
                 .map(|x| stack_height.saturating_sub(x.1));
+            let buried_piece_count = stack_height.saturating_sub(self.preview_game.board.size);
             for (height, stone) in stack.composition.iter().enumerate() {
-                let priority_index = priority_stones.iter().position(|&id| id == stone.id);
+                let priority_index = self.priority_pieces.iter().position(|&id| id == stone.id);
+                let can_be_picked = stack_height - height <= self.preview_game.board.size;
+                let effective_height = if can_be_picked {
+                    height - (stack_height.saturating_sub(self.preview_game.board.size))
+                } else {
+                    height
+                };
                 self.pieces.insert(
                     stone.id,
                     TakUIPiece {
                         player: stone.player,
                         pos,
-                        height,
+                        height: effective_height,
                         is_floating: floating_threshold.is_some_and(|x| height >= x),
                         z_priority: priority_index,
+                        can_be_picked,
+                        buried_piece_count,
                         variant: if height + 1 == stack_height {
                             stack.variant
                         } else {

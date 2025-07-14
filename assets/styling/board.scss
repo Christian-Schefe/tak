@@ -111,7 +111,9 @@
   transition:
     width $animation-speed ease-in-out,
     height $animation-speed ease-in-out,
-    transform $animation-speed ease-in-out;
+    transform $animation-speed ease-in-out,
+    opacity $animation-speed ease-in-out;
+  opacity: 1;
 }
 
 .tak-piece-height-0 {
@@ -128,16 +130,32 @@
   outline: $clr-piece-light solid 1px;
 }
 
+.tak-piece-inner-hidden {
+  width: 10%;
+  height: 5%;
+  border-radius: 10%;
+  opacity: 0;
+}
+
+.tak-piece-inner-buried {
+  width: 12%;
+  height: 12%;
+  border-radius: 10%;
+}
+
 .tak-piece-inner-flat {
   width: 50%;
   height: 50%;
-  border-radius: 3px;
+  border-radius: 10%;
 }
 
 .tak-piece-inner-wall {
   width: 50%;
   height: 20%;
-  border-radius: 3px;
+  border-bottom-left-radius: 10% 5/2*10%;
+  border-bottom-right-radius: 10% 5/2*10%;
+  border-top-left-radius: 10% 5/2*10%;
+  border-top-right-radius: 10% 5/2*10%;
   transform: rotate(-45deg);
 }
 
