@@ -49,6 +49,7 @@ rand = "0.8.5"
 dashmap = { version = "6.1.0", optional = true }
 tak-core = { path = "tak-core", version = "*", features = ["serde"] }
 moka = { version = "0.12.10", features = ["future"], optional = true }
+fixed-map = "0.9.5"
 
 [features]
 web = ["dioxus/web", "tak-core/wasm"]

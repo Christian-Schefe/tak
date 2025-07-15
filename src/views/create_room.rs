@@ -29,6 +29,7 @@ pub fn CreateRoom() -> Element {
                 TakKomi::new(2, false),
                 Some(time_mode),
             ),
+            first_player_mode: None,
         };
         spawn(async move {
             let res = create_room(create_room_params).await;

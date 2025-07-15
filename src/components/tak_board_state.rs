@@ -126,12 +126,9 @@ impl TakBoardState {
 
     pub fn reset(&mut self) {
         self.has_started.set(false);
-        let mut game_lock = self.game.lock().unwrap();
-        game_lock.as_mut().map(|x| x.game_mut().reset());
-        drop(game_lock);
-        self.has_started.set(false);
         self.selected_piece_type.set(TakPieceVariant::Flat);
-        self.trigger_change();
+        let mut game_lock = self.game.lock().unwrap();
+        game_lock.as_mut().map(|x| x.reset());
     }
 
     pub fn set_time_remaining(&mut self, player: TakPlayer, time_remaining: u64) {

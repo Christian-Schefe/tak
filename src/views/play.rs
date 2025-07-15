@@ -29,8 +29,12 @@ pub fn PlayComputer() -> Element {
     let board_clone = state.clone();
 
     use_effect(move || {
-        let settings =
-            TakGameSettings::new(5, None, TakKomi::new(2, false), Some(TakTimeMode::new(30, 5)));
+        let settings = TakGameSettings::new(
+            5,
+            None,
+            TakKomi::new(2, false),
+            Some(TakTimeMode::new(30, 5)),
+        );
         state
             .try_set_from_settings(settings)
             .expect("Settings should be valid");
@@ -46,7 +50,6 @@ pub fn PlayComputer() -> Element {
     rsx! {
         div { id: "play-view",
             if *show_board.read() {
-
                 TakBoard {}
                 TakWinModal { is_local: true }
             }

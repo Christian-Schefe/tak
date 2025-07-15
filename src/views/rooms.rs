@@ -65,26 +65,28 @@ pub fn Rooms() -> Element {
             h1 { "Rooms" }
             div { class: "room-list",
                 for room in room_list.read().iter() {
-                    div { key: room.0.clone(), class: "room-item",
+                    div { key: room.room_id.clone(), class: "room-item",
                         div { class: "room-info",
-                            p { class: "room-code", "{room.0}" }
+                            p { class: "room-code", "{room.room_id}" }
                             div { class: "room-details",
-                                p { "{room.1.game_settings.size}x{room.1.game_settings.size}" }
-                                p { "{formatted_time_mode(&room.1.game_settings.time_mode)}" }
+                                p { "{room.settings.game_settings.size}x{room.settings.game_settings.size}" }
+                                p { "{formatted_time_mode(&room.settings.game_settings.time_mode)}" }
                             }
                             div { class: "room-players",
-                                p { {room.2.join(", ")} }
+                                p { {room.usernames.join(", ")} }
                             }
                         }
                         div { class: "room-actions",
-                            button {
-                                class: "primary-button",
-                                onclick: make_on_click_join(room.0.clone(), false),
-                                "Join"
+                            if room.can_join {
+                                button {
+                                    class: "primary-button",
+                                    onclick: make_on_click_join(room.room_id.clone(), false),
+                                    "Join"
+                                }
                             }
                             button {
                                 class: "secondary-button",
-                                onclick: make_on_click_join(room.0.clone(), true),
+                                onclick: make_on_click_join(room.room_id.clone(), true),
                                 "Spectate"
                             }
                         }

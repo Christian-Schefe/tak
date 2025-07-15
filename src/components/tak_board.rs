@@ -18,6 +18,10 @@ pub fn TakBoard() -> Element {
         let _ = state_clone.on_change.read();
         state_clone
             .with_game(|game| {
+                dioxus::logger::tracing::info!(
+                    "pieces: {:?}",
+                    game.pieces.iter().map(|(id, _)| *id).collect::<Vec<_>>()
+                );
                 (
                     game.game().current_player,
                     game.game().board.size,

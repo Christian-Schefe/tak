@@ -126,6 +126,14 @@ impl TakUIState {
         &mut self.actual_game
     }
 
+    pub fn reset(&mut self) {
+        self.actual_game.reset();
+        self.clone_actual_game_into_preview();
+        self.partial_move = None;
+        self.priority_pieces.clear();
+        self.on_game_update();
+    }
+
     pub fn set_time_remaining(&mut self, player: TakPlayer, time_remaining: u64) {
         self.actual_game.set_time_remaining(player, time_remaining);
         self.on_game_update();

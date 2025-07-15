@@ -19,11 +19,26 @@ use axum_extra::TypedHeader;
 use futures_util::stream::{SplitSink, SplitStream};
 
 pub struct PlayerSocket {
+    pub connections: Vec<Option<PlayerConnection>>,
+}
+
+impl PlayerSocket {
+    pub async fn send(&mut self, msg: &str) -> bool {
+        let mut all_success = true;
+        for conn in self.connections.iter_mut().filter_map(|x| x.as_mut()) {
+            all_success &= conn
+                .sender
+                .send(Message::Text(msg.to_string()))
+                .await
+                .is_ok();
+        }
+        all_success
+    }
+}
+
+pub struct PlayerConnection {
     pub sender: SplitSink<WebSocket, Message>,
-    pub abort_handle: Option<(
-        tokio::sync::oneshot::Sender<()>,
-        tokio::task::JoinHandle<()>,
-    )>,
+    pub join_handle: Option<tokio::task::JoinHandle<()>>,
 }
 
 #[derive(Clone)]
@@ -124,66 +139,70 @@ async fn handle_socket(
 
     let (mut sender, receiver) = socket.split();
 
-    let rooms = state.rooms.lock().await;
+    let mut rooms = state.rooms.lock().await;
     let Some(room) = rooms.try_get_room(&player_id) else {
         println!("Player {player_id} not in any room");
         let _ = sender.close().await;
         return;
     };
-
+    let socket = PlayerConnection {
+        sender,
+        join_handle: None,
+    };
+    let id = rooms.add_connection(&player_id, socket).await;
     let recv_sockets = rooms.player_sockets.clone();
-
-    if Rooms::try_remove_socket(rooms, &player_id).await {
-        println!("Old socket for {who} removed.");
-    }
-
-    let (sx, rx) = tokio::sync::oneshot::channel();
+    drop(rooms);
 
     let recv_room = room.clone();
+    let recv_player = player_id.clone();
     let recv_task = tokio::spawn(async move {
-        room_receive_task(recv_room, recv_sockets, receiver).await;
+        room_receive_task(
+            recv_room,
+            recv_sockets.clone(),
+            receiver,
+            recv_player.clone(),
+        )
+        .await;
+        Rooms::remove_connection(recv_sockets, &recv_player, id).await;
         println!("Websocket receiver task of {who} ended.");
     });
 
-    let wait_player = player_id.clone();
-    let wait_rooms = state.rooms.clone();
-    let wait_task = tokio::spawn(async move {
-        tokio::select! {
-            biased;
-            _ = rx => {
-                println!("Websocket handler for {who} was aborted.");
-            }
-            _ = recv_task => {
-                println!("Websocket handler for {who} finished.");
-            }
-        }
-        let mut rooms = wait_rooms.lock().await;
-        rooms.try_remove_socket_no_cancel(&wait_player).await;
-        println!("Websocket handler for {who} finished fully.");
-    });
-
-    let socket = PlayerSocket {
-        sender,
-        abort_handle: Some((sx, wait_task)),
-    };
-
     let mut rooms = state.rooms.lock().await;
-    rooms.add_socket(&player_id, socket);
-    drop(rooms);
+    rooms
+        .add_handle_to_connection(&player_id, id, recv_task)
+        .await;
 
     println!("Waiting for end for {who}");
 }
 
-async fn on_room_receive_move(sockets: Arc<PlayerSocketMap>, room: &mut Room, action: &str) {
-    let Some(game) = &mut room.game else {
+async fn on_room_receive_move(
+    sockets: Arc<PlayerSocketMap>,
+    player: &str,
+    room: &mut Room,
+    action: &str,
+) {
+    let Some(room_game) = &mut room.game else {
         println!("Game hasn't started yet");
         return;
     };
+    let game = &mut room_game.game;
     if game.game_state != TakGameState::Ongoing {
         return;
     }
+    let Some((action_player, _)) = room_game
+        .player_mapping
+        .iter()
+        .find(|(_, p)| p.as_str() == player)
+    else {
+        println!("Not a player of this game");
+        return;
+    };
+    if game.current_player != action_player {
+        println!("Not your turn");
+        return;
+    }
     if let Some(action) = TakAction::from_ptn(action) {
-        let game_state = if !game.check_timeout() {
+        if !game.check_timeout() {
             println!("Received action: {action:?}");
             let move_index = game.ply_index;
             let res = match game.try_do_action(action) {
@@ -209,38 +228,22 @@ async fn on_room_receive_move(sockets: Arc<PlayerSocketMap>, room: &mut Room, ac
                 res.to_ptn(),
             ))
             .unwrap();
-            let game_state = game.game_state.clone();
             for other_player in room.get_broadcast_player_ids() {
                 if let Some(socket) = sockets.get(&other_player) {
                     let socket = socket.clone();
-                    let sender = &mut socket.lock().await.sender;
-                    if sender.send(Message::Text(msg.clone())).await.is_err() {
-                        println!("Failed to send message to player {other_player}");
-                    } else {
+                    let sender = &mut socket.lock().await;
+                    if sender.send(&msg).await {
                         println!("Sent move action to player {other_player}: {res:?}");
-                    }
-                }
-            }
-            game_state
-        } else {
-            game.game_state.clone()
-        };
-
-        if game_state != TakGameState::Ongoing {
-            let msg =
-                serde_json::to_string(&ServerGameMessage::GameOver(game_state.clone())).unwrap();
-            for other_player in room.get_broadcast_player_ids() {
-                if let Some(socket) = sockets.get(&other_player) {
-                    let socket = socket.clone();
-                    let sender = &mut socket.lock().await.sender;
-                    if sender.send(Message::Text(msg.clone())).await.is_err() {
-                        println!("Failed to send message to player {other_player}");
                     } else {
-                        println!("Sent game over to player {other_player}");
+                        println!(
+                            "Failed to send message to some connections of player {other_player}"
+                        );
                     }
                 }
             }
-        };
+        }
+
+        room.check_end_game();
     } else {
         println!("Invalid action received: {action}");
     }
@@ -250,6 +253,7 @@ async fn room_receive_task(
     room: Arc<Mutex<Room>>,
     sockets: Arc<PlayerSocketMap>,
     mut receiver: SplitStream<WebSocket>,
+    player: String,
 ) {
     while let Some(msg) = receiver.next().await {
         if let Ok(Message::Text(msg)) = &msg {
@@ -257,7 +261,13 @@ async fn room_receive_task(
                 match msg {
                     ClientGameMessage::Move(action) => {
                         let mut room_lock = room.lock().await;
-                        on_room_receive_move(sockets.clone(), room_lock.deref_mut(), &action).await;
+                        on_room_receive_move(
+                            sockets.clone(),
+                            &player,
+                            room_lock.deref_mut(),
+                            &action,
+                        )
+                        .await;
                     }
                 }
             }

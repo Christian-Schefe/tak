@@ -18,15 +18,16 @@ pub use time::*;
 pub use tps::*;
 pub use ui::*;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, fixed_map::Key)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+
 pub enum TakPieceVariant {
     Flat,
     Wall,
     Capstone,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, fixed_map::Key)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum TakPlayer {
     White,

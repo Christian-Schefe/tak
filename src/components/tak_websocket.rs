@@ -28,6 +28,7 @@ pub fn TakWebSocket(session_id: String) -> Element {
                 dioxus::logger::tracing::info!("[WebSocket] Starting game");
                 let mut board_clone = board_clone.clone();
                 spawn_local(async move {
+                    board_clone.reset();
                     board_clone.update_player_info().await;
                     board_clone.has_started.set(true);
                 });
