@@ -86,8 +86,11 @@ pub fn TakWinModal(is_local: bool) -> Element {
             .expect("Should be able to copy PTN");
     };
 
+    let mut state_clone = state.clone();
     let on_click_rematch = move |_| {
         if is_local {
+            state_clone.reset();
+            state_clone.has_started.set(true);
             return;
         }
         spawn(async move {

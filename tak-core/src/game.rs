@@ -295,12 +295,12 @@ impl TakGame {
     }
 
     pub fn try_do_action(&mut self, action: TakAction) -> Result<(), TakInvalidActionError> {
+        let current_player = self.current_player;
         let now = if let Some(clock) = &mut self.clock {
             let now = TakTimestamp::now();
-            if clock.get_time_remaining_at(self.current_player, now) == 0 {
-                self.game_state =
-                    TakGameState::Win(self.current_player.other(), TakWinReason::Timeout);
-                clock.set_time_remaining(self.current_player, 0);
+            if clock.get_time_remaining_at(current_player, now) == 0 {
+                self.game_state = TakGameState::Win(current_player.other(), TakWinReason::Timeout);
+                clock.set_time_remaining(current_player, 0);
             }
             Some(now)
         } else {
@@ -320,7 +320,7 @@ impl TakGame {
                 .map_err(TakInvalidActionError::InvalidMove),
         }?;
         if let Some(clock) = &mut self.clock {
-            clock.update(now.expect("Should have now timestamp"), self.current_player);
+            clock.update(now.expect("Should have now timestamp"), current_player);
         }
         Ok(())
     }

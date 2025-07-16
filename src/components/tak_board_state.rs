@@ -197,13 +197,11 @@ impl TakBoardState {
         .expect("Game should exist to check place action")
     }
 
-    pub fn get_time_remaining(&self, player: TakPlayer) -> u64 {
+    pub fn get_time_remaining(&self, player: TakPlayer) -> Option<u64> {
         self.with_game(|game| {
             let apply_elapsed = game.game().current_player == player
                 && game.game().game_state == TakGameState::Ongoing;
-            game.game()
-                .get_time_remaining(player, apply_elapsed)
-                .unwrap_or_default()
+            game.game().get_time_remaining(player, apply_elapsed)
         })
         .expect("Game should exist to get time remaining")
     }

@@ -29,6 +29,7 @@ dd {
 }
 
 button {
+  font-size: 14px;
   text-decoration: none;
   background-color: $clr-surface;
   color: $clr-white;
@@ -42,7 +43,7 @@ button {
   }
 
   &:active {
-    background-color: $clr-surface-light;
+    background-color: $clr-board-dark;
   }
 }
 
@@ -61,6 +62,14 @@ button.primary-button {
 
 button.secondary-button {
   border: 2px solid $clr-surface-light;
+  
+  &:hover {
+    background-color: $clr-surface-light;
+  }
+
+  &:active {
+    background-color: $clr-surface-light;
+  }
 }
 
 input {

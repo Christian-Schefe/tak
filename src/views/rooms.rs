@@ -62,7 +62,6 @@ pub fn Rooms() -> Element {
 
     rsx! {
         div { class: "rooms-view",
-            h1 { "Rooms" }
             div { class: "room-list",
                 for room in room_list.read().iter() {
                     div { key: room.room_id.clone(), class: "room-item",

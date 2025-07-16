@@ -15,8 +15,8 @@ pub fn TakClock(player: TakPlayer) -> Element {
             loop {
                 gloo::timers::future::sleep(std::time::Duration::from_millis(100)).await;
                 let time = board_clone.get_time_remaining(player);
-                time_remaining.set(Some(time));
-                if time == 0 {
+                time_remaining.set(time);
+                if time.is_some_and(|x| x == 0) {
                     board_clone.check_ongoing_game();
                 }
             }
@@ -31,7 +31,7 @@ pub fn TakClock(player: TakPlayer) -> Element {
     let time_remaining_str = time_remaining
         .read()
         .as_ref()
-        .map_or("0:00".to_string(), |&t| {
+        .map_or("-:--".to_string(), |&t| {
             if t >= 20000 {
                 format!("{}:{:02}", (t / 1000) / 60, (t / 1000) % 60)
             } else {

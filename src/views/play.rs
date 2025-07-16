@@ -1,12 +1,12 @@
 use crate::components::tak_board_state::{PlayerInfo, PlayerType, TakBoardState};
 use crate::components::{TakBoard, TakWebSocket, TakWinModal};
 use crate::server::room::{get_room, GetRoomResponse};
-use crate::views::get_session_id;
+use crate::views::{get_session_id, LOCAL_SETTINGS};
 use crate::Route;
 use dioxus::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use tak_core::{TakGameSettings, TakKomi, TakPlayer, TakTimeMode};
+use tak_core::TakPlayer;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ClientGameMessage {
@@ -29,12 +29,7 @@ pub fn PlayComputer() -> Element {
     let board_clone = state.clone();
 
     use_effect(move || {
-        let settings = TakGameSettings::new(
-            5,
-            None,
-            TakKomi::new(2, false),
-            Some(TakTimeMode::new(30, 5)),
-        );
+        let settings = LOCAL_SETTINGS.peek().clone();
         state
             .try_set_from_settings(settings)
             .expect("Settings should be valid");

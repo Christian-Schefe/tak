@@ -499,9 +499,7 @@ impl TakBoard {
         for tile in &self.board {
             if let Some(stack) = tile {
                 if stack.variant == TakPieceVariant::Flat {
-                    for piece in &stack.composition {
-                        counts[piece.player.index()] += 1;
-                    }
+                    counts[stack.player().index()] += 1;
                 }
             }
         }

@@ -5,9 +5,11 @@
 @use "create_room";
 @use "board";
 @use "rooms";
+@use "views/more";
 
 @import "settings/colors";
 @import "settings/params";
+
 
 html {
   width: 100%;

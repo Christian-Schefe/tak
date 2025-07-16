@@ -295,7 +295,7 @@ impl TakUIState {
     pub fn on_game_update(&mut self) {
         self.pieces.clear();
         self.tiles.clear();
-        self.flat_counts = [0, 0];
+        self.flat_counts = self.preview_game.board.count_flats();
 
         let drop_diff = match &self.partial_move {
             Some(TakPartialMove {
@@ -395,6 +395,17 @@ impl TakUIState {
                 .expect("Should find a path for road");
             #[cfg(feature = "wasm")]
             dioxus::logger::tracing::info!("{:?}", highlighted_tiles);
+        } else if let TakGameState::Win(player, TakWinReason::Flat) = self.actual_game.game_state {
+            highlighted_tiles = TakCoord::iter_board(self.actual_game.board.size)
+                .filter(|pos| {
+                    self.actual_game
+                        .board
+                        .try_get_stack(*pos)
+                        .is_some_and(|stack| {
+                            stack.player() == player && stack.variant == TakPieceVariant::Flat
+                        })
+                })
+                .collect();
         }
 
         let mut last_action_tiles = Vec::new();
@@ -427,11 +438,6 @@ impl TakUIState {
                     )
                 })
                 .collect::<Vec<_>>();
-            if let Some(stack) = self.preview_game.board.try_get_stack(pos) {
-                if stack.variant == TakPieceVariant::Flat {
-                    self.flat_counts[stack.player().index()] += 1;
-                }
-            }
             self.tiles.insert(
                 pos,
                 TakUITile {

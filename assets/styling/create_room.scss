@@ -73,6 +73,7 @@
     padding: 10px;
     box-sizing: border-box;
     flex-wrap: wrap;
+    align-items: center;
 }
 
 #create-room-button {
@@ -81,4 +82,52 @@
     width: 100%;
     max-width: 200px;
     margin-top: 50px;
+}
+
+#komi-chooser {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    max-width: 600px;
+}
+
+.komi-value {
+    font-size: 16px;
+    width: 30px;
+    font-family: monospace;
+    height: fit-content;
+    text-align: left;
+}
+
+.komi-slider {
+    flex-grow: 1;
+    height: 25px;
+    margin: 0;
+    padding: 0;
+    -webkit-appearance: none;
+    appearance: none;
+    background: $clr-surface;
+    border-radius: 5px;
+    outline: none;
+    border: none;
+
+    &::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 25px;
+        height: 25px;
+        background: $clr-primary;
+        border-radius: 5px;
+        cursor: pointer;
+    }
+
+    &::-moz-range-thumb {
+        width: 25px;
+        height: 25px;
+        background: $clr-primary;
+        border-radius: 5px;
+        cursor: pointer;
+    }
 }

@@ -191,6 +191,11 @@ pub fn Auth() -> Element {
                     },
                     {if show_login { "Register instead" } else { "Login instead" }}
                 }
+                Link {
+                    class: "auth-skip",
+                    to: Route::Home {  },
+                    "Continue without logging in"
+                }
             }
         }
     }
@@ -255,7 +260,9 @@ pub async fn logout() -> Result<(), ServerFnError> {
     use tower_cookies::Cookie;
     use uuid::Uuid;
 
-    let user: crate::server::auth::AuthenticatedUser = extract().await?;
+    let Some(user): Option<crate::server::auth::AuthenticatedUser> = extract().await.ok() else {
+        return Ok(());
+    };
 
     let store: axum::Extension<crate::server::auth::SessionStore> = extract().await?;
     let cookies: tower_cookies::Cookies = extract()
