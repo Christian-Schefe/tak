@@ -1,5 +1,5 @@
 [workspace]
-members = ["tak-core", "takumi"]
+members = ["tak-core", "takumi", "takumi-worker"]
 
 [workspace.package]
 version = "0.1.0"
@@ -32,6 +32,7 @@ tokio = { version = "1.45.1", features = [
     "rt",
 ], optional = true }
 gloo = { version = "0.11.0", features = ["timers", "futures"] }
+gloo-worker = { version = "0.5.0", features = ["futures"] }
 axum = { version = "0.7.9", features = ["ws"], optional = true }
 axum-extra = { version = "0.9.6", optional = true, features = ["typed-header"] }
 futures-util = { version = "0.3.31" }
@@ -41,6 +42,7 @@ dioxus-cli-config = { version = "0.6.3", optional = true }
 serde_json = "1.0.140"
 serde = { version = "1.0.219", features = ["derive"] }
 wasm-bindgen-futures = "0.4.50"
+wasm-bindgen = "0.2.100"
 headers = "0.4.1"
 argon2 = "0.5"
 surrealdb = { version = "2.3.6", optional = true }
@@ -48,9 +50,11 @@ thiserror = "2.0.12"
 tower-cookies = { version = "0.10.0", features = [
     "axum-core",
 ], optional = true }
+tower-http = { version = "0.6.6", optional = true, features = ["fs"] }
 rand = "0.8.5"
 dashmap = { version = "6.1.0", optional = true }
 tak-core = { path = "tak-core", version = "*", features = ["serde"] }
+takumi = { path = "takumi", version = "*", features = ["serde"] }
 moka = { version = "0.12.10", features = ["future"], optional = true }
 fixed-map = "0.9.5"
 
@@ -70,6 +74,7 @@ server = [
     "dioxus-cli-config",
     "dep:axum-extra",
     "dep:moka",
+    "dep:tower-http",
 ]
 
 [profile]

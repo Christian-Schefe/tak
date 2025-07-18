@@ -1,5 +1,5 @@
 [package]
-name = "takumi"
+name = "takumi-worker"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -10,11 +10,7 @@ gloo-worker = { version = "*", features = ["futures"] }
 wasm-bindgen = "*"
 wasm-bindgen-futures = "*"
 web-sys = { version = "*", features = ["console"] }
-serde = { version = "*", features = ["derive"], optional = true }
-serde_json = { version = "*", optional = true }
+takumi = { path = "../takumi", features = ["serde"] }
 
 [lib]
 crate-type = ["cdylib", "rlib"]
-
-[features]
-serde = ["dep:serde", "dep:serde_json"]

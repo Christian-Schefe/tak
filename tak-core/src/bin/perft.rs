@@ -3,10 +3,10 @@ use std::collections::HashMap;
 use tak_core::{compute_partition_memo, gen_moves, TakGame, TakGameSettings, TakKomi, TakTps};
 
 fn main() {
-    println!("{:?}", perft(6, "x,2,2,22S,2,111S/21S,22C,112,x,1112S,11S/x,2,112212,2,2S,2/x,2,121122,x,1112,211/21C,x,1,2S,21S,x/2S,x,212,1S,12S,1S 1 33", 2));
-    println!("{:?}", perft(3, "x3/x3/x3 1 1", 5));
-    println!("{:?}", perft(5, "x5/x5/x5/x5/x5 1 1", 4));
-    println!("{:?}", perft(6, "x6/x6/x6/x6/x6/x6 1 1", 6));
+    println!("{:?}", perft(6, "x2,2,22,2C,1/21221S,1112,x,2211,1,2/x2,111S,x,11S,12S/11S,1S,2S,2,12S,1211C/x,12S,2,122S,x,212S/12,x2,1S,22222S,21121 2 31", 5));
+    //println!("{:?}", perft(3, "x3/x3/x3 1 1", 5));
+    //println!("{:?}", perft(5, "x5/x5/x5/x5/x5 1 1", 4));
+    //println!("{:?}", perft(6, "x6/x6/x6/x6/x6/x6 1 1", 6));
 }
 
 fn perft(size: usize, pos: &str, depth: usize) -> Vec<usize> {

@@ -9,7 +9,7 @@ pub static LOCAL_SETTINGS: GlobalSignal<TakGameSettings> =
     GlobalSignal::new(|| TakGameSettings::new(6, None, TakKomi::new(2, false), None));
 
 #[component]
-pub fn CreateRoom() -> Element {
+pub fn CreateRoomOnline() -> Element {
     rsx! {
         CreateRoomView { is_local: false }
     }
@@ -17,6 +17,13 @@ pub fn CreateRoom() -> Element {
 
 #[component]
 pub fn CreateRoomLocal() -> Element {
+    rsx! {
+        CreateRoomView { is_local: true }
+    }
+}
+
+#[component]
+pub fn CreateRoomComputer() -> Element {
     rsx! {
         CreateRoomView { is_local: true }
     }

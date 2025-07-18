@@ -1,7 +1,8 @@
 use crate::views::Auth;
 use dioxus::prelude::*;
 use views::{
-    CreateRoom, CreateRoomLocal, Home, More, Navbar, PlayComputer, PlayOnline, Puzzles, Rooms,
+    CreateRoomComputer, CreateRoomLocal, CreateRoomOnline, Home, More, Navbar, PlayComputer,
+    PlayLocal, PlayOnline, Puzzles, Rooms,
 };
 
 mod components;
@@ -19,14 +20,21 @@ enum Route {
     Puzzles {},
     #[route("/more")]
     More {},
-    #[route("/playcomputer")]
+
+    #[route("/play/computer")]
     PlayComputer {},
-    #[route("/playonline")]
+    #[route("/play/local")]
+    PlayLocal {},
+    #[route("/play/online")]
     PlayOnline {},
-    #[route("/createroom")]
-    CreateRoom {},
-    #[route("/createlocal")]
+
+    #[route("/create/online")]
+    CreateRoomOnline {},
+    #[route("/create/local")]
     CreateRoomLocal {},
+    #[route("/create/computer")]
+    CreateRoomComputer {},
+
     #[route("/rooms")]
     Rooms {},
 }
@@ -76,6 +84,7 @@ async fn main() {
             "/ws2",
             axum::routing::any(server::websocket::ws_test_handler),
         )
+        .nest_service("/webworker", tower_http::services::ServeDir::new("workers"))
         .layer(Extension(session_store))
         .layer(Extension(shared_state))
         .layer(CookieManagerLayer::new())

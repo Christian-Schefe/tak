@@ -56,7 +56,7 @@ pub fn gen_moves(game: &TakGame, partition_memo: &Vec<Vec<Vec<Vec<usize>>>>) -> 
                                     && !(*drops.last().expect("Drops should not be empty") == 1
                                         && stack.variant == TakPieceVariant::Capstone))
                         }) {
-                            break;
+                            continue;
                         }
                         moves.push(TakAction::MovePiece {
                             pos,

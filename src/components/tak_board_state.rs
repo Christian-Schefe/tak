@@ -181,11 +181,15 @@ impl TakBoardState {
     }
 
     pub fn is_local_player_turn(&self) -> bool {
+        self.is_matching_player_turn(PlayerType::Local)
+    }
+
+    pub fn is_matching_player_turn(&self, player_type: PlayerType) -> bool {
         let current_player = self
             .with_game(|game| game.game().current_player)
             .expect("Game should exist to check current player");
         if let Some(info) = self.player_info.read().get(&current_player) {
-            return info.player_type == PlayerType::Local;
+            return info.player_type == player_type;
         }
         false
     }

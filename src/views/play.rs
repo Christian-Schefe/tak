@@ -1,5 +1,5 @@
 use crate::components::tak_board_state::{PlayerInfo, PlayerType, TakBoardState};
-use crate::components::{TakBoard, TakWebSocket, TakWinModal};
+use crate::components::{TakBoard, TakEngine, TakWebSocket, TakWinModal};
 use crate::server::room::{get_room, GetRoomResponse};
 use crate::views::{get_session_id, LOCAL_SETTINGS};
 use crate::Route;
@@ -22,7 +22,7 @@ pub fn PlayComputer() -> Element {
     );
     player_info.insert(
         TakPlayer::Black,
-        PlayerInfo::new("Computer".to_string(), PlayerType::Local),
+        PlayerInfo::new("Computer".to_string(), PlayerType::Computer),
     );
 
     let mut state = use_context_provider(|| TakBoardState::new(player_info));
@@ -47,6 +47,48 @@ pub fn PlayComputer() -> Element {
             if *show_board.read() {
                 TakBoard {}
                 TakWinModal { is_local: true }
+                TakEngine {  }
+            }
+        }
+    }
+}
+
+#[component]
+pub fn PlayLocal() -> Element {
+    let mut player_info = HashMap::new();
+    player_info.insert(
+        TakPlayer::White,
+        PlayerInfo::new("Player 1".to_string(), PlayerType::Computer),
+    );
+    player_info.insert(
+        TakPlayer::Black,
+        PlayerInfo::new("Player 2".to_string(), PlayerType::Computer),
+    );
+
+    let mut state = use_context_provider(|| TakBoardState::new(player_info));
+    let board_clone = state.clone();
+
+    use_effect(move || {
+        let settings = LOCAL_SETTINGS.peek().clone();
+        state
+            .try_set_from_settings(settings)
+            .expect("Settings should be valid");
+        state.has_started.set(true);
+        state.trigger_change();
+    });
+
+    let show_board = use_memo(move || {
+        let _ = board_clone.on_change.read();
+        dioxus::logger::tracing::info!("Checking if board has game, {}", board_clone.has_game());
+        board_clone.has_game()
+    });
+
+    rsx! {
+        div { id: "play-view",
+            if *show_board.read() {
+                TakBoard {}
+                TakWinModal { is_local: true }
+                TakEngine {  }
             }
         }
     }

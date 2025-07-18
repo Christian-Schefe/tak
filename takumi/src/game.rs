@@ -1,7 +1,15 @@
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum Action {
+    Place(usize, usize),            // position, variant
+    Spread(usize, usize, u64, u64), // position, direction, take, spreads
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct Board {
     pub size: usize,
     pub result: Option<u64>, // 0 for white win, 1 for black win, 2 for draw
+    pub double_komi: usize,
 
     pub ply_index: usize,
     pub current_player: u64,
@@ -40,6 +48,7 @@ impl Board {
         Self {
             size,
             result: None,
+            double_komi: 4,
 
             ply_index: 0,
             current_player: Self::PLAYER_WHITE,
@@ -56,6 +65,41 @@ impl Board {
             owner: 0,
             stacks: vec![0; size * size],
             stack_heights: vec![0; size * size],
+        }
+    }
+
+    #[inline(always)]
+    pub fn offset_by_dir(&self, pos: usize, dir: usize) -> Option<usize> {
+        match dir {
+            Self::DIR_RIGHT => {
+                if pos % self.size < self.size - 1 {
+                    Some(pos + 1)
+                } else {
+                    None
+                }
+            }
+            Self::DIR_LEFT => {
+                if pos % self.size > 0 {
+                    Some(pos - 1)
+                } else {
+                    None
+                }
+            }
+            Self::DIR_DOWN => {
+                if pos / self.size < self.size - 1 {
+                    Some(pos + self.size)
+                } else {
+                    None
+                }
+            }
+            Self::DIR_UP => {
+                if pos / self.size > 0 {
+                    Some(pos - self.size)
+                } else {
+                    None
+                }
+            }
+            _ => None,
         }
     }
 
@@ -150,7 +194,10 @@ impl Board {
     }
 
     fn check_flat_win(&mut self) -> bool {
-        if self.empty_positions == 0 {
+        if self.empty_positions == 0
+            || (self.white_pieces == 0 && self.white_capstones == 0)
+            || (self.black_pieces == 0 && self.black_capstones == 0)
+        {
             let mut white_count = 0;
             let mut black_count = 0;
             for pos in 0..(self.size * self.size) {
@@ -167,9 +214,11 @@ impl Board {
                     black_count += 1;
                 };
             }
-            if white_count > black_count {
+            let white_score = 2 * white_count;
+            let black_score = 2 * black_count + self.double_komi;
+            if white_score > black_score {
                 self.result = Some(Self::PLAYER_WHITE);
-            } else if black_count > white_count {
+            } else if black_score > white_score {
                 self.result = Some(Self::PLAYER_BLACK);
             } else {
                 self.result = Some(2);
@@ -185,6 +234,25 @@ impl Board {
             Self::PLAYER_WHITE
         } else {
             Self::PLAYER_BLACK
+        }
+    }
+
+    pub fn make(&mut self, action: &Action) -> bool {
+        match action {
+            Action::Place(pos, variant) => {
+                self.place(*pos, *variant);
+                false
+            }
+            Action::Spread(pos, dir, take, spreads) => self.spread(*pos, *dir, *take, *spreads),
+        }
+    }
+
+    pub fn unmake(&mut self, action: &Action, smash: bool) {
+        match action {
+            Action::Place(pos, variant) => {
+                self.unplace(*pos, *variant);
+            }
+            Action::Spread(pos, dir, _take, spreads) => self.unspread(*pos, *dir, *spreads, smash),
         }
     }
 
@@ -582,6 +650,7 @@ impl Board {
         let mut board = Self {
             size,
             result: None,
+            double_komi: 4,
 
             ply_index,
             current_player,
@@ -776,6 +845,7 @@ mod tests {
             board,
             Some(Board {
                 size: 3,
+                double_komi: 4,
                 result: None,
                 ply_index: 5,
                 current_player: 1,

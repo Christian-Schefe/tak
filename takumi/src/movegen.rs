@@ -1,4 +1,4 @@
-use crate::Board;
+use crate::{Action, Board};
 
 pub fn print_memo() {
     let partition_memo = compute_partition_memo(8);
@@ -73,6 +73,16 @@ fn encode_spread_vec(spread_vec: Vec<usize>) -> u64 {
     let mut res = 0u64;
     for (i, &v) in spread_vec.iter().enumerate() {
         res |= (v as u64) << ((i * 4) as u64);
+    }
+    res
+}
+
+pub fn decode_spread_vec(encoded: u64) -> Vec<usize> {
+    let mut res = Vec::new();
+    let mut encoded = encoded;
+    while encoded > 0 {
+        res.push((encoded & 0xF) as usize);
+        encoded >>= 4;
     }
     res
 }
@@ -204,29 +214,37 @@ pub fn get_spread_moves(game: &Board) -> Vec<(usize, usize, u64, u64)> {
                             }
                         }
                         let cur_pos_mask = 1u64 << cur_pos;
-                        let mut was_smash = false;
                         if game.occupied & cur_pos_mask != 0 {
                             if game.capstones & cur_pos_mask != 0 {
                                 break;
                             }
                             if game.walls & cur_pos_mask != 0 {
-                                if game.capstones & pos_mask != 0
-                                    && partition >> ((len - 1) * 4) & 0xF == 1
+                                if game.capstones & pos_mask == 0
+                                    || partition >> ((len - 1) * 4) & 0xF != 1
                                 {
-                                    was_smash = true;
-                                } else {
                                     break;
                                 }
                             }
                         }
                         moves.push((pos, dir, take, *partition));
-                        if was_smash {
-                            break;
-                        }
                     }
                 }
             }
         }
+    }
+
+    moves
+}
+
+pub fn gen_moves(game: &Board) -> Vec<Action> {
+    let mut moves = Vec::new();
+
+    for (pos, variant) in gen_place_moves(game) {
+        moves.push(Action::Place(pos, variant));
+    }
+
+    for (pos, dir, take, partition) in get_spread_moves(game) {
+        moves.push(Action::Spread(pos, dir, take, partition));
     }
 
     moves
@@ -246,33 +264,34 @@ pub fn perft(game: &mut Board, depth: usize) -> usize {
 
     let mut count = 0;
 
-    /*for (pos, variant) in place_moves {
-        let mut clone = game.clone();
-        clone.place(pos, variant);
-        count += perft(&mut clone, depth - 1);
-        clone.unplace(pos, variant);
-        assert_eq!(game, &clone);
-    }
-    */
     for (pos, variant) in place_moves {
         game.place(pos, variant);
         count += perft(game, depth - 1);
         game.unplace(pos, variant);
     }
 
+    for (pos, dir, take, partition) in spread_moves {
+        let smashed = game.spread(pos, dir, take, partition);
+        count += perft(game, depth - 1);
+        game.unspread(pos, dir, partition, smashed);
+    }
+
     /*
+    for (pos, variant) in place_moves {
+        let mut clone = game.clone();
+        clone.place(pos, variant);
+        count += perft(&mut clone, depth - 1);
+        clone.unplace(pos, variant);
+        assert_eq!(game, &clone);
+    }
+
     for (pos, dir, take, partition) in spread_moves {
         let mut clone = game.clone();
         let smashed = clone.spread(pos, dir, take, partition);
         count += perft(&mut clone, depth - 1);
         clone.unspread(pos, dir, partition, smashed);
         assert_eq!(game, &clone);
-    }*/
-    for (pos, dir, take, partition) in spread_moves {
-        let smashed = game.spread(pos, dir, take, partition);
-        count += perft(game, depth - 1);
-        game.unspread(pos, dir, partition, smashed);
-    }
+    } */
 
     count
 }

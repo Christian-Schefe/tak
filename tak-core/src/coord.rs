@@ -10,6 +10,13 @@ impl TakCoord {
         TakCoord { x, y }
     }
 
+    pub fn from_index(index: usize, size: usize) -> Self {
+        TakCoord {
+            x: (index % size) as i32,
+            y: (index / size) as i32,
+        }
+    }
+
     pub fn iter_board(size: usize) -> impl Iterator<Item = TakCoord> {
         (0..size).flat_map(move |y| (0..size).map(move |x| TakCoord::new(x as i32, y as i32)))
     }

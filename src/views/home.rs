@@ -12,7 +12,7 @@ pub fn Home() -> Element {
     let mut room = use_resource(|| get_room());
 
     let on_click_create = move |_| {
-        nav.push(Route::CreateRoom {});
+        nav.push(Route::CreateRoomOnline {});
     };
 
     let mut room_id_input = use_signal(|| String::new());
@@ -53,6 +53,9 @@ pub fn Home() -> Element {
     };
 
     let on_click_play_computer = move |_| {
+        nav.push(Route::CreateRoomComputer {});
+    };
+    let on_click_play_local = move |_| {
         nav.push(Route::CreateRoomLocal {});
     };
 
@@ -119,6 +122,7 @@ pub fn Home() -> Element {
                 }
             }
             button { onclick: on_click_play_computer, "Play Computer" }
+            button { onclick: on_click_play_local, "Play Local" }
         }
     }
 }
