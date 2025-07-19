@@ -393,8 +393,6 @@ impl TakUIState {
                 .board
                 .find_shortest_path(road.0, road.1)
                 .expect("Should find a path for road");
-            #[cfg(feature = "wasm")]
-            dioxus::logger::tracing::info!("{:?}", highlighted_tiles);
         } else if let TakGameState::Win(player, TakWinReason::Flat) = self.actual_game.game_state {
             highlighted_tiles = TakCoord::iter_board(self.actual_game.board.size)
                 .filter(|pos| {

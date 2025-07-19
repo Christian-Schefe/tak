@@ -10,6 +10,35 @@ use crate::components::tak_board_state::{PlayerType, TakBoardState};
 pub fn TakEngine() -> Element {
     let mut state = use_context::<TakBoardState>();
 
+    let state_clone = state.clone();
+    let sx = use_coroutine(move |mut rx| {
+        let mut state = state_clone.clone();
+        async move {
+            let mut bridge =
+                TakumiWorker::spawner().spawn("/webworker/takumi_worker/takumi_worker.js");
+            while let Some((tps, size)) = rx.next().await {
+                bridge
+                    .send(TakumiWorkerInput::new(
+                        tps,
+                        8,
+                        takumi::Settings::new(4),
+                        5000,
+                    ))
+                    .await
+                    .unwrap();
+                let action = bridge.next().await.unwrap();
+                let action = map_action(size, action);
+                dioxus::logger::tracing::info!("received action: {:?}", action);
+                state
+                    .with_game_mut(|game| {
+                        game.try_do_action(action)
+                            .expect("Applying best move should succeed");
+                    })
+                    .expect("Game should exist to apply best move");
+            }
+        }
+    });
+
     use_effect(move || {
         let _ = state.on_change.read();
 
@@ -21,23 +50,7 @@ pub fn TakEngine() -> Element {
             .with_game(|game| (game.game().to_tps().to_string(), game.game().board.size))
             .expect("Game should exist to get TPS");
         dioxus::logger::tracing::info!("Starting minimax with position: {}", tps);
-        let mut state = state.clone();
-        spawn(async move {
-            let mut bridge =
-                TakumiWorker::spawner().spawn("/webworker/takumi_worker/takumi_worker.js");
-            dioxus::logger::tracing::info!("sending");
-            bridge.send(TakumiWorkerInput::new(tps, 3)).await.unwrap();
-            dioxus::logger::tracing::info!("sent");
-            let action = bridge.next().await.unwrap();
-            let action = map_action(size, action);
-            dioxus::logger::tracing::info!("received action: {:?}", action);
-            state
-                .with_game_mut(|game| {
-                    game.try_do_action(action)
-                        .expect("Applying best move should succeed");
-                })
-                .expect("Game should exist to apply best move");
-        });
+        sx.send((tps, size));
     });
 
     rsx! {}

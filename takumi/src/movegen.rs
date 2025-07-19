@@ -250,6 +250,35 @@ pub fn gen_moves(game: &Board) -> Vec<Action> {
     moves
 }
 
+pub fn perft_safe(game: &mut Board, depth: usize) -> usize {
+    if depth == 0 {
+        return 1;
+    }
+
+    let place_moves = gen_place_moves(game);
+    let spread_moves = get_spread_moves(game);
+
+    let mut count = 0;
+
+    for (pos, variant) in place_moves {
+        let mut clone = game.clone();
+        clone.place(pos, variant);
+        count += perft(&mut clone, depth - 1);
+        clone.unplace(pos, variant);
+        assert_eq!(game, &clone);
+    }
+
+    for (pos, dir, take, partition) in spread_moves {
+        let mut clone = game.clone();
+        let smashed = clone.spread(pos, dir, take, partition);
+        count += perft(&mut clone, depth - 1);
+        clone.unspread(pos, dir, partition, smashed);
+        assert_eq!(game, &clone);
+    }
+
+    count
+}
+
 pub fn perft(game: &mut Board, depth: usize) -> usize {
     if depth == 0 {
         return 1;
@@ -276,28 +305,13 @@ pub fn perft(game: &mut Board, depth: usize) -> usize {
         game.unspread(pos, dir, partition, smashed);
     }
 
-    /*
-    for (pos, variant) in place_moves {
-        let mut clone = game.clone();
-        clone.place(pos, variant);
-        count += perft(&mut clone, depth - 1);
-        clone.unplace(pos, variant);
-        assert_eq!(game, &clone);
-    }
-
-    for (pos, dir, take, partition) in spread_moves {
-        let mut clone = game.clone();
-        let smashed = clone.spread(pos, dir, take, partition);
-        count += perft(&mut clone, depth - 1);
-        clone.unspread(pos, dir, partition, smashed);
-        assert_eq!(game, &clone);
-    } */
-
     count
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::Settings;
+
     pub use super::*;
 
     #[test]
@@ -308,7 +322,7 @@ mod tests {
 
     #[test]
     fn test_gen_place_moves_opening() {
-        let mut game = Board::empty(3);
+        let mut game = Board::empty(3, Settings::new(4));
         let moves = gen_place_moves(&game);
         assert_eq!(moves.len(), 9);
         game.place(0, Board::VARIANT_FLAT);
@@ -325,7 +339,7 @@ mod tests {
 
     #[test]
     fn test_gen_spread_moves() {
-        let mut game = Board::try_from_pos_str("112,x2/x3/x3 2 10").unwrap();
+        let mut game = Board::try_from_pos_str("112,x2/x3/x3 2 10", Settings::new(4)).unwrap();
         let moves = get_spread_moves(&game);
         assert_eq!(moves.len(), 12);
         for (pos, dir, take, partition) in moves {
@@ -342,7 +356,8 @@ mod tests {
 
     #[test]
     fn test_gen_spread_moves_smash() {
-        let mut game = Board::try_from_pos_str("112C,11S,x3/x5/1C,x4/x5/x5 2 10").unwrap();
+        let mut game =
+            Board::try_from_pos_str("112C,11S,x3/x5/1C,x4/x5/x5 2 10", Settings::new(4)).unwrap();
         let moves = get_spread_moves(&game);
         assert_eq!(moves.len(), 4);
         for (pos, dir, take, partition) in moves {
@@ -359,7 +374,9 @@ mod tests {
 
     #[test]
     fn test_gen_spread_moves_tall_stacks() {
-        let mut game = Board::try_from_pos_str("11222122C,x,11S,x2/x5/1C,x4/x5/x5 2 10").unwrap();
+        let mut game =
+            Board::try_from_pos_str("11222122C,x,11S,x2/x5/1C,x4/x5/x5 2 10", Settings::new(4))
+                .unwrap();
         let moves = get_spread_moves(&game);
         assert_eq!(moves.len(), 14);
         for (pos, dir, take, partition) in moves {

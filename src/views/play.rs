@@ -38,7 +38,6 @@ pub fn PlayComputer() -> Element {
 
     let show_board = use_memo(move || {
         let _ = board_clone.on_change.read();
-        dioxus::logger::tracing::info!("Checking if board has game, {}", board_clone.has_game());
         board_clone.has_game()
     });
 
@@ -79,7 +78,6 @@ pub fn PlayLocal() -> Element {
 
     let show_board = use_memo(move || {
         let _ = board_clone.on_change.read();
-        dioxus::logger::tracing::info!("Checking if board has game, {}", board_clone.has_game());
         board_clone.has_game()
     });
 
@@ -140,7 +138,6 @@ pub fn PlayOnline() -> Element {
     let board_clone = board.clone();
     let show_board = use_memo(move || {
         let _ = board_clone.on_change.read();
-        dioxus::logger::tracing::info!("Checking if board has game, {}", board_clone.has_game());
         board_clone.has_game()
     });
 

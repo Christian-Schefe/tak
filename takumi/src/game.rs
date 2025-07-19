@@ -1,8 +1,22 @@
+use crate::ZOBRIST_TABLE;
+
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Action {
     Place(usize, usize),            // position, variant
     Spread(usize, usize, u64, u64), // position, direction, take, spreads
+}
+
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct Settings {
+    pub double_komi: usize,
+}
+
+impl Settings {
+    pub fn new(double_komi: usize) -> Self {
+        Self { double_komi }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -26,6 +40,8 @@ pub struct Board {
     pub owner: u64,
     pub stacks: Vec<u64>,
     pub stack_heights: Vec<u64>,
+
+    pub zobrist: u64,
 }
 
 impl Board {
@@ -41,14 +57,14 @@ impl Board {
     pub const DIR_DOWN: usize = 2;
     pub const DIR_UP: usize = 3;
 
-    pub fn empty(size: usize) -> Self {
+    pub fn empty(size: usize, settings: Settings) -> Self {
         let (white_pieces, white_capstones) = Self::default_pieces(size);
         let (black_pieces, black_capstones) = Self::default_pieces(size);
 
         Self {
             size,
             result: None,
-            double_komi: 4,
+            double_komi: settings.double_komi,
 
             ply_index: 0,
             current_player: Self::PLAYER_WHITE,
@@ -65,6 +81,8 @@ impl Board {
             owner: 0,
             stacks: vec![0; size * size],
             stack_heights: vec![0; size * size],
+
+            zobrist: 0,
         }
     }
 
@@ -269,8 +287,11 @@ impl Board {
             self.owner |= pos_mask;
         }
 
+        self.zobrist ^= ZOBRIST_TABLE[pos].0[0][effective_player as usize];
+
         if variant == Self::VARIANT_WALL {
             self.walls |= pos_mask;
+            self.zobrist ^= ZOBRIST_TABLE[pos].1[0];
         }
 
         if variant == Self::VARIANT_CAPSTONE {
@@ -280,6 +301,7 @@ impl Board {
             } else {
                 self.black_capstones -= 1;
             }
+            self.zobrist ^= ZOBRIST_TABLE[pos].1[1];
         } else {
             if self.current_player == Self::PLAYER_WHITE {
                 self.white_pieces -= 1;
@@ -305,6 +327,11 @@ impl Board {
         self.current_player = 1 - self.current_player;
         self.empty_positions += 1;
 
+        let mut effective_player = self.current_player;
+        if self.ply_index < 2 {
+            effective_player = 1 - effective_player;
+        }
+
         let not_pos_mask = !(1u64 << pos);
 
         self.owner &= not_pos_mask;
@@ -315,13 +342,19 @@ impl Board {
         self.stacks[pos] = 0;
         self.result = None;
 
+        self.zobrist ^= ZOBRIST_TABLE[pos].0[0][effective_player as usize];
+
         if variant == Self::VARIANT_CAPSTONE {
             if self.current_player == Self::PLAYER_WHITE {
                 self.white_capstones += 1;
             } else {
                 self.black_capstones += 1;
             }
+            self.zobrist ^= ZOBRIST_TABLE[pos].1[1];
         } else {
+            if variant == Self::VARIANT_WALL {
+                self.zobrist ^= ZOBRIST_TABLE[pos].1[0];
+            }
             if self.current_player == Self::PLAYER_WHITE {
                 self.white_pieces += 1;
             } else {
@@ -339,7 +372,8 @@ impl Board {
         self.stack_heights[pos] = new_height;
 
         let take_mask = (1 << take) - 1;
-        let mut took_pattern = self.stacks[pos] >> new_height;
+        let old_pattern = self.stacks[pos];
+        let mut took_pattern = old_pattern >> new_height;
         self.stacks[pos] &= !(take_mask << new_height);
 
         let is_wall = (self.walls & pos_mask) != 0;
@@ -350,11 +384,22 @@ impl Board {
             self.owner &= not_pos_mask;
             self.empty_positions += 1;
         } else {
-            if self.controlling_player(pos) == Self::PLAYER_WHITE {
+            let is_new_owner_white = old_pattern & (1 << (new_height - 1)) == 0;
+            if is_new_owner_white {
                 self.owner &= not_pos_mask;
             } else {
                 self.owner |= pos_mask;
             }
+        }
+
+        for i in 0..take {
+            let owner = if took_pattern & (1 << i) == 0 {
+                Board::PLAYER_WHITE
+            } else {
+                Board::PLAYER_BLACK
+            };
+            let zobrist_height = new_height + i;
+            self.zobrist ^= ZOBRIST_TABLE[pos].0[zobrist_height as usize][owner as usize];
         }
 
         let mut cur_pos = pos;
@@ -384,24 +429,40 @@ impl Board {
                 self.empty_positions -= 1;
                 self.occupied |= cur_pos_mask;
             }
-            if self.controlling_player(cur_pos) == Self::PLAYER_WHITE {
+            let is_new_owner_white = this_pattern & (1 << (spread - 1)) == 0;
+            if is_new_owner_white {
                 self.owner &= !cur_pos_mask;
             } else {
                 self.owner |= cur_pos_mask;
+            }
+
+            for j in 0..spread {
+                let owner = if this_pattern & (1 << j) == 0 {
+                    Board::PLAYER_WHITE
+                } else {
+                    Board::PLAYER_BLACK
+                };
+                let zobrist_height = prev_height + j;
+                self.zobrist ^= ZOBRIST_TABLE[cur_pos].0[zobrist_height as usize][owner as usize];
             }
         }
 
         let smash = (self.walls & cur_pos_mask) != 0;
         if smash {
             self.walls &= !cur_pos_mask;
+            self.zobrist ^= ZOBRIST_TABLE[cur_pos].1[0];
         }
 
         if is_wall {
             self.walls &= not_pos_mask;
             self.walls |= cur_pos_mask;
+            self.zobrist ^= ZOBRIST_TABLE[pos].1[0];
+            self.zobrist ^= ZOBRIST_TABLE[cur_pos].1[0];
         } else if is_capstone {
             self.capstones &= not_pos_mask;
             self.capstones |= cur_pos_mask;
+            self.zobrist ^= ZOBRIST_TABLE[pos].1[1];
+            self.zobrist ^= ZOBRIST_TABLE[cur_pos].1[1];
         }
 
         let moving_player = self.current_player;
@@ -484,6 +545,16 @@ impl Board {
 
             took_pattern |= this_pattern << spread_sum;
             spread_sum += spread;
+
+            for j in 0..spread {
+                let owner = if this_pattern & (1 << j) == 0 {
+                    Board::PLAYER_WHITE
+                } else {
+                    Board::PLAYER_BLACK
+                };
+                let zobrist_height = new_height + j;
+                self.zobrist ^= ZOBRIST_TABLE[cur_pos].0[zobrist_height as usize][owner as usize];
+            }
         }
 
         let is_wall = (self.walls & cur_pos_mask) != 0;
@@ -492,13 +563,18 @@ impl Board {
         if is_wall {
             self.walls &= !cur_pos_mask;
             self.walls |= pos_mask;
+            self.zobrist ^= ZOBRIST_TABLE[pos].1[0];
+            self.zobrist ^= ZOBRIST_TABLE[cur_pos].1[0];
         } else if is_capstone {
             self.capstones &= !cur_pos_mask;
             self.capstones |= pos_mask;
+            self.zobrist ^= ZOBRIST_TABLE[pos].1[1];
+            self.zobrist ^= ZOBRIST_TABLE[cur_pos].1[1];
         }
 
         if smash {
             self.walls |= cur_pos_mask;
+            self.zobrist ^= ZOBRIST_TABLE[cur_pos].1[0];
         }
 
         let prev_height = self.stack_heights[pos];
@@ -509,6 +585,16 @@ impl Board {
         self.stack_heights[pos] += spread_sum;
         self.stacks[pos] |= took_pattern << prev_height;
 
+        for i in 0..spread_sum {
+            let owner = if took_pattern & (1 << i) == 0 {
+                Board::PLAYER_WHITE
+            } else {
+                Board::PLAYER_BLACK
+            };
+            let zobrist_height = prev_height + i;
+            self.zobrist ^= ZOBRIST_TABLE[pos].0[zobrist_height as usize][owner as usize];
+        }
+
         if self.controlling_player(pos) == Self::PLAYER_WHITE {
             self.owner &= !pos_mask;
         } else {
@@ -516,7 +602,33 @@ impl Board {
         }
     }
 
-    pub fn try_from_pos_str(position: &str) -> Option<Self> {
+    pub fn recompute_zobrist(&mut self) {
+        let mut hash = 0;
+        for pos in 0..(self.size * self.size) {
+            let pos_mask = 1u64 << pos;
+            if self.occupied & pos_mask == 0 {
+                continue;
+            }
+            let height = self.stack_heights[pos] as usize;
+            let pattern = self.stacks[pos];
+            for i in 0..height {
+                let player = if pattern & (1 << i) == 0 {
+                    Board::PLAYER_WHITE
+                } else {
+                    Board::PLAYER_BLACK
+                };
+                hash ^= ZOBRIST_TABLE[pos].0[i][player as usize];
+            }
+            if self.walls & pos_mask != 0 {
+                hash ^= ZOBRIST_TABLE[pos].1[0];
+            } else if self.capstones & pos_mask != 0 {
+                hash ^= ZOBRIST_TABLE[pos].1[1];
+            }
+        }
+        self.zobrist = hash;
+    }
+
+    pub fn try_from_pos_str(position: &str, settings: Settings) -> Option<Self> {
         let mut occupied = 0;
         let mut walls = 0;
         let mut capstones = 0;
@@ -650,7 +762,7 @@ impl Board {
         let mut board = Self {
             size,
             result: None,
-            double_komi: 4,
+            double_komi: settings.double_komi,
 
             ply_index,
             current_player,
@@ -667,7 +779,11 @@ impl Board {
             owner,
             stack_heights,
             stacks,
+
+            zobrist: 0,
         };
+        board.recompute_zobrist();
+
         board.check_flat_win();
         for pos in 0..(size * size) {
             if board.stack_heights[pos] > 0 {
@@ -742,13 +858,13 @@ mod tests {
 
     #[test]
     fn test_empty() {
-        let board = Board::empty(5);
+        let board = Board::empty(5, Settings::new(4));
         assert_eq!(board.size, 5);
     }
 
     #[test]
     fn test_place() {
-        let mut board = Board::try_from_pos_str("x5/x5/x5/x5/x5 1 25").unwrap();
+        let mut board = Board::try_from_pos_str("x5/x5/x5/x5/x5 1 25", Settings::new(4)).unwrap();
         board.place(0, 0);
         board.place(1, 0);
         board.place(2, 1);
@@ -777,7 +893,7 @@ mod tests {
 
     #[test]
     fn test_unplace() {
-        let mut board = Board::empty(5);
+        let mut board = Board::empty(5, Settings::new(4));
         board.place(0, 0);
         board.place(1, 0);
         board.place(2, 1);
@@ -790,12 +906,12 @@ mod tests {
         board.unplace(2, 1);
         board.unplace(1, 0);
         board.unplace(0, 0);
-        assert_eq!(board, Board::empty(5));
+        assert_eq!(board, Board::empty(5, Settings::new(4)));
     }
 
     #[test]
     fn test_spread() {
-        let mut board = Board::try_from_pos_str("x3/x3/x3 1 25").unwrap();
+        let mut board = Board::try_from_pos_str("x3/x3/x3 1 25", Settings::new(4)).unwrap();
         board.place(0, 0);
         board.place(1, 0);
 
@@ -814,7 +930,8 @@ mod tests {
 
     #[test]
     fn test_unspread() {
-        let mut board = Board::try_from_pos_str("1,2,2C,x2/x2,2S,x2/x5/x5/x5 2 3").unwrap();
+        let mut board =
+            Board::try_from_pos_str("1,2,2C,x2/x2,2S,x2/x5/x5/x5 2 3", Settings::new(4)).unwrap();
         let clone = board.clone();
 
         board.spread(0, Board::DIR_RIGHT, 1, 0x1);
@@ -826,7 +943,7 @@ mod tests {
         assert_eq!(board.to_pos_str(), "x5/x,2,22C,x2/x,1,x3/x5/x5 1 5");
         assert_eq!(
             board,
-            Board::try_from_pos_str("x5/x,2,22C,x2/x,1,x3/x5/x5 1 5").unwrap()
+            Board::try_from_pos_str("x5/x,2,22C,x2/x,1,x3/x5/x5 1 5", Settings::new(4)).unwrap()
         );
 
         board.unspread(2, 2, 0x1, true);
@@ -837,10 +954,10 @@ mod tests {
 
     #[test]
     fn test_from_pos_str() {
-        let board = Board::try_from_pos_str("x3/x3/x3 1 1");
-        assert_eq!(board, Some(Board::empty(3)));
+        let board = Board::try_from_pos_str("x3/x3/x3 1 1", Settings::new(4));
+        assert_eq!(board, Some(Board::empty(3, Settings::new(4))));
 
-        let board = Board::try_from_pos_str("x,1121S,1/x2,11S/x3 2 3");
+        let board = Board::try_from_pos_str("x,1121S,1/x2,11S/x3 2 3", Settings::new(4));
         assert_eq!(
             board,
             Some(Board {
@@ -859,11 +976,13 @@ mod tests {
                 capstones: 0b000000000,
                 owner: 0,
                 stack_heights: vec![0, 4, 1, 0, 0, 2, 0, 0, 0],
-                stacks: vec![0, 0b0100, 0, 0, 0, 0, 0, 0, 0]
+                stacks: vec![0, 0b0100, 0, 0, 0, 0, 0, 0, 0],
+                zobrist: board.as_ref().unwrap().zobrist,
             })
         );
 
-        let board = Board::try_from_pos_str("x3,1121C,22C/x4,11S/x5/x5/x5 2 3").unwrap();
+        let board =
+            Board::try_from_pos_str("x3,1121C,22C/x4,11S/x5/x5/x5 2 3", Settings::new(4)).unwrap();
         assert_eq!(board.white_pieces, 21 - 4);
         assert_eq!(board.white_capstones, 1 - 1);
         assert_eq!(board.black_pieces, 21 - 2);
@@ -879,51 +998,62 @@ mod tests {
             "x3,222S,1C/x4,21S/x5/x5/x5 2 3",
         ];
         for &case in &cases {
-            let board = Board::try_from_pos_str(case).unwrap();
+            let board = Board::try_from_pos_str(case, Settings::new(4)).unwrap();
             assert_eq!(board.to_pos_str(), case);
         }
     }
 
     #[test]
     fn test_invalid_from_pos_str() {
-        assert!(Board::try_from_pos_str("x2,,x/x3/x3 1 1").is_none());
-        assert!(Board::try_from_pos_str("x3/x3/x3 1").is_none());
-        assert!(Board::try_from_pos_str("x3/x3/x3 1 1 1").is_none());
-        assert!(Board::try_from_pos_str("x3/x3/x4 1 1").is_none());
-        assert!(Board::try_from_pos_str("x,1121C,1/x2,11S/x3/x2 2 3").is_none());
-        assert!(Board::try_from_pos_str("x,C,1/x3/x3 2 3").is_none());
-        assert!(Board::try_from_pos_str("x,2,1,1/x3/x3 2 3").is_none());
+        assert!(Board::try_from_pos_str("x2,,x/x3/x3 1 1", Settings::new(4)).is_none());
+        assert!(Board::try_from_pos_str("x3/x3/x3 1", Settings::new(4)).is_none());
+        assert!(Board::try_from_pos_str("x3/x3/x3 1 1 1", Settings::new(4)).is_none());
+        assert!(Board::try_from_pos_str("x3/x3/x4 1 1", Settings::new(4)).is_none());
+        assert!(Board::try_from_pos_str("x,1121C,1/x2,11S/x3/x2 2 3", Settings::new(4)).is_none());
+        assert!(Board::try_from_pos_str("x,C,1/x3/x3 2 3", Settings::new(4)).is_none());
+        assert!(Board::try_from_pos_str("x,2,1,1/x3/x3 2 3", Settings::new(4)).is_none());
 
-        assert!(Board::try_from_pos_str("x3,2C,1S/x4,21C/x5/x5/x5 2 3").is_some());
-        assert!(Board::try_from_pos_str("x3,2C,1C/x4,21C/x5/x5/x5 2 3").is_none());
+        assert!(
+            Board::try_from_pos_str("x3,2C,1S/x4,21C/x5/x5/x5 2 3", Settings::new(4)).is_some()
+        );
+        assert!(
+            Board::try_from_pos_str("x3,2C,1C/x4,21C/x5/x5/x5 2 3", Settings::new(4)).is_none()
+        );
 
-        assert!(Board::try_from_pos_str("x3,222S,1C/x4,21S/x5/x5/x5 2 3").is_some());
-        assert!(Board::try_from_pos_str("x3,222S,1C/x4,21C/x5/x5/x5 2 3").is_none());
+        assert!(
+            Board::try_from_pos_str("x3,222S,1C/x4,21S/x5/x5/x5 2 3", Settings::new(4)).is_some()
+        );
+        assert!(
+            Board::try_from_pos_str("x3,222S,1C/x4,21C/x5/x5/x5 2 3", Settings::new(4)).is_none()
+        );
     }
 
     #[test]
     fn test_road_win() {
-        let mut board = Board::try_from_pos_str("1,1,x/x3/x3 1 10").unwrap();
+        let mut board = Board::try_from_pos_str("1,1,x/x3/x3 1 10", Settings::new(4)).unwrap();
         assert_eq!(board.result, None);
         board.place(2, Board::VARIANT_FLAT);
         assert_eq!(board.result, Some(Board::PLAYER_WHITE));
 
-        let mut board = Board::try_from_pos_str("1,1,x/x3/x3 1 10").unwrap();
+        let mut board = Board::try_from_pos_str("1,1,x/x3/x3 1 10", Settings::new(4)).unwrap();
         assert_eq!(board.result, None);
         board.place(2, Board::VARIANT_WALL);
         assert_eq!(board.result, None);
 
-        let mut board = Board::try_from_pos_str("x,1,x/1,221,x/x,2121S,x 1 10").unwrap();
+        let mut board =
+            Board::try_from_pos_str("x,1,x/1,221,x/x,2121S,x 1 10", Settings::new(4)).unwrap();
         assert_eq!(board.result, None);
         board.place(2, Board::VARIANT_FLAT);
         assert_eq!(board.result, Some(Board::PLAYER_WHITE));
 
-        let mut board = Board::try_from_pos_str("1,1,x/2,2,x/x2,121 1 10").unwrap();
+        let mut board =
+            Board::try_from_pos_str("1,1,x/2,2,x/x2,121 1 10", Settings::new(4)).unwrap();
         assert_eq!(board.result, None);
         board.spread(8, Board::DIR_UP, 3, 0x12);
         assert_eq!(board.result, Some(Board::PLAYER_WHITE));
 
-        let mut board = Board::try_from_pos_str("1,1S,x/2,2,x/x2,121 1 10").unwrap();
+        let mut board =
+            Board::try_from_pos_str("1,1S,x/2,2,x/x2,121 1 10", Settings::new(4)).unwrap();
         assert_eq!(board.result, None);
         board.spread(8, Board::DIR_UP, 3, 0x12);
         assert_eq!(board.result, Some(Board::PLAYER_BLACK));
@@ -931,22 +1061,38 @@ mod tests {
 
     #[test]
     fn test_flat_win() {
-        let mut board = Board::try_from_pos_str("2,1,x/1,2,1/2,1,2 1 10").unwrap();
+        let mut board =
+            Board::try_from_pos_str("2,1,x/1,2,1/2,1,2 1 10", Settings::new(0)).unwrap();
         assert_eq!(board.result, None);
         board.place(2, Board::VARIANT_FLAT);
         assert_eq!(board.result, Some(Board::PLAYER_WHITE));
 
-        let mut board = Board::try_from_pos_str("2,1,x/1,2,1/2,1,2 2 10").unwrap();
-        assert_eq!(board.result, None);
-        board.place(2, Board::VARIANT_FLAT);
-        assert_eq!(board.result, Some(Board::PLAYER_BLACK));
-
-        let mut board = Board::try_from_pos_str("2S,1,x/1,2,1/2,1,2 2 10").unwrap();
+        let mut board =
+            Board::try_from_pos_str("2,1,x/1,2,1/2,1,2 1 10", Settings::new(2)).unwrap();
         assert_eq!(board.result, None);
         board.place(2, Board::VARIANT_FLAT);
         assert_eq!(board.result, Some(2));
 
-        let mut board = Board::try_from_pos_str("2S,1,x/1S,2S,1/2S,1,2 2 10").unwrap();
+        let mut board =
+            Board::try_from_pos_str("2,1,x/1,2,1/2,1,2 1 10", Settings::new(4)).unwrap();
+        assert_eq!(board.result, None);
+        board.place(2, Board::VARIANT_FLAT);
+        assert_eq!(board.result, Some(Board::PLAYER_BLACK));
+
+        let mut board =
+            Board::try_from_pos_str("2,1,x/1,2,1/2,1,2 2 10", Settings::new(0)).unwrap();
+        assert_eq!(board.result, None);
+        board.place(2, Board::VARIANT_FLAT);
+        assert_eq!(board.result, Some(Board::PLAYER_BLACK));
+
+        let mut board =
+            Board::try_from_pos_str("2S,1,x/1,2,1/2,1,2 2 10", Settings::new(0)).unwrap();
+        assert_eq!(board.result, None);
+        board.place(2, Board::VARIANT_FLAT);
+        assert_eq!(board.result, Some(2));
+
+        let mut board =
+            Board::try_from_pos_str("2S,1,x/1S,2S,1/2S,1,2 2 10", Settings::new(0)).unwrap();
         assert_eq!(board.result, None);
         board.place(2, Board::VARIANT_FLAT);
         assert_eq!(board.result, Some(Board::PLAYER_WHITE));

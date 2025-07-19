@@ -13,6 +13,9 @@ web-sys = { version = "*", features = ["console"] }
 serde = { version = "*", features = ["derive"], optional = true }
 serde_json = { version = "*", optional = true }
 
+[build-dependencies]
+rand = { version = "*" }
+
 [lib]
 crate-type = ["cdylib", "rlib"]
 
