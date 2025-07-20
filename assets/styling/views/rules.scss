@@ -1,0 +1,51 @@
+@import "../settings/colors";
+@import "../settings/defaults";
+
+#rules-view {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: start;
+    justify-content: start;
+    padding: 10px;
+
+    h1 {
+        width: 100%;
+        text-align: center;
+        margin-top: 1rem;
+        margin-bottom: 0.5rem;
+    }
+
+    h2 {
+        width: 100%;
+        text-align: center;
+        margin-top: 1rem;
+        margin-bottom: 0.5rem;
+    }
+
+    h3 {
+        width: 100%;
+        text-align: left;
+        margin-top: 1rem;
+        margin-bottom: 0.5rem;
+    }
+}
+
+#rules-view table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1rem;
+    outline: 1px solid $clr-surface-light;
+
+    th,
+    td {
+        padding: 8px;
+        text-align: center;
+        border: 1px solid $clr-surface;
+    }
+
+    th {
+        background-color: $clr-surface;
+    }
+}

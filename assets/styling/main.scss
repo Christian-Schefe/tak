@@ -6,10 +6,10 @@
 @use "board";
 @use "rooms";
 @use "views/more";
+@use "views/rules";
 
 @import "settings/colors";
 @import "settings/params";
-
 
 html {
   width: 100%;

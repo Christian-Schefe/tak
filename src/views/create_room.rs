@@ -1,36 +1,46 @@
 use crate::server::room::{create_room, CreateRoomResponse, RoomSettings};
 use crate::Route;
 use dioxus::prelude::*;
-use dioxus_free_icons::icons::fa_solid_icons::{FaBolt, FaChessBoard, FaClock, FaPlusMinus};
+use dioxus_free_icons::icons::fa_solid_icons::{
+    FaBolt, FaChessBoard, FaClock, FaPalette, FaPlusMinus,
+};
 use dioxus_free_icons::Icon;
-use tak_core::{TakGameSettings, TakKomi, TakTimeMode};
+use tak_core::{TakGameSettings, TakKomi, TakPlayer, TakTimeMode};
 
-pub static LOCAL_SETTINGS: GlobalSignal<TakGameSettings> =
-    GlobalSignal::new(|| TakGameSettings::new(6, None, TakKomi::new(2, false), None));
+pub static LOCAL_SETTINGS: GlobalSignal<LocalSettings> = GlobalSignal::new(|| LocalSettings {
+    game_settings: TakGameSettings::new(6, None, TakKomi::new(2, false), None),
+    first_player_mode: None,
+});
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LocalSettings {
+    pub game_settings: TakGameSettings,
+    pub first_player_mode: Option<TakPlayer>,
+}
 
 #[component]
 pub fn CreateRoomOnline() -> Element {
     rsx! {
-        CreateRoomView { is_local: false }
+        CreateRoomView { is_local: None }
     }
 }
 
 #[component]
 pub fn CreateRoomLocal() -> Element {
     rsx! {
-        CreateRoomView { is_local: true }
+        CreateRoomView { is_local: Some(false) }
     }
 }
 
 #[component]
 pub fn CreateRoomComputer() -> Element {
     rsx! {
-        CreateRoomView { is_local: true }
+        CreateRoomView { is_local: Some(true) }
     }
 }
 
 #[component]
-pub fn CreateRoomView(is_local: bool) -> Element {
+pub fn CreateRoomView(is_local: Option<bool>) -> Element {
     let blitz_modes = vec![(3, 0), (3, 2), (5, 0)];
     let rapid_modes = vec![(10, 0), (15, 10), (30, 0)];
     let categories: Vec<(_, Element, _)> = vec![
@@ -42,20 +52,29 @@ pub fn CreateRoomView(is_local: bool) -> Element {
     let mut board_size = use_signal(|| 5);
     let mut time_mode = use_signal(|| (10, 0));
     let mut komi = use_signal(|| TakKomi::new(2, false));
+    let mut first_player_mode = use_signal(|| None);
 
     let on_click_create = move |_| {
         let time_mode = time_mode.read().clone();
         let time_mode = TakTimeMode::new(time_mode.0 * 60, time_mode.1);
         let board_size = *board_size.read();
         let komi = komi.read().clone();
+        let first_player_mode = first_player_mode.read().clone();
         let create_room_params = RoomSettings {
             game_settings: TakGameSettings::new(board_size, None, komi, Some(time_mode)),
-            first_player_mode: None,
+            first_player_mode,
         };
-        if is_local {
+        if let Some(is_computer) = is_local {
             let mut local_settings = LOCAL_SETTINGS.write();
-            *local_settings = create_room_params.game_settings;
-            nav.push(Route::PlayComputer {});
+            *local_settings = LocalSettings {
+                game_settings: create_room_params.game_settings,
+                first_player_mode,
+            };
+            if is_computer {
+                nav.push(Route::PlayComputer {});
+            } else {
+                nav.push(Route::PlayLocal {});
+            }
             return;
         }
         spawn(async move {
@@ -101,9 +120,9 @@ pub fn CreateRoomView(is_local: bool) -> Element {
                     "Board Size"
                 }
                 div { class: "category-container",
-                    for size in 3..=8 {
+                    for size in 4..=8 {
                         button {
-                            class: "board-size-button",
+                            class: "choice-button",
                             onclick: move |_| board_size.set(size),
                             class: if *board_size.read() == size { "current" } else { "" },
                             "{size}"
@@ -120,7 +139,7 @@ pub fn CreateRoomView(is_local: bool) -> Element {
                     div { class: "category-container",
                         for mode in category.2 {
                             button {
-                                class: "time-mode-button",
+                                class: "choice-button",
                                 onclick: move |_| time_mode.set(mode),
                                 class: if *time_mode.read() == mode { "current" } else { "" },
                                 if mode.1 == 0 {
@@ -153,6 +172,38 @@ pub fn CreateRoomView(is_local: bool) -> Element {
                         },
                     }
                     p { class: "komi-value", "{formatted_komi}" }
+                }
+            }
+            div { id: "color-chooser",
+                div { class: "category-header",
+                    Icon { icon: FaPalette }
+                    "Color"
+                }
+                div { class: "category-container",
+                    button {
+                        class: "choice-button",
+                        class: if first_player_mode.read().is_none() { "current" } else { "" },
+                        onclick: move |_| {
+                            first_player_mode.set(None);
+                        },
+                        "Random"
+                    }
+                    button {
+                        class: "choice-button",
+                        class: if *first_player_mode.read() == Some(TakPlayer::White) { "current" } else { "" },
+                        onclick: move |_| {
+                            first_player_mode.set(Some(TakPlayer::White));
+                        },
+                        "White"
+                    }
+                    button {
+                        class: "choice-button",
+                        class: if *first_player_mode.read() == Some(TakPlayer::Black) { "current" } else { "" },
+                        onclick: move |_| {
+                            first_player_mode.set(Some(TakPlayer::Black));
+                        },
+                        "Black"
+                    }
                 }
             }
             button {

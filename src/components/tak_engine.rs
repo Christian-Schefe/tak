@@ -17,12 +17,23 @@ pub fn TakEngine() -> Element {
             let mut bridge =
                 TakumiWorker::spawner().spawn("/webworker/takumi_worker/takumi_worker.js");
             while let Some((tps, size)) = rx.next().await {
+                let (time_remaining, increment) = state
+                    .with_game(|game| {
+                        let game = game.game();
+                        (
+                            game.get_time_remaining(game.current_player, false)
+                                .unwrap_or(1_000_000),
+                            game.clock.as_ref().map_or(0, |m| m.increment_millis),
+                        )
+                    })
+                    .expect("Game should exist to get current player");
                 bridge
                     .send(TakumiWorkerInput::new(
                         tps,
-                        8,
+                        12,
                         takumi::Settings::new(4),
-                        5000,
+                        time_remaining,
+                        increment,
                     ))
                     .await
                     .unwrap();

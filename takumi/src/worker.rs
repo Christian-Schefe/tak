@@ -1,7 +1,7 @@
 use futures::{SinkExt, StreamExt};
 use gloo_worker::reactor::{reactor, ReactorScope};
 
-use crate::{iterative_deepening, Action, Board, Settings};
+use crate::{determine_time_to_use, iterative_deepening, Action, Board, Settings};
 
 #[macro_export]
 macro_rules! console_log {
@@ -14,18 +14,26 @@ macro_rules! console_log {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TakumiWorkerInput {
     position: String,
-    depth: usize,
+    max_depth: usize,
     settings: Settings,
-    max_duration: u64,
+    time_remaining: u64,
+    increment: u64,
 }
 
 impl TakumiWorkerInput {
-    pub fn new(position: String, depth: usize, settings: Settings, max_duration: u64) -> Self {
+    pub fn new(
+        position: String,
+        max_depth: usize,
+        settings: Settings,
+        time_remaining: u64,
+        increment: u64,
+    ) -> Self {
         Self {
             position,
-            depth,
+            max_depth,
             settings,
-            max_duration,
+            time_remaining,
+            increment,
         }
     }
 }
@@ -36,8 +44,12 @@ pub async fn TakumiWorker(mut scope: ReactorScope<TakumiWorkerInput, Action>) {
     while let Some(input) = scope.next().await {
         let mut board = Board::try_from_pos_str(&input.position, input.settings)
             .expect("Failed to create board from TPS");
+
+        let time_to_use = determine_time_to_use(&board, input.time_remaining, input.increment);
+        console_log!("Determined time to use: {} ms", time_to_use);
         let (score, reached_depth, action) =
-            iterative_deepening(&mut board, input.depth, input.max_duration);
+            iterative_deepening(&mut board, input.max_depth, time_to_use);
+
         console_log!(
             "Best move calculated: {:?} with score {} at depth {}",
             action,

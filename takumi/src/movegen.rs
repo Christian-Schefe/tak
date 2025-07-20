@@ -123,11 +123,19 @@ const SPREAD_PARTITIONS_8: [u64; 128] = [
     0x1111211, 0x1112111, 0x1121111, 0x1211111, 0x2111111, 0x11111111,
 ];
 
-pub fn gen_place_moves(game: &Board) -> Vec<(usize, usize)> {
-    let mut moves = Vec::new();
+pub fn gen_moves(game: &Board) -> Vec<Action> {
+    let mut flat_place_moves = Vec::new();
+    let mut wall_place_moves = Vec::new();
+    let mut capstone_place_moves = Vec::new();
+    let mut isolated_place_moves = Vec::new();
+
+    let mut flat_capture_moves = Vec::new();
+    let mut wall_capture_moves = Vec::new();
+    let mut capstone_capture_moves = Vec::new();
+    let mut no_capture_spread_moves = Vec::new();
 
     if game.result.is_some() {
-        return moves;
+        return Vec::new();
     }
 
     for pos in 0..(game.size * game.size) {
@@ -143,111 +151,135 @@ pub fn gen_place_moves(game: &Board) -> Vec<(usize, usize)> {
             } else {
                 game.black_capstones > 0
             };
+            let mut has_neighbor = false;
+            for dir in 0..4 {
+                if let Some(neighbor_pos) = game.offset_by_dir(pos, dir) {
+                    let neighbor_mask = 1u64 << neighbor_pos;
+                    if game.occupied & neighbor_mask != 0 {
+                        has_neighbor = true;
+                        break;
+                    }
+                }
+            }
             if has_stone {
-                moves.push((pos, Board::VARIANT_FLAT));
-                if game.ply_index >= 2 {
-                    moves.push((pos, Board::VARIANT_WALL));
+                if has_neighbor {
+                    flat_place_moves.push(Action::Place(pos, Board::VARIANT_FLAT));
+                } else {
+                    isolated_place_moves.push(Action::Place(pos, Board::VARIANT_FLAT));
+                };
+            }
+            if has_stone && game.ply_index >= 2 {
+                if has_neighbor {
+                    wall_place_moves.push(Action::Place(pos, Board::VARIANT_WALL));
+                } else {
+                    isolated_place_moves.push(Action::Place(pos, Board::VARIANT_WALL));
                 }
             }
             if has_capstone && game.ply_index >= 2 {
-                moves.push((pos, Board::VARIANT_CAPSTONE));
+                if has_neighbor {
+                    capstone_place_moves.push(Action::Place(pos, Board::VARIANT_CAPSTONE));
+                } else {
+                    isolated_place_moves.push(Action::Place(pos, Board::VARIANT_CAPSTONE));
+                }
             }
         }
     }
 
-    moves
-}
+    if game.ply_index >= 2 {
+        for pos in 0..(game.size * game.size) {
+            let pos_mask = 1u64 << pos;
+            if game.occupied & pos_mask != 0
+                && (game.owner & pos_mask == 0) == (game.current_player == Board::PLAYER_WHITE)
+            {
+                let max_take = (game.size as u64).min(game.stack_heights[pos]);
+                let is_wall = game.walls & pos_mask != 0;
+                let is_capstone = game.capstones & pos_mask != 0;
 
-pub fn get_spread_moves(game: &Board) -> Vec<(usize, usize, u64, u64)> {
-    let mut moves = Vec::new();
-
-    if game.result.is_some() || game.ply_index < 2 {
-        return moves;
-    }
-
-    for pos in 0..(game.size * game.size) {
-        let pos_mask = 1u64 << pos;
-        if game.occupied & pos_mask != 0
-            && (game.owner & pos_mask == 0) == (game.current_player == Board::PLAYER_WHITE)
-        {
-            let max_take = (game.size as u64).min(game.stack_heights[pos]);
-            for dir in 0..4 {
-                let max_len = match dir {
-                    Board::DIR_RIGHT => game.size - (pos % game.size) - 1,
-                    Board::DIR_LEFT => pos % game.size,
-                    Board::DIR_DOWN => game.size - (pos / game.size) - 1,
-                    Board::DIR_UP => pos / game.size,
-                    _ => unreachable!(),
-                };
-                if max_len == 0 {
-                    continue;
-                }
-                for take in 1..=max_take {
-                    let spread_partitions = match take {
-                        1 => SPREAD_PARTITIONS_1.as_slice(),
-                        2 => SPREAD_PARTITIONS_2.as_slice(),
-                        3 => SPREAD_PARTITIONS_3.as_slice(),
-                        4 => SPREAD_PARTITIONS_4.as_slice(),
-                        5 => SPREAD_PARTITIONS_5.as_slice(),
-                        6 => SPREAD_PARTITIONS_6.as_slice(),
-                        7 => SPREAD_PARTITIONS_7.as_slice(),
-                        8 => SPREAD_PARTITIONS_8.as_slice(),
-                        _ => panic!("Unsupported board size: {}", take),
+                for dir in 0..4 {
+                    let max_len = match dir {
+                        Board::DIR_RIGHT => game.size - (pos % game.size) - 1,
+                        Board::DIR_LEFT => pos % game.size,
+                        Board::DIR_DOWN => game.size - (pos / game.size) - 1,
+                        Board::DIR_UP => pos / game.size,
+                        _ => unreachable!(),
                     };
+                    if max_len == 0 {
+                        continue;
+                    }
+                    let mut is_capture = false;
+                    for take in 1..=max_take {
+                        let spread_partitions = match take {
+                            1 => SPREAD_PARTITIONS_1.as_slice(),
+                            2 => SPREAD_PARTITIONS_2.as_slice(),
+                            3 => SPREAD_PARTITIONS_3.as_slice(),
+                            4 => SPREAD_PARTITIONS_4.as_slice(),
+                            5 => SPREAD_PARTITIONS_5.as_slice(),
+                            6 => SPREAD_PARTITIONS_6.as_slice(),
+                            7 => SPREAD_PARTITIONS_7.as_slice(),
+                            8 => SPREAD_PARTITIONS_8.as_slice(),
+                            _ => panic!("Unsupported board size: {}", take),
+                        };
 
-                    let mut cur_pos = pos;
-                    let mut cur_len = 0;
+                        let mut cur_pos = pos;
+                        let mut cur_len = 0;
 
-                    for partition in spread_partitions {
-                        let len = (partition.ilog2() / 4) + 1;
-                        if len as usize > max_len {
-                            break;
-                        }
-                        if cur_len < len {
-                            cur_len = len;
-                            match dir {
-                                Board::DIR_RIGHT => cur_pos += 1,
-                                Board::DIR_LEFT => cur_pos -= 1,
-                                Board::DIR_DOWN => cur_pos += game.size,
-                                Board::DIR_UP => cur_pos -= game.size,
-                                _ => {}
-                            }
-                        }
-                        let cur_pos_mask = 1u64 << cur_pos;
-                        if game.occupied & cur_pos_mask != 0 {
-                            if game.capstones & cur_pos_mask != 0 {
+                        for &partition in spread_partitions {
+                            let len = (partition.ilog2() / 4) + 1;
+                            if len as usize > max_len {
                                 break;
                             }
-                            if game.walls & cur_pos_mask != 0 {
-                                if game.capstones & pos_mask == 0
-                                    || partition >> ((len - 1) * 4) & 0xF != 1
-                                {
-                                    break;
+                            if cur_len < len {
+                                cur_len = len;
+                                match dir {
+                                    Board::DIR_RIGHT => cur_pos += 1,
+                                    Board::DIR_LEFT => cur_pos -= 1,
+                                    Board::DIR_DOWN => cur_pos += game.size,
+                                    Board::DIR_UP => cur_pos -= game.size,
+                                    _ => {}
                                 }
                             }
+                            let cur_pos_mask = 1u64 << cur_pos;
+                            if game.occupied & cur_pos_mask != 0 {
+                                if game.capstones & cur_pos_mask != 0 {
+                                    break;
+                                }
+                                if game.walls & cur_pos_mask != 0 {
+                                    if game.capstones & pos_mask == 0
+                                        || partition >> ((len - 1) * 4) & 0xF != 1
+                                    {
+                                        break;
+                                    }
+                                }
+                                is_capture = true;
+                            }
+                            let action = Action::Spread(pos, dir, take, partition);
+                            if is_capture {
+                                if is_wall {
+                                    wall_capture_moves.push(action);
+                                } else if is_capstone {
+                                    capstone_capture_moves.push(action);
+                                } else {
+                                    flat_capture_moves.push(action);
+                                }
+                            } else {
+                                no_capture_spread_moves.push(action);
+                            }
                         }
-                        moves.push((pos, dir, take, *partition));
                     }
                 }
             }
         }
     }
-
-    moves
-}
-
-pub fn gen_moves(game: &Board) -> Vec<Action> {
-    let mut moves = Vec::new();
-
-    for (pos, variant) in gen_place_moves(game) {
-        moves.push(Action::Place(pos, variant));
-    }
-
-    for (pos, dir, take, partition) in get_spread_moves(game) {
-        moves.push(Action::Spread(pos, dir, take, partition));
-    }
-
-    moves
+    flat_place_moves
+        .into_iter()
+        .chain(capstone_place_moves)
+        .chain(wall_place_moves)
+        .chain(capstone_capture_moves)
+        .chain(wall_capture_moves)
+        .chain(flat_capture_moves)
+        .chain(isolated_place_moves)
+        .chain(no_capture_spread_moves)
+        .collect::<Vec<_>>()
 }
 
 pub fn perft_safe(game: &mut Board, depth: usize) -> usize {
@@ -255,24 +287,14 @@ pub fn perft_safe(game: &mut Board, depth: usize) -> usize {
         return 1;
     }
 
-    let place_moves = gen_place_moves(game);
-    let spread_moves = get_spread_moves(game);
-
+    let moves = gen_moves(game);
     let mut count = 0;
 
-    for (pos, variant) in place_moves {
+    for action in moves {
         let mut clone = game.clone();
-        clone.place(pos, variant);
+        let smashed = clone.make(&action);
         count += perft(&mut clone, depth - 1);
-        clone.unplace(pos, variant);
-        assert_eq!(game, &clone);
-    }
-
-    for (pos, dir, take, partition) in spread_moves {
-        let mut clone = game.clone();
-        let smashed = clone.spread(pos, dir, take, partition);
-        count += perft(&mut clone, depth - 1);
-        clone.unspread(pos, dir, partition, smashed);
+        clone.unmake(&action, smashed);
         assert_eq!(game, &clone);
     }
 
@@ -284,25 +306,18 @@ pub fn perft(game: &mut Board, depth: usize) -> usize {
         return 1;
     }
 
-    let place_moves = gen_place_moves(game);
-    let spread_moves = get_spread_moves(game);
+    let moves = gen_moves(game);
 
     if depth == 1 {
-        return place_moves.len() + spread_moves.len();
+        return moves.len();
     }
 
     let mut count = 0;
 
-    for (pos, variant) in place_moves {
-        game.place(pos, variant);
+    for action in moves {
+        let smashed = game.make(&action);
         count += perft(game, depth - 1);
-        game.unplace(pos, variant);
-    }
-
-    for (pos, dir, take, partition) in spread_moves {
-        let smashed = game.spread(pos, dir, take, partition);
-        count += perft(game, depth - 1);
-        game.unspread(pos, dir, partition, smashed);
+        game.unmake(&action, smashed);
     }
 
     count
@@ -323,10 +338,22 @@ mod tests {
     #[test]
     fn test_gen_place_moves_opening() {
         let mut game = Board::empty(3, Settings::new(4));
-        let moves = gen_place_moves(&game);
+        let moves = gen_moves(&game)
+            .into_iter()
+            .filter_map(|action| match action {
+                Action::Place(pos, variant) => Some((pos, variant)),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
         assert_eq!(moves.len(), 9);
         game.place(0, Board::VARIANT_FLAT);
-        let moves = gen_place_moves(&game);
+        let moves = gen_moves(&game)
+            .into_iter()
+            .filter_map(|action| match action {
+                Action::Place(pos, variant) => Some((pos, variant)),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
         assert_eq!(moves.len(), 8);
 
         for (pos, variant) in moves {
@@ -340,7 +367,13 @@ mod tests {
     #[test]
     fn test_gen_spread_moves() {
         let mut game = Board::try_from_pos_str("112,x2/x3/x3 2 10", Settings::new(4)).unwrap();
-        let moves = get_spread_moves(&game);
+        let moves = gen_moves(&game)
+            .into_iter()
+            .filter_map(|action| match action {
+                Action::Spread(pos, dir, take, partition) => Some((pos, dir, take, partition)),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
         assert_eq!(moves.len(), 12);
         for (pos, dir, take, partition) in moves {
             println!(
@@ -358,7 +391,13 @@ mod tests {
     fn test_gen_spread_moves_smash() {
         let mut game =
             Board::try_from_pos_str("112C,11S,x3/x5/1C,x4/x5/x5 2 10", Settings::new(4)).unwrap();
-        let moves = get_spread_moves(&game);
+        let moves = gen_moves(&game)
+            .into_iter()
+            .filter_map(|action| match action {
+                Action::Spread(pos, dir, take, partition) => Some((pos, dir, take, partition)),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
         assert_eq!(moves.len(), 4);
         for (pos, dir, take, partition) in moves {
             println!(
@@ -377,7 +416,13 @@ mod tests {
         let mut game =
             Board::try_from_pos_str("11222122C,x,11S,x2/x5/1C,x4/x5/x5 2 10", Settings::new(4))
                 .unwrap();
-        let moves = get_spread_moves(&game);
+        let moves = gen_moves(&game)
+            .into_iter()
+            .filter_map(|action| match action {
+                Action::Spread(pos, dir, take, partition) => Some((pos, dir, take, partition)),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
         assert_eq!(moves.len(), 14);
         for (pos, dir, take, partition) in moves {
             println!(

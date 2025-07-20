@@ -15,23 +15,38 @@ pub enum ClientGameMessage {
 
 #[component]
 pub fn PlayComputer() -> Element {
-    let mut player_info = HashMap::new();
-    player_info.insert(
-        TakPlayer::White,
-        PlayerInfo::new("You".to_string(), PlayerType::Local),
-    );
-    player_info.insert(
-        TakPlayer::Black,
-        PlayerInfo::new("Computer".to_string(), PlayerType::Computer),
-    );
+    let mut state = use_context_provider(|| {
+        let mut player_info = HashMap::new();
+        let mut player_order = vec![TakPlayer::White, TakPlayer::Black];
+        let should_swap = match LOCAL_SETTINGS.peek().first_player_mode {
+            Some(tak_player) => tak_player != player_order[0],
+            None => rand::random(),
+        };
+        dioxus::logger::tracing::info!(
+            "Should swap players: {}, settings: {:?}",
+            should_swap,
+            LOCAL_SETTINGS.peek()
+        );
+        if should_swap {
+            player_order.reverse();
+        }
+        player_info.insert(
+            player_order[0],
+            PlayerInfo::new("You".to_string(), PlayerType::Local),
+        );
+        player_info.insert(
+            player_order[1],
+            PlayerInfo::new("Computer".to_string(), PlayerType::Computer),
+        );
+        TakBoardState::new(player_info)
+    });
 
-    let mut state = use_context_provider(|| TakBoardState::new(player_info));
     let board_clone = state.clone();
 
     use_effect(move || {
         let settings = LOCAL_SETTINGS.peek().clone();
         state
-            .try_set_from_settings(settings)
+            .try_set_from_settings(settings.game_settings)
             .expect("Settings should be valid");
         state.has_started.set(true);
     });
@@ -46,7 +61,7 @@ pub fn PlayComputer() -> Element {
             if *show_board.read() {
                 TakBoard {}
                 TakWinModal { is_local: true }
-                TakEngine {  }
+                TakEngine {}
             }
         }
     }
@@ -54,23 +69,38 @@ pub fn PlayComputer() -> Element {
 
 #[component]
 pub fn PlayLocal() -> Element {
-    let mut player_info = HashMap::new();
-    player_info.insert(
-        TakPlayer::White,
-        PlayerInfo::new("Player 1".to_string(), PlayerType::Computer),
-    );
-    player_info.insert(
-        TakPlayer::Black,
-        PlayerInfo::new("Player 2".to_string(), PlayerType::Computer),
-    );
+    let mut state = use_context_provider(|| {
+        let mut player_info = HashMap::new();
+        let mut player_order = vec![TakPlayer::White, TakPlayer::Black];
+        let should_swap = match LOCAL_SETTINGS.peek().first_player_mode {
+            Some(tak_player) => tak_player != player_order[0],
+            None => rand::random(),
+        };
+        dioxus::logger::tracing::info!(
+            "Should swap players: {}, settings: {:?}",
+            should_swap,
+            LOCAL_SETTINGS.peek()
+        );
+        if should_swap {
+            player_order.reverse();
+        }
+        player_info.insert(
+            player_order[0],
+            PlayerInfo::new("Player 1".to_string(), PlayerType::Local),
+        );
+        player_info.insert(
+            player_order[1],
+            PlayerInfo::new("Player 2".to_string(), PlayerType::Local),
+        );
+        TakBoardState::new(player_info)
+    });
 
-    let mut state = use_context_provider(|| TakBoardState::new(player_info));
     let board_clone = state.clone();
 
     use_effect(move || {
         let settings = LOCAL_SETTINGS.peek().clone();
         state
-            .try_set_from_settings(settings)
+            .try_set_from_settings(settings.game_settings)
             .expect("Settings should be valid");
         state.has_started.set(true);
         state.trigger_change();
@@ -86,7 +116,7 @@ pub fn PlayLocal() -> Element {
             if *show_board.read() {
                 TakBoard {}
                 TakWinModal { is_local: true }
-                TakEngine {  }
+                TakEngine {}
             }
         }
     }

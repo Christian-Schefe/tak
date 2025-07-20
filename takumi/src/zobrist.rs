@@ -1,3 +1,5 @@
+use std::{cell::RefCell, sync::LazyLock};
+
 use crate::Action;
 
 /// [([[<player>]; <height>], [<variant excluding flat>]); <pos>]
@@ -19,6 +21,11 @@ pub struct TranspositionEntry {
     pub depth: usize,
     pub node_type: TranspositionNodeType,
     pub best_move: Option<Action>,
+}
+
+thread_local! {
+    pub static TRANSPOSITION_TABLE: LazyLock<RefCell<TranspositionTable>> =
+    LazyLock::new(|| RefCell::new(TranspositionTable::new(20)));
 }
 
 #[derive(Debug, Clone, PartialEq)]

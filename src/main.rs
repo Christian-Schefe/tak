@@ -2,7 +2,7 @@ use crate::views::Auth;
 use dioxus::prelude::*;
 use views::{
     CreateRoomComputer, CreateRoomLocal, CreateRoomOnline, Home, More, Navbar, PlayComputer,
-    PlayLocal, PlayOnline, Puzzles, Rooms,
+    PlayLocal, PlayOnline, Puzzles, Rooms, Rules,
 };
 
 mod components;
@@ -20,6 +20,8 @@ enum Route {
     Puzzles {},
     #[route("/more")]
     More {},
+    #[route("/more/rules")]
+    Rules {},
 
     #[route("/play/computer")]
     PlayComputer {},

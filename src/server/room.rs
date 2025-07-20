@@ -71,10 +71,7 @@ impl Room {
         self.rematch_agree.clear();
         let rev = match self.settings.first_player_mode {
             Some(first_player) => first_player != TakPlayer::ALL[0],
-            None => {
-                let mut rng = rand::thread_rng();
-                rng.gen_bool(0.5)
-            }
+            None => rand::random(),
         };
         let player_iter = if rev {
             TakPlayer::ALL.into_iter().rev().collect::<Vec<_>>()

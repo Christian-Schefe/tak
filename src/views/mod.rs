@@ -10,7 +10,7 @@ mod rooms;
 pub use auth::*;
 pub use create_room::*;
 pub use home::Home;
-pub use more::More;
+pub use more::*;
 pub use navbar::Navbar;
 pub use play::*;
 pub use puzzles::Puzzles;
