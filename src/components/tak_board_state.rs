@@ -31,12 +31,17 @@ pub enum PlayerType {
 #[derive(Clone, Debug, PartialEq)]
 pub struct PlayerInfo {
     pub name: String,
+    pub rating: Option<f64>,
     pub player_type: PlayerType,
 }
 
 impl PlayerInfo {
-    pub fn new(name: String, player_type: PlayerType) -> Self {
-        PlayerInfo { name, player_type }
+    pub fn new(name: String, player_type: PlayerType, rating: Option<f64>) -> Self {
+        PlayerInfo {
+            name,
+            player_type,
+            rating,
+        }
     }
 }
 
@@ -156,6 +161,7 @@ impl TakBoardState {
                             } else {
                                 PlayerType::Remote
                             },
+                            rating: Some(info.rating),
                         },
                     );
                 }

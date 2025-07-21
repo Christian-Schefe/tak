@@ -42,11 +42,15 @@ pub fn TakBoard() -> Element {
         let player_info = state_clone.player_info.read();
         let white_player_name = player_info
             .get(&TakPlayer::White)
-            .map_or("Waiting...".to_string(), |info| info.name.clone());
+            .map_or(("Waiting...".to_string(), None), |info| {
+                (info.name.clone(), info.rating.map(|x| x.round() as usize))
+            });
 
         let black_player_name = player_info
             .get(&TakPlayer::Black)
-            .map_or("Waiting...".to_string(), |info| info.name.clone());
+            .map_or(("Waiting...".to_string(), None), |info| {
+                (info.name.clone(), info.rating.map(|x| x.round() as usize))
+            });
 
         (white_player_name, black_player_name)
     });
@@ -64,12 +68,18 @@ pub fn TakBoard() -> Element {
                 p {
                     class: "tak-player-info left",
                     class: if player == TakPlayer::White { "current-player" } else { "" },
-                    "{player_names.read().0}"
+                    "{player_names.read().0.0}"
+                    if let Some(rating) = player_names.read().0.1 {
+                        span { " ({rating})" }
+                    }
                 }
                 p {
                     class: "tak-player-info right",
                     class: if player == TakPlayer::Black { "current-player" } else { "" },
-                    "{player_names.read().1}"
+                    "{player_names.read().1.0}"
+                    if let Some(rating) = player_names.read().1.1 {
+                        span { " ({rating})" }
+                    }
                 }
                 TakClock { player: TakPlayer::Black }
             }

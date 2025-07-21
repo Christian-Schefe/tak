@@ -142,7 +142,7 @@ pub struct Rooms {
     rooms: HashMap<RoomId, Arc<tokio::sync::Mutex<Room>>>,
     player_mapping: HashMap<PlayerId, RoomId>,
     pub player_sockets: Arc<PlayerSocketMap>,
-    username_cache: moka::future::Cache<PlayerId, String>,
+    player_data_cache: moka::future::Cache<PlayerId, (String, f64)>,
 }
 
 #[cfg(feature = "server")]
@@ -156,7 +156,7 @@ impl Rooms {
             rooms: HashMap::new(),
             player_mapping: HashMap::new(),
             player_sockets: Arc::new(dashmap::DashMap::new()),
-            username_cache: moka::future::Cache::builder()
+            player_data_cache: moka::future::Cache::builder()
                 .max_capacity(1000)
                 .time_to_live(Duration::from_secs(5 * 60))
                 .build(),
@@ -314,7 +314,7 @@ impl Rooms {
             || Vec::new(),
             |game| game.player_mapping.iter().collect::<Vec<_>>(),
         ) {
-            let Some(username) = self.get_user_username(id).await else {
+            let Some((username, rating)) = self.get_user_data(id).await else {
                 return Err(crate::server::auth::error::Error::InternalServerError(
                     "Failed to fetch user information".to_string(),
                 ))?;
@@ -324,6 +324,7 @@ impl Rooms {
                 PlayerInfo {
                     player_id: id.to_string(),
                     username,
+                    rating,
                     is_local: *id == *player_id,
                 },
             ));
@@ -331,21 +332,23 @@ impl Rooms {
         Ok(GetPlayersResponse::Success(player_info))
     }
 
-    async fn get_user_username(&self, player_id: &PlayerId) -> Option<String> {
-        let cached_username = self.username_cache.get(player_id).await;
-        if let Some(username) = cached_username {
-            return Some(username);
+    async fn get_user_data(&self, player_id: &PlayerId) -> Option<(String, f64)> {
+        let cached_data = self.player_data_cache.get(player_id).await;
+        if let Some(data) = cached_data {
+            return Some(data);
         }
-        let user: Option<crate::server::auth::User> =
-            crate::server::auth::handle_try_get_user(player_id)
-                .await
-                .ok()?;
-        if user.is_some() {
-            self.username_cache
-                .insert(player_id.clone(), user.as_ref().unwrap().username.clone())
-                .await;
-        }
-        user.map(|u| u.username)
+        let user: crate::server::auth::User = crate::server::auth::handle_try_get_user(player_id)
+            .await
+            .ok()??;
+        let player = crate::server::player::get_or_insert_player(player_id)
+            .await
+            .ok()?;
+
+        self.player_data_cache
+            .insert(player_id.clone(), (user.username.clone(), player.rating))
+            .await;
+
+        Some((user.username, player.rating))
     }
 
     async fn get_room_list(&self) -> GetRoomListResponse {
@@ -354,7 +357,7 @@ impl Rooms {
             let room_lock = room.lock().await;
             let mut usernames = Vec::new();
             for player_id in &room_lock.players {
-                let Some(username) = self.get_user_username(player_id).await else {
+                let Some((username, _)) = self.get_user_data(player_id).await else {
                     continue;
                 };
                 usernames.push(username);
@@ -610,6 +613,31 @@ async fn room_check_gameover_task(
             }
         }
     }
+    let result = match game_state {
+        TakGameState::Draw => crate::server::player::GameResult::Draw,
+        TakGameState::Win(player, _) => {
+            let first_player_won = room_lock
+                .game
+                .as_ref()
+                .unwrap()
+                .player_mapping
+                .get(player)
+                .is_some_and(|id| id == &room_lock.players[0]);
+            if first_player_won {
+                crate::server::player::GameResult::Win
+            } else {
+                crate::server::player::GameResult::Loss
+            }
+        }
+        TakGameState::Ongoing => unreachable!(),
+    };
+
+    if let Err(e) =
+        crate::server::player::add_game_result(&room_lock.players[0], &room_lock.players[1], result)
+            .await
+    {
+        eprintln!("Failed to add game result: {:?}", e);
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -663,6 +691,7 @@ pub async fn get_room() -> Result<GetRoomResponse, ServerFnError> {
 pub struct PlayerInfo {
     pub player_id: PlayerId,
     pub username: String,
+    pub rating: f64,
     pub is_local: bool,
 }
 

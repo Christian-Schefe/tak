@@ -1,6 +1,8 @@
 mod rules;
+mod stats;
 
 pub use rules::*;
+pub use stats::*;
 
 use crate::views::auth::do_logout;
 use crate::Route;
@@ -31,10 +33,14 @@ pub fn More() -> Element {
         nav.push(Route::Rules {});
     };
 
+    let on_click_stats = move |_| {
+        nav.push(Route::Stats {});
+    };
+
     rsx! {
         div { id: "more-view",
             MoreButton {
-                onclick: |_| (),
+                onclick: on_click_stats,
                 icon: MoreButtonIcon::Stats,
                 label: "Stats",
             }

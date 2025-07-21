@@ -2,7 +2,7 @@ use crate::views::Auth;
 use dioxus::prelude::*;
 use views::{
     CreateRoomComputer, CreateRoomLocal, CreateRoomOnline, Home, More, Navbar, PlayComputer,
-    PlayLocal, PlayOnline, Puzzles, Rooms, Rules,
+    PlayLocal, PlayOnline, Puzzles, Rooms, Rules, Stats,
 };
 
 mod components;
@@ -22,6 +22,8 @@ enum Route {
     More {},
     #[route("/more/rules")]
     Rules {},
+    #[route("/more/stats")]
+    Stats {},
 
     #[route("/play/computer")]
     PlayComputer {},
@@ -64,8 +66,13 @@ async fn main() {
     spawn(async move {
         let db_url = std::env::var("DB_URL").unwrap_or_else(|_| "localhost:8000".to_string());
 
-        if let Err(e) = server::auth::connect_db(&db_url).await {
+        if let Err(e) = server::db::connect_db(&db_url).await {
             eprintln!("Failed to connect to database: {}", e);
+            return;
+        }
+        if let Err(e) = server::auth::setup_auth_db().await {
+            eprintln!("Failed to set up auth database: {}", e);
+            return;
         }
     });
 

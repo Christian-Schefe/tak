@@ -32,11 +32,11 @@ pub fn PlayComputer() -> Element {
         }
         player_info.insert(
             player_order[0],
-            PlayerInfo::new("You".to_string(), PlayerType::Local),
+            PlayerInfo::new("You".to_string(), PlayerType::Local, None),
         );
         player_info.insert(
             player_order[1],
-            PlayerInfo::new("Computer".to_string(), PlayerType::Computer),
+            PlayerInfo::new("Computer".to_string(), PlayerType::Computer, None),
         );
         TakBoardState::new(player_info)
     });
@@ -86,11 +86,11 @@ pub fn PlayLocal() -> Element {
         }
         player_info.insert(
             player_order[0],
-            PlayerInfo::new("Player 1".to_string(), PlayerType::Local),
+            PlayerInfo::new("Player 1".to_string(), PlayerType::Local, None),
         );
         player_info.insert(
             player_order[1],
-            PlayerInfo::new("Player 2".to_string(), PlayerType::Local),
+            PlayerInfo::new("Player 2".to_string(), PlayerType::Local, None),
         );
         TakBoardState::new(player_info)
     });

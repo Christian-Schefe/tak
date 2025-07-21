@@ -344,10 +344,11 @@
   margin: 0;
   padding: 0 10px;
   flex-grow: 1;
-  font-size: 16px;
+  font-size: 14px;
   font-weight: bold;
   overflow: hidden;
   text-overflow: ellipsis;
+  text-wrap: nowrap;
   transition: color $animation-speed ease-in-out;
 }
 
@@ -361,6 +362,11 @@
 
 .tak-game-info p.tak-player-info.current-player {
   color: $clr-primary;
+}
+
+.tak-game-info p.tak-player-info span {
+  font-weight: normal;
+  color: $clr-board-light;
 }
 
 .tak-bridge {
