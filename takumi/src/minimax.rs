@@ -274,10 +274,10 @@ fn find_road_length(
         let size = board.size;
         let x = pos % size;
         let y = pos / size;
-        dist_to_left = x as i32;
-        dist_to_right = (size - 1 - x) as i32;
-        dist_to_top = y as i32;
-        dist_to_bottom = (size - 1 - y) as i32;
+        dist_to_left = dist_to_left.min(x as i32);
+        dist_to_right = dist_to_right.min((size - 1 - x) as i32);
+        dist_to_top = dist_to_top.min(y as i32);
+        dist_to_bottom = dist_to_bottom.min((size - 1 - y) as i32);
 
         for dir in 0..4 {
             if let Some(new_pos) = board.offset_by_dir(pos, dir) {

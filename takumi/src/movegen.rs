@@ -206,7 +206,7 @@ pub fn gen_moves(game: &Board) -> Vec<Action> {
                     if max_len == 0 {
                         continue;
                     }
-                    let mut is_capture = false;
+                    let mut is_opp_capture = false;
                     for take in 1..=max_take {
                         let spread_partitions = match take {
                             1 => SPREAD_PARTITIONS_1.as_slice(),
@@ -250,10 +250,13 @@ pub fn gen_moves(game: &Board) -> Vec<Action> {
                                         break;
                                     }
                                 }
-                                is_capture = true;
+                                if (game.owner & cur_pos_mask == 0) != (game.owner & pos_mask == 0)
+                                {
+                                    is_opp_capture = true;
+                                }
                             }
                             let action = Action::Spread(pos, dir, take, partition);
-                            if is_capture {
+                            if is_opp_capture {
                                 if is_wall {
                                     wall_capture_moves.push(action);
                                 } else if is_capstone {
