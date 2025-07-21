@@ -3,83 +3,83 @@ use crate::{
     TranspositionTable, TRANSPOSITION_TABLE,
 };
 
+#[cfg(target_arch = "wasm32")]
 pub fn now() -> u64 {
     use web_sys::js_sys::Date;
     Date::new_0().get_time() as u64
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn now() -> u64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("Time went backwards")
+        .as_millis() as u64
 }
 
 pub fn iterative_deepening(
     board: &mut Board,
     max_depth: usize,
     max_duration: u64,
-) -> (i32, usize, Option<Action>) {
+) -> (usize, Option<(i32, Action)>) {
     TRANSPOSITION_TABLE.with(|tt| {
         let mut tt = tt.borrow_mut();
         iterative_deepening_with_tt(board, max_depth, max_duration, &mut tt)
     })
 }
 
+const INF: i32 = 100_000_000;
+
 fn iterative_deepening_with_tt(
     board: &mut Board,
     max_depth: usize,
     max_duration: u64,
     tt: &mut TranspositionTable,
-) -> (i32, usize, Option<Action>) {
-    let mut best_move = None;
-    let mut best_score: i32 = 0;
+) -> (usize, Option<(i32, Action)>) {
+    let mut best = None;
     let mut best_depth = 0;
-
-    let maximizing = board.ply_index % 2 == 0;
 
     let start_time = now();
     let end_time = start_time + max_duration;
 
     let mut prev_now = start_time;
 
+    let moves = gen_moves(board);
+
     for depth in 1..=max_depth {
-        let alpha = i32::MIN;
-        let beta = i32::MAX;
-        let (score, mv, is_complete) =
-            alphabeta(board, depth, end_time, alpha, beta, maximizing, tt);
+        let res = 'l: {
+            let mut best_score = -INF;
+            let mut best_move = None;
+            for mv in moves.iter() {
+                let smash = board.make(mv);
+                let Some(score) = alphabeta(board, depth, 0, end_time, -INF, INF, tt).map(|s| -s)
+                else {
+                    break 'l None;
+                };
+                board.unmake(mv, smash);
+                if score > best_score {
+                    best_score = score;
+                    best_move = Some(mv.clone());
+                }
+            }
+            best_move.map(|m| (best_score, m))
+        };
+
+        if res.is_none() {
+            console_log!("Timeout at {}", depth);
+            break;
+        }
 
         let new_now = now();
         let used_time = new_now - prev_now;
         let grow_factor = 10000.min((used_time * 1000) / (prev_now - start_time + 1));
         prev_now = new_now;
 
-        if !is_complete {
-            if (maximizing && score > best_score)
-                || (!maximizing && score < best_score)
-                || best_move.is_none()
-            {
-                best_move = mv;
-                best_score = score;
-                best_depth = depth;
-                console_log!(
-                    "topping search due to time limit, but found new best move: Depth: {}, Score: {}, Move: {:?}, Time: {}ms",
-                    depth,
-                    score,
-                    best_move,
-                    used_time
-                );
-            }
-            console_log!(
-                "topping search due to time limit, found no better move, Time: {}ms",
-                used_time
-            );
-            break;
-        };
-        best_move = mv;
-        best_score = score;
-        best_depth = depth;
+        console_log!("Depth: {}, Score: {:?}, Time: {}ms", depth, res, used_time);
 
-        console_log!(
-            "Depth: {}, Score: {}, Move: {:?}, Time: {}ms",
-            depth,
-            score,
-            best_move,
-            used_time
-        );
+        best = res;
+        best_depth = depth;
 
         let estimated_time_for_next_depth = (used_time * grow_factor) / 1500;
         if now() + estimated_time_for_next_depth > end_time {
@@ -90,78 +90,36 @@ fn iterative_deepening_with_tt(
             break;
         }
 
-        if score.abs() >= 900_000 {
+        if best
+            .as_ref()
+            .is_some_and(|(score, _)| score.abs() >= 900_000)
+        {
             break;
         }
     }
 
-    if best_move.is_none() {
-        let moves = gen_moves(board);
-        best_move = moves.first().cloned();
-    }
-
-    (best_score, best_depth, best_move)
+    (best_depth, best)
 }
 
-pub fn alphabeta(
+fn alphabeta(
     board: &mut Board,
     depth: usize,
+    inv_depth: usize,
     end_time: u64,
     mut alpha: i32,
-    mut beta: i32,
-    maximizing: bool,
+    beta: i32,
     tt: &mut TranspositionTable,
-) -> (i32, Option<Action>, bool) {
-    let prev_best_move = if let Some(entry) = tt.get(board.zobrist) {
-        entry.best_move.as_ref()
-    } else {
-        None
-    };
-
-    let mut moves = gen_moves(board);
-    if let Some(prev_move_pos) = prev_best_move.and_then(|m| moves.iter().position(|x| x == m)) {
-        moves.swap(0, prev_move_pos);
+) -> Option<i32> {
+    if depth == 0 || board.result.is_some() {
+        return Some(evaluate_for_active_player(board));
     }
 
-    let mut best_move = None;
-    let mut value = if maximizing { i32::MIN } else { i32::MAX };
-
-    for mv in moves {
-        let smash = board.make(&mv);
-        let child_value = inner_alphabeta(board, depth - 1, alpha, beta, !maximizing, tt);
-        board.unmake(&mv, smash);
-        if maximizing && child_value > value {
-            value = child_value;
-            best_move = Some(mv);
-            alpha = alpha.max(value);
-        } else if !maximizing && child_value < value {
-            value = child_value;
-            best_move = Some(mv);
-            beta = beta.min(value);
-        }
-
-        if now() > end_time {
-            return (value, best_move, false);
-        }
-    }
-
-    (value, best_move, true)
-}
-
-fn inner_alphabeta(
-    board: &mut Board,
-    depth: usize,
-    mut alpha: i32,
-    mut beta: i32,
-    maximizing: bool,
-    tt: &mut TranspositionTable,
-) -> i32 {
     let prev_best_move = if let Some(entry) = tt.get(board.zobrist) {
         if entry.depth >= depth {
             match entry.node_type {
-                TranspositionNodeType::Exact => return entry.score,
-                TranspositionNodeType::LowerBound if entry.score > alpha => alpha = entry.score,
-                TranspositionNodeType::UpperBound if entry.score < beta => beta = entry.score,
+                TranspositionNodeType::Exact => return Some(entry.score),
+                TranspositionNodeType::Alpha if entry.score <= alpha => return Some(entry.score),
+                TranspositionNodeType::Beta if entry.score >= beta => return Some(entry.score),
                 _ => {}
             }
             None
@@ -172,57 +130,62 @@ fn inner_alphabeta(
         None
     };
 
-    if depth == 0 || board.result.is_some() {
-        return evaluate(board);
-    }
-
     let mut moves = gen_moves(board);
     if let Some(prev_move_pos) = prev_best_move.and_then(|m| moves.iter().position(|x| x == m)) {
         moves.swap(0, prev_move_pos);
     }
 
-    let alpha_orig = alpha;
+    let mut flag = TranspositionNodeType::Alpha;
     let mut best_move = None;
-    let mut value = if maximizing { i32::MIN } else { i32::MAX };
 
     for mv in moves {
         let smash = board.make(&mv);
-        let child_value = inner_alphabeta(board, depth - 1, alpha, beta, !maximizing, tt);
+        let score = -alphabeta(board, depth - 1, inv_depth + 1, end_time, -beta, -alpha, tt)?;
         board.unmake(&mv, smash);
-        if maximizing && child_value > value {
-            value = child_value;
+        if score >= beta {
+            tt.insert(TranspositionEntry {
+                zobrist: board.zobrist,
+                score: beta,
+                depth,
+                node_type: TranspositionNodeType::Beta,
+                best_move: Some(mv),
+            });
+
+            return Some(beta);
+        }
+
+        if score > alpha {
+            flag = TranspositionNodeType::Exact;
+            alpha = score;
             best_move = Some(mv);
-            alpha = alpha.max(value);
-            if alpha >= beta {
-                break; // Beta cut-off
-            }
-        } else if !maximizing && child_value < value {
-            value = child_value;
-            best_move = Some(mv);
-            beta = beta.min(value);
-            if beta <= alpha {
-                break; // Alpha cut-off
+        }
+
+        if inv_depth < 2 {
+            let now = now();
+            if now >= end_time {
+                return None;
             }
         }
     }
 
-    let (node_type, best_move) = if value <= alpha_orig {
-        (TranspositionNodeType::UpperBound, None)
-    } else if value >= beta {
-        (TranspositionNodeType::LowerBound, None)
-    } else {
-        (TranspositionNodeType::Exact, best_move)
-    };
-
     tt.insert(TranspositionEntry {
         zobrist: board.zobrist,
         depth,
-        score: value,
-        node_type,
+        score: alpha,
+        node_type: flag,
         best_move,
     });
 
-    value
+    Some(alpha)
+}
+
+fn evaluate_for_active_player(board: &Board) -> i32 {
+    let white_score = evaluate(board);
+    if board.current_player == 0 {
+        white_score
+    } else {
+        -white_score
+    }
 }
 
 fn evaluate(board: &Board) -> i32 {
@@ -235,7 +198,7 @@ fn evaluate(board: &Board) -> i32 {
     }
 
     let mut piece_count = 0;
-    let mut flat_count_diff = board.double_komi as i32;
+    let mut flat_count_diff = -(board.double_komi as i32);
     for pos in 0..(board.size * board.size) {
         let pos_mask = 1u64 << pos;
         let flat_map = board.occupied & !(board.walls | board.capstones);
@@ -327,4 +290,42 @@ fn find_road_length(
     let dist_vertical = dist_to_top + dist_to_bottom;
 
     board.size as i32 - dist_horizontal.min(dist_vertical)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::Settings;
+
+    use super::*;
+
+    #[test]
+    fn test_evaluate() {
+        let mut board = Board::try_from_pos_str(
+            "2,1,1,2,2/2C,1221221221C,111112S,112,2/x,1,21,12,2/1212S,1,2,x,1/1,x4 1 36",
+            Settings::new(4),
+        )
+        .unwrap();
+        let mut tt = TranspositionTable::new(16);
+        let res = iterative_deepening_with_tt(&mut board, 2, 10_000_000, &mut tt);
+        println!("Result: {:?}", res);
+
+        let mut board = Board::try_from_pos_str(
+            "1,2,2,1,1/1C,2112112112C,222221S,221,1/x,2,12,21,1/2121S,2,1,x,2/2,x4 2 36",
+            Settings::new(4),
+        )
+        .unwrap();
+        let mut tt = TranspositionTable::new(16);
+        let res = iterative_deepening_with_tt(&mut board, 2, 10_000_000, &mut tt);
+        println!("Result: {:?}", res);
+
+        let mut board = Board::try_from_pos_str(
+            "2,1,1,2,2/2C,1221221221C,111112S,112,2/x,1,21,12,2/121,x,212S,x,1/1,x4 2 35",
+            Settings::new(4),
+        )
+        .unwrap();
+        let mut tt = TranspositionTable::new(16);
+        let res = iterative_deepening_with_tt(&mut board, 2, 10_000_000, &mut tt);
+        println!("Result: {:?}", res);
+        assert_eq!(res.0, 100_000);
+    }
 }

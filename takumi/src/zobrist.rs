@@ -2,16 +2,16 @@ use std::{cell::RefCell, sync::LazyLock};
 
 use crate::Action;
 
-/// [([[<player>]; <height>], [<variant excluding flat>]); <pos>]
-pub type ZobristTable = [([[u64; 2]; 64], [u64; 2]); 64];
+/// ([([[<player>]; <height>], [<variant excluding flat>]); <pos>], [<player>])
+pub type ZobristTable = ([([[u64; 2]; 64], [u64; 2]); 64], [u64; 2]);
 
 include!(concat!(env!("OUT_DIR"), "/zobrist.rs"));
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TranspositionNodeType {
     Exact,
-    LowerBound,
-    UpperBound,
+    Alpha,
+    Beta,
 }
 
 #[derive(Debug, Clone, PartialEq)]

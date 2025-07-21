@@ -287,11 +287,11 @@ impl Board {
             self.owner |= pos_mask;
         }
 
-        self.zobrist ^= ZOBRIST_TABLE[pos].0[0][effective_player as usize];
+        self.zobrist ^= ZOBRIST_TABLE.0[pos].0[0][effective_player as usize];
 
         if variant == Self::VARIANT_WALL {
             self.walls |= pos_mask;
-            self.zobrist ^= ZOBRIST_TABLE[pos].1[0];
+            self.zobrist ^= ZOBRIST_TABLE.0[pos].1[0];
         }
 
         if variant == Self::VARIANT_CAPSTONE {
@@ -301,7 +301,7 @@ impl Board {
             } else {
                 self.black_capstones -= 1;
             }
-            self.zobrist ^= ZOBRIST_TABLE[pos].1[1];
+            self.zobrist ^= ZOBRIST_TABLE.0[pos].1[1];
         } else {
             if self.current_player == Self::PLAYER_WHITE {
                 self.white_pieces -= 1;
@@ -313,7 +313,11 @@ impl Board {
         self.stacks[pos] = effective_player;
 
         self.ply_index += 1;
+
+        self.zobrist ^= ZOBRIST_TABLE.1[self.current_player as usize];
         self.current_player = 1 - self.current_player;
+        self.zobrist ^= ZOBRIST_TABLE.1[self.current_player as usize];
+
         self.empty_positions -= 1;
 
         if self.check_road_win(effective_player, pos) {
@@ -324,7 +328,9 @@ impl Board {
 
     pub fn unplace(&mut self, pos: usize, variant: usize) {
         self.ply_index -= 1;
+        self.zobrist ^= ZOBRIST_TABLE.1[self.current_player as usize];
         self.current_player = 1 - self.current_player;
+        self.zobrist ^= ZOBRIST_TABLE.1[self.current_player as usize];
         self.empty_positions += 1;
 
         let mut effective_player = self.current_player;
@@ -342,7 +348,7 @@ impl Board {
         self.stacks[pos] = 0;
         self.result = None;
 
-        self.zobrist ^= ZOBRIST_TABLE[pos].0[0][effective_player as usize];
+        self.zobrist ^= ZOBRIST_TABLE.0[pos].0[0][effective_player as usize];
 
         if variant == Self::VARIANT_CAPSTONE {
             if self.current_player == Self::PLAYER_WHITE {
@@ -350,10 +356,10 @@ impl Board {
             } else {
                 self.black_capstones += 1;
             }
-            self.zobrist ^= ZOBRIST_TABLE[pos].1[1];
+            self.zobrist ^= ZOBRIST_TABLE.0[pos].1[1];
         } else {
             if variant == Self::VARIANT_WALL {
-                self.zobrist ^= ZOBRIST_TABLE[pos].1[0];
+                self.zobrist ^= ZOBRIST_TABLE.0[pos].1[0];
             }
             if self.current_player == Self::PLAYER_WHITE {
                 self.white_pieces += 1;
@@ -399,7 +405,7 @@ impl Board {
                 Board::PLAYER_BLACK
             };
             let zobrist_height = new_height + i;
-            self.zobrist ^= ZOBRIST_TABLE[pos].0[zobrist_height as usize][owner as usize];
+            self.zobrist ^= ZOBRIST_TABLE.0[pos].0[zobrist_height as usize][owner as usize];
         }
 
         let mut cur_pos = pos;
@@ -443,32 +449,34 @@ impl Board {
                     Board::PLAYER_BLACK
                 };
                 let zobrist_height = prev_height + j;
-                self.zobrist ^= ZOBRIST_TABLE[cur_pos].0[zobrist_height as usize][owner as usize];
+                self.zobrist ^= ZOBRIST_TABLE.0[cur_pos].0[zobrist_height as usize][owner as usize];
             }
         }
 
         let smash = (self.walls & cur_pos_mask) != 0;
         if smash {
             self.walls &= !cur_pos_mask;
-            self.zobrist ^= ZOBRIST_TABLE[cur_pos].1[0];
+            self.zobrist ^= ZOBRIST_TABLE.0[cur_pos].1[0];
         }
 
         if is_wall {
             self.walls &= not_pos_mask;
             self.walls |= cur_pos_mask;
-            self.zobrist ^= ZOBRIST_TABLE[pos].1[0];
-            self.zobrist ^= ZOBRIST_TABLE[cur_pos].1[0];
+            self.zobrist ^= ZOBRIST_TABLE.0[pos].1[0];
+            self.zobrist ^= ZOBRIST_TABLE.0[cur_pos].1[0];
         } else if is_capstone {
             self.capstones &= not_pos_mask;
             self.capstones |= cur_pos_mask;
-            self.zobrist ^= ZOBRIST_TABLE[pos].1[1];
-            self.zobrist ^= ZOBRIST_TABLE[cur_pos].1[1];
+            self.zobrist ^= ZOBRIST_TABLE.0[pos].1[1];
+            self.zobrist ^= ZOBRIST_TABLE.0[cur_pos].1[1];
         }
 
         let moving_player = self.current_player;
 
         self.ply_index += 1;
+        self.zobrist ^= ZOBRIST_TABLE.1[self.current_player as usize];
         self.current_player = 1 - self.current_player;
+        self.zobrist ^= ZOBRIST_TABLE.1[self.current_player as usize];
 
         for player in [moving_player, 1 - moving_player] {
             let mut check_pos = pos;
@@ -499,7 +507,9 @@ impl Board {
 
     pub fn unspread(&mut self, pos: usize, dir: usize, spreads: u64, smash: bool) {
         self.ply_index -= 1;
+        self.zobrist ^= ZOBRIST_TABLE.1[self.current_player as usize];
         self.current_player = 1 - self.current_player;
+        self.zobrist ^= ZOBRIST_TABLE.1[self.current_player as usize];
         self.result = None;
 
         let pos_mask = 1u64 << pos;
@@ -553,7 +563,7 @@ impl Board {
                     Board::PLAYER_BLACK
                 };
                 let zobrist_height = new_height + j;
-                self.zobrist ^= ZOBRIST_TABLE[cur_pos].0[zobrist_height as usize][owner as usize];
+                self.zobrist ^= ZOBRIST_TABLE.0[cur_pos].0[zobrist_height as usize][owner as usize];
             }
         }
 
@@ -563,18 +573,18 @@ impl Board {
         if is_wall {
             self.walls &= !cur_pos_mask;
             self.walls |= pos_mask;
-            self.zobrist ^= ZOBRIST_TABLE[pos].1[0];
-            self.zobrist ^= ZOBRIST_TABLE[cur_pos].1[0];
+            self.zobrist ^= ZOBRIST_TABLE.0[pos].1[0];
+            self.zobrist ^= ZOBRIST_TABLE.0[cur_pos].1[0];
         } else if is_capstone {
             self.capstones &= !cur_pos_mask;
             self.capstones |= pos_mask;
-            self.zobrist ^= ZOBRIST_TABLE[pos].1[1];
-            self.zobrist ^= ZOBRIST_TABLE[cur_pos].1[1];
+            self.zobrist ^= ZOBRIST_TABLE.0[pos].1[1];
+            self.zobrist ^= ZOBRIST_TABLE.0[cur_pos].1[1];
         }
 
         if smash {
             self.walls |= cur_pos_mask;
-            self.zobrist ^= ZOBRIST_TABLE[cur_pos].1[0];
+            self.zobrist ^= ZOBRIST_TABLE.0[cur_pos].1[0];
         }
 
         let prev_height = self.stack_heights[pos];
@@ -592,7 +602,7 @@ impl Board {
                 Board::PLAYER_BLACK
             };
             let zobrist_height = prev_height + i;
-            self.zobrist ^= ZOBRIST_TABLE[pos].0[zobrist_height as usize][owner as usize];
+            self.zobrist ^= ZOBRIST_TABLE.0[pos].0[zobrist_height as usize][owner as usize];
         }
 
         if self.controlling_player(pos) == Self::PLAYER_WHITE {
@@ -617,14 +627,15 @@ impl Board {
                 } else {
                     Board::PLAYER_BLACK
                 };
-                hash ^= ZOBRIST_TABLE[pos].0[i][player as usize];
+                hash ^= ZOBRIST_TABLE.0[pos].0[i][player as usize];
             }
             if self.walls & pos_mask != 0 {
-                hash ^= ZOBRIST_TABLE[pos].1[0];
+                hash ^= ZOBRIST_TABLE.0[pos].1[0];
             } else if self.capstones & pos_mask != 0 {
-                hash ^= ZOBRIST_TABLE[pos].1[1];
+                hash ^= ZOBRIST_TABLE.0[pos].1[1];
             }
         }
+        hash ^= ZOBRIST_TABLE.1[self.current_player as usize];
         self.zobrist = hash;
     }
 
@@ -1095,6 +1106,17 @@ mod tests {
             Board::try_from_pos_str("2S,1,x/1S,2S,1/2S,1,2 2 10", Settings::new(0)).unwrap();
         assert_eq!(board.result, None);
         board.place(2, Board::VARIANT_FLAT);
+        assert_eq!(board.result, Some(Board::PLAYER_WHITE));
+    }
+
+    #[test]
+    fn test_win_edge_cases() {
+        let mut board = Board::try_from_pos_str(
+            "2,1,1,2,2/2C,1221221221C,111112S,112,2/x,1,21,12,2/1212S,1,2,x,1/1,x4 1 36",
+            Settings::new(4),
+        )
+        .unwrap();
+        board.place(21, Board::VARIANT_FLAT);
         assert_eq!(board.result, Some(Board::PLAYER_WHITE));
     }
 }

@@ -5,9 +5,20 @@ use crate::{determine_time_to_use, iterative_deepening, Action, Board, Settings}
 
 #[macro_export]
 macro_rules! console_log {
-    ($($t:tt)*) =>
-        (web_sys::console::log_1(
-            &wasm_bindgen::JsValue::from_str(&format!($($t)*))))
+    ($($t:tt)*) => {
+        {
+            #[cfg(target_arch = "wasm32")]
+            {
+                web_sys::console::log_1(
+                    &wasm_bindgen::JsValue::from_str(&format!($($t)*))
+                );
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                println!($($t)*);
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -47,17 +58,11 @@ pub async fn TakumiWorker(mut scope: ReactorScope<TakumiWorkerInput, Action>) {
 
         let time_to_use = determine_time_to_use(&board, input.time_remaining, input.increment);
         console_log!("Determined time to use: {} ms", time_to_use);
-        let (score, reached_depth, action) =
-            iterative_deepening(&mut board, input.max_depth, time_to_use);
+        let (depth, best_move) = iterative_deepening(&mut board, input.max_depth, time_to_use);
 
-        console_log!(
-            "Best move calculated: {:?} with score {} at depth {}",
-            action,
-            score,
-            reached_depth
-        );
+        console_log!("Best move calculated: {:?} at depth {}", best_move, depth);
         scope
-            .send(action.expect("Should have a best move"))
+            .send(best_move.expect("Should have a best move").1)
             .await
             .expect("Failed to send action");
     }
