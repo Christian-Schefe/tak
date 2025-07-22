@@ -21,11 +21,17 @@ pub struct TakBoardState {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-#[allow(dead_code)]
 pub enum PlayerType {
     Local,
     Remote,
     Computer,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum GameType {
+    Local,
+    Remote,
+    Spectated,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -271,6 +277,9 @@ impl TakBoardState {
             } else if index > move_index {
                 return Err(());
             }
+            if game.game().game_state != TakGameState::Ongoing {
+                return Err(());
+            }
             if let Err(e) = game.try_do_action(action) {
                 tracing::error!("Error processing remote action: {:?}", e);
                 Err(())
@@ -342,6 +351,23 @@ impl TakBoardState {
             info.player_type == PlayerType::Local
         } else {
             false
+        }
+    }
+
+    pub fn get_game_type(&self) -> GameType {
+        let player_info = self.player_info.read();
+        if player_info
+            .values()
+            .all(|info| info.player_type != PlayerType::Remote)
+        {
+            GameType::Local
+        } else if player_info
+            .values()
+            .any(|info| info.player_type == PlayerType::Local)
+        {
+            GameType::Remote
+        } else {
+            GameType::Spectated
         }
     }
 }

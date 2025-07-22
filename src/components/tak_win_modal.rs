@@ -3,7 +3,7 @@ use tak_core::{TakGameState, TakPlayer, TakWinReason};
 use web_sys::window;
 
 use crate::{
-    components::tak_board_state::TakBoardState,
+    components::tak_board_state::{GameType, TakBoardState},
     server::room::{agree_rematch, leave_room, AgreeRematchResponse, LeaveRoomResponse},
     Route,
 };
@@ -86,6 +86,9 @@ pub fn TakWinModal(is_local: bool) -> Element {
             .expect("Should be able to copy PTN");
     };
 
+    let state_clone = state.clone();
+    let show_rematch_button = use_memo(move || state_clone.get_game_type() != GameType::Spectated);
+
     let mut state_clone = state.clone();
     let on_click_rematch = move |_| {
         if is_local {
@@ -116,11 +119,13 @@ pub fn TakWinModal(is_local: bool) -> Element {
                 p { class: "tak-win-message", "{message}" }
                 button { onclick: on_click_leave, "Leave" }
                 button { onclick: on_click_copy_ptn, "Copy PTN" }
-                button { onclick: on_click_rematch,
-                    if *has_agreed_to_rematch.read() {
-                        "Waiting..."
-                    } else {
-                        "Rematch"
+                if *show_rematch_button.read() {
+                    button { onclick: on_click_rematch,
+                        if *has_agreed_to_rematch.read() {
+                            "Waiting..."
+                        } else {
+                            "Rematch"
+                        }
                     }
                 }
             }

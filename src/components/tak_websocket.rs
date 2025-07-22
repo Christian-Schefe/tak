@@ -22,11 +22,10 @@ pub fn TakWebSocket(session_id: String) -> Element {
     let board_clone = board.clone();
 
     let handle_game_message = move |board: &mut TakBoardState, msg: ServerGameMessage| {
-        let mut board_clone = board.clone();
         match msg {
             ServerGameMessage::StartGame => {
                 dioxus::logger::tracing::info!("[WebSocket] Starting game");
-                let mut board_clone = board_clone.clone();
+                let mut board_clone = board.clone();
                 spawn_local(async move {
                     board_clone.reset();
                     board_clone.update_player_info().await;
@@ -45,22 +44,22 @@ pub fn TakWebSocket(session_id: String) -> Element {
                     .maybe_try_do_remote_action(move_index, action)
                     .is_err();
                 for (player, duration) in time_remaining {
-                    board_clone.set_time_remaining(player, duration);
+                    board.set_time_remaining(player, duration);
                 }
                 if should_resync {
                     dioxus::logger::tracing::info!(
                         "[WebSocket] Resyncing game state after message"
                     );
-                    resync_game_state(board_clone);
+                    resync_game_state(board);
                 }
             }
             ServerGameMessage::GameOver(game_state) => {
                 dioxus::logger::tracing::info!("[WebSocket] Game over: {game_state:?}");
-                if board_clone
+                if board
                     .with_game(|game| game.game().game_state != game_state)
                     .unwrap_or(true)
                 {
-                    resync_game_state(board_clone);
+                    resync_game_state(board);
                 }
             }
         };
@@ -155,14 +154,14 @@ pub fn TakWebSocket(session_id: String) -> Element {
     });
 
     use_effect(move || {
-        let board = board.clone();
-        resync_game_state(board);
+        resync_game_state(&board);
     });
 
     rsx! {}
 }
 
-fn resync_game_state(mut board: TakBoardState) {
+fn resync_game_state(board: &TakBoardState) {
+    let mut board = board.clone();
     spawn_local(async move {
         dioxus::logger::tracing::info!("[WebSocket] Resyncing game state");
         let res = get_game_state().await;

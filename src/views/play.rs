@@ -174,7 +174,7 @@ pub fn PlayOnline() -> Element {
     rsx! {
         div { id: "play-view",
             if let Some(room) = room_id.read().as_ref() {
-                h2 { "Room ID: {room}" }
+                h3 { "Room ID: {room}" }
                 if *show_board.read() {
                     TakBoard {
                     }

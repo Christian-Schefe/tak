@@ -1,6 +1,5 @@
 use std::sync::LazyLock;
 
-use serde::{Deserialize, Serialize};
 use surrealdb::{
     engine::remote::ws::{Client, Ws},
     opt::auth::Root,
@@ -8,13 +7,6 @@ use surrealdb::{
 };
 
 pub static DB: LazyLock<Surreal<Client>> = LazyLock::new(Surreal::init);
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct User {
-    pub user_id: String,
-    pub username: String,
-    password_hash: String,
-}
 
 async fn retry_connect_db(url: &str, max_attempts: usize) -> Result<(), surrealdb::Error> {
     let mut attempts = 0;

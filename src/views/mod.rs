@@ -5,6 +5,7 @@ mod more;
 mod navbar;
 mod play;
 mod puzzles;
+mod review_board;
 mod rooms;
 
 pub use auth::*;
@@ -14,4 +15,5 @@ pub use more::*;
 pub use navbar::Navbar;
 pub use play::*;
 pub use puzzles::Puzzles;
+pub use review_board::*;
 pub use rooms::Rooms;

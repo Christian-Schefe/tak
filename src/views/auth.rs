@@ -1,4 +1,5 @@
-use crate::server::auth::{LoginResult, RegisterResult};
+use crate::server::api::{get_auth, post_login, post_logout, post_register, ApiResponse};
+use crate::server::UserId;
 use crate::Route;
 use dioxus::core_macro::{component, rsx};
 use dioxus::dioxus_core::Element;
@@ -204,131 +205,37 @@ pub fn Auth() -> Element {
 fn do_login(
     username: String,
     password: String,
-    callback: impl FnOnce(Result<LoginResult, ServerFnError>) + Send + 'static,
+    callback: impl FnOnce(Result<ApiResponse<UserId>, ServerFnError>) + Send + 'static,
 ) {
     spawn(async move {
-        let res = try_login(username, password).await;
+        let res = post_login(username, password).await;
         callback(res);
     });
 }
 
-#[server]
-async fn try_login(username: String, password: String) -> Result<LoginResult, ServerFnError> {
-    use crate::server::auth::handle_try_login;
-    let user = handle_try_login(username, password).await?;
-
-    if let LoginResult::Success(user_id) = &user {
-        add_session(user_id.to_string()).await?;
-    }
-
-    println!("User login: {:?}", user);
-    Ok(user)
-}
-
-#[cfg(feature = "server")]
-async fn add_session(user_id: String) -> Result<String, ServerFnError> {
-    use axum::http::StatusCode;
-    use tower_cookies::Cookie;
-    use uuid::Uuid;
-
-    let store: axum::Extension<crate::server::auth::SessionStore> = extract().await?;
-    let cookies: tower_cookies::Cookies = extract()
-        .await
-        .map_err(|e: (StatusCode, &str)| ServerFnError::new(e.1))?;
-
-    let session_id = Uuid::new_v4().to_string();
-    store
-        .lock()
-        .await
-        .insert(session_id.clone(), user_id.to_string());
-    let mut cookie = Cookie::new("session_id", session_id.clone());
-    cookie.set_http_only(Some(true));
-    cookies.add(cookie);
-    Ok(session_id)
-}
-
-pub fn do_logout(callback: impl FnOnce(Result<(), ServerFnError>) + Send + 'static) {
+pub fn do_logout(callback: impl FnOnce(Result<ApiResponse<()>, ServerFnError>) + Send + 'static) {
     spawn(async move {
-        let res = logout().await;
+        let res = post_logout().await;
         callback(res);
     });
-}
-
-#[server]
-pub async fn logout() -> Result<(), ServerFnError> {
-    use axum::http::StatusCode;
-    use tower_cookies::Cookie;
-    use uuid::Uuid;
-
-    let Some(user): Option<crate::server::auth::AuthenticatedUser> = extract().await.ok() else {
-        return Ok(());
-    };
-
-    let store: axum::Extension<crate::server::auth::SessionStore> = extract().await?;
-    let cookies: tower_cookies::Cookies = extract()
-        .await
-        .map_err(|e: (StatusCode, &str)| ServerFnError::new(e.1))?;
-
-    let session_id = Uuid::new_v4().to_string();
-    store.lock().await.remove(&session_id);
-
-    cookies.remove(Cookie::from("session_id"));
-
-    println!("User logged out: {}", user.0);
-    Ok(())
 }
 
 fn do_register(
     username: String,
     password: String,
-    callback: impl FnOnce(Result<RegisterResult, ServerFnError>) + Send + 'static,
+    callback: impl FnOnce(Result<ApiResponse<UserId>, ServerFnError>) + Send + 'static,
 ) {
     spawn(async move {
-        let res = register(username, password).await;
+        let res = post_register(username, password).await;
         callback(res);
     });
 }
 
-#[server]
-async fn register(username: String, password: String) -> Result<RegisterResult, ServerFnError> {
-    use crate::server::auth::handle_register;
-
-    let res = handle_register(username, password).await?;
-    println!("User registration: {:?}", res);
-
-    if let RegisterResult::Success(user_id) = &res {
-        add_session(user_id.to_string()).await?;
-    }
-
-    Ok(res)
-}
-
-fn do_check_login(callback: impl FnOnce(Result<Option<String>, ServerFnError>) + Send + 'static) {
+fn do_check_login(
+    callback: impl FnOnce(Result<ApiResponse<String>, ServerFnError>) + Send + 'static,
+) {
     spawn(async move {
-        let res = check_login().await;
+        let res = get_auth().await;
         callback(res);
     });
-}
-
-#[server]
-pub async fn check_login() -> Result<Option<String>, ServerFnError> {
-    let user: Option<crate::server::auth::AuthenticatedUser> = extract().await.ok();
-    Ok(user.map(|u| u.0))
-}
-
-#[server]
-pub async fn get_session_id() -> Result<Option<String>, ServerFnError> {
-    use axum::extract::Extension;
-
-    let Ok(crate::server::auth::AuthenticatedUser(user)) = extract().await else {
-        return Ok(None);
-    };
-    let Extension(session_store): Extension<crate::server::auth::SessionStore> = extract().await?;
-    let lock = session_store.lock().await;
-    if let Some(session_id) = lock.get(&user) {
-        Ok(Some(session_id.clone()))
-    } else {
-        drop(lock);
-        Ok(Some(add_session(user).await?))
-    }
 }

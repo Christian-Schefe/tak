@@ -2,7 +2,7 @@ use crate::views::Auth;
 use dioxus::prelude::*;
 use views::{
     CreateRoomComputer, CreateRoomLocal, CreateRoomOnline, Home, More, Navbar, PlayComputer,
-    PlayLocal, PlayOnline, Puzzles, Rooms, Rules, Stats,
+    PlayLocal, PlayOnline, Puzzles, ReviewBoard, Rooms, Rules, Stats,
 };
 
 mod components;
@@ -24,6 +24,9 @@ enum Route {
     Rules {},
     #[route("/more/stats")]
     Stats {},
+
+    #[route("/review")]
+    ReviewBoard { game_id: String },
 
     #[route("/play/computer")]
     PlayComputer {},
@@ -66,12 +69,12 @@ async fn main() {
     spawn(async move {
         let db_url = std::env::var("DB_URL").unwrap_or_else(|_| "localhost:8000".to_string());
 
-        if let Err(e) = server::db::connect_db(&db_url).await {
+        if let Err(e) = server::internal::db::connect_db(&db_url).await {
             eprintln!("Failed to connect to database: {}", e);
             return;
         }
-        if let Err(e) = server::auth::setup_auth_db().await {
-            eprintln!("Failed to set up auth database: {}", e);
+        if let Err(e) = server::internal::dto::setup_db().await {
+            eprintln!("Failed to set up database: {}", e);
             return;
         }
     });
@@ -82,7 +85,7 @@ async fn main() {
     let address = SocketAddr::new(ip, port);
 
     let shared_state = server::websocket::SharedState::new();
-    let session_store = server::auth::create_session_store();
+    let session_store = server::internal::auth::create_session_store();
 
     let config = ServeConfig::new().unwrap();
 

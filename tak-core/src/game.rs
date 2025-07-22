@@ -213,6 +213,10 @@ impl TakGame {
     }
 
     pub fn abort(&mut self, winner: TakPlayer) {
+        self.check_timeout();
+        if self.game_state != TakGameState::Ongoing {
+            return;
+        }
         self.game_state = TakGameState::Win(winner, TakWinReason::Timeout);
         if let Some(clock) = &mut self.clock {
             clock.set_time_remaining(winner.other(), 0);
