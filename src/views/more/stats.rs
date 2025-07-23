@@ -1,10 +1,7 @@
 use dioxus::prelude::*;
 
 use crate::{
-    server::{
-        api::{get_stats, ApiResponse},
-        error::ServerError,
-    },
+    server::{api::get_stats, error::ServerError},
     Route,
 };
 
@@ -14,14 +11,14 @@ pub fn Stats() -> Element {
     let stats = use_resource(|| async { get_stats().await });
 
     use_effect(move || {
-        if let Some(Ok(ApiResponse::Error(ServerError::Unauthorized))) = stats.read().as_ref() {
+        if let Some(Ok(Err(ServerError::Unauthorized))) = stats.read().as_ref() {
             nav.push(Route::Auth {});
         }
     });
 
     let data = use_memo(move || {
         stats.read().as_ref().map_or(None, |s| match s {
-            Ok(ApiResponse::Success(data)) => Some(data.clone()),
+            Ok(Ok(data)) => Some(data.clone()),
             _ => None,
         })
     });

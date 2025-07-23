@@ -1,4 +1,4 @@
-use crate::server::room::{create_room, CreateRoomResponse, RoomSettings};
+use crate::server::room::{create_room, CreateRoomResponse};
 use crate::Route;
 use dioxus::prelude::*;
 use dioxus_free_icons::icons::fa_solid_icons::{

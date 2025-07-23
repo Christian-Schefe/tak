@@ -1,7 +1,8 @@
 use crate::components::tak_board_state::{PlayerInfo, PlayerType, TakBoardState};
 use crate::components::{TakBoard, TakEngine, TakWebSocket, TakWinModal};
+use crate::server::api::get_session_id;
 use crate::server::room::{get_room, GetRoomResponse};
-use crate::views::{get_session_id, LOCAL_SETTINGS};
+use crate::views::LOCAL_SETTINGS;
 use crate::Route;
 use dioxus::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -179,7 +180,7 @@ pub fn PlayOnline() -> Element {
                     TakBoard {
                     }
                     TakWinModal { is_local: false }
-                    if let Some(Ok(Some(session_id))) = session_id.read().as_ref() {
+                    if let Some(Ok(Ok(session_id))) = session_id.read().as_ref() {
                         TakWebSocket { session_id }
                     }
                 }

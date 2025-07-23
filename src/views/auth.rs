@@ -1,5 +1,6 @@
-use crate::server::api::{get_auth, post_login, post_logout, post_register, ApiResponse};
+use crate::server::api::{get_auth, post_login, post_logout, post_register};
 use crate::server::UserId;
+use crate::server::{ServerError, ServerResult};
 use crate::Route;
 use dioxus::core_macro::{component, rsx};
 use dioxus::dioxus_core::Element;
@@ -68,7 +69,7 @@ pub fn Auth() -> Element {
 
     use_effect(move || {
         do_check_login(move |res| {
-            if let Ok(Some(user_id)) = res {
+            if let Ok(Ok(user_id)) = res {
                 dioxus::logger::tracing::info!("User is logged in: {}", user_id);
                 auth_state.set(AuthState::Success);
             }
@@ -77,11 +78,11 @@ pub fn Auth() -> Element {
 
     let on_login = move |username: String, password: String| {
         let callback = move |res| match res {
-            Ok(LoginResult::Success(user_id)) => {
+            Ok(Ok(user_id)) => {
                 dioxus::logger::tracing::info!("Login successful: {}", user_id);
                 auth_state.set(AuthState::Success);
             }
-            Ok(LoginResult::InvalidCredentials) => {
+            Ok(Err(_)) => {
                 dioxus::logger::tracing::error!("Login failed: Invalid credentials");
                 auth_state.set(AuthState::InvalidCredentials);
             }
@@ -99,15 +100,15 @@ pub fn Auth() -> Element {
             return;
         }
         let callback = move |res| match res {
-            Ok(RegisterResult::Success(message)) => {
+            Ok(Ok(message)) => {
                 dioxus::logger::tracing::info!("Registration successful: {}", message);
                 auth_state.set(AuthState::Success);
             }
-            Ok(RegisterResult::UserExists) => {
+            Ok(Err(ServerError::Conflict(_))) => {
                 dioxus::logger::tracing::warn!("Registration failed: Username already taken");
                 auth_state.set(AuthState::TakenUsername);
             }
-            Ok(RegisterResult::ValidationError) => {
+            Ok(Err(_)) => {
                 dioxus::logger::tracing::error!("Registration failed: Validation error");
                 auth_state.set(AuthState::UnknownError);
             }
@@ -205,7 +206,7 @@ pub fn Auth() -> Element {
 fn do_login(
     username: String,
     password: String,
-    callback: impl FnOnce(Result<ApiResponse<UserId>, ServerFnError>) + Send + 'static,
+    callback: impl FnOnce(Result<ServerResult<UserId>, ServerFnError>) + Send + 'static,
 ) {
     spawn(async move {
         let res = post_login(username, password).await;
@@ -213,7 +214,7 @@ fn do_login(
     });
 }
 
-pub fn do_logout(callback: impl FnOnce(Result<ApiResponse<()>, ServerFnError>) + Send + 'static) {
+pub fn do_logout(callback: impl FnOnce(Result<ServerResult<()>, ServerFnError>) + Send + 'static) {
     spawn(async move {
         let res = post_logout().await;
         callback(res);
@@ -223,7 +224,7 @@ pub fn do_logout(callback: impl FnOnce(Result<ApiResponse<()>, ServerFnError>) +
 fn do_register(
     username: String,
     password: String,
-    callback: impl FnOnce(Result<ApiResponse<UserId>, ServerFnError>) + Send + 'static,
+    callback: impl FnOnce(Result<ServerResult<UserId>, ServerFnError>) + Send + 'static,
 ) {
     spawn(async move {
         let res = post_register(username, password).await;
@@ -232,7 +233,7 @@ fn do_register(
 }
 
 fn do_check_login(
-    callback: impl FnOnce(Result<ApiResponse<String>, ServerFnError>) + Send + 'static,
+    callback: impl FnOnce(Result<ServerResult<String>, ServerFnError>) + Send + 'static,
 ) {
     spawn(async move {
         let res = get_auth().await;

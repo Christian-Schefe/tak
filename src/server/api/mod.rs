@@ -16,17 +16,11 @@ async fn authorize() -> ServerResult<UserId> {
     Ok(user_id)
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum ApiResponse<T> {
-    Success(T),
-    Error(ServerError),
-}
-
 macro_rules! bail_api {
     ($expr:expr) => {
         match $expr {
             Ok(val) => val,
-            Err(e) => return Ok(ApiResponse::Error(e)),
+            Err(e) => return Ok(Err(e)),
         }
     };
 }
@@ -40,10 +34,10 @@ pub struct StatsData {
 }
 
 #[server]
-pub async fn get_stats() -> Result<ApiResponse<StatsData>, ServerFnError> {
+pub async fn get_stats() -> Result<ServerResult<StatsData>, ServerFnError> {
     let user_id = bail_api!(authorize().await);
     let player = bail_api!(player::get_or_insert_player(&user_id).await);
-    Ok(ApiResponse::Success(StatsData {
+    Ok(Ok(StatsData {
         rating: player.rating,
         wins: player.wins,
         losses: player.losses,
@@ -55,41 +49,41 @@ pub async fn get_stats() -> Result<ApiResponse<StatsData>, ServerFnError> {
 pub async fn post_register(
     username: String,
     password: String,
-) -> Result<ApiResponse<UserId>, ServerFnError> {
+) -> Result<ServerResult<UserId>, ServerFnError> {
     let user_id = bail_api!(auth::try_register(username, password).await);
     bail_api!(auth::add_session(&user_id).await);
-    Ok(ApiResponse::Success(user_id))
+    Ok(Ok(user_id))
 }
 
 #[server]
 pub async fn post_login(
     username: String,
     password: String,
-) -> Result<ApiResponse<UserId>, ServerFnError> {
+) -> Result<ServerResult<UserId>, ServerFnError> {
     let user_id = bail_api!(auth::try_login(username, password).await);
     bail_api!(auth::add_session(&user_id).await);
-    Ok(ApiResponse::Success(user_id))
+    Ok(Ok(user_id))
 }
 
 #[server]
-pub async fn post_logout() -> Result<ApiResponse<()>, ServerFnError> {
+pub async fn post_logout() -> Result<ServerResult<()>, ServerFnError> {
     let user_id = bail_api!(authorize().await);
     bail_api!(auth::remove_session(&user_id).await);
-    Ok(ApiResponse::Success(()))
+    Ok(Ok(()))
 }
 
 #[server]
-pub async fn get_auth() -> Result<ApiResponse<UserId>, ServerFnError> {
+pub async fn get_auth() -> Result<ServerResult<UserId>, ServerFnError> {
     let user_id = bail_api!(authorize().await);
-    Ok(ApiResponse::Success(user_id))
+    Ok(Ok(user_id))
 }
 
 #[server]
-pub async fn get_session_id() -> Result<ApiResponse<String>, ServerFnError> {
+pub async fn get_session_id() -> Result<ServerResult<String>, ServerFnError> {
     let user_id = bail_api!(authorize().await);
     let Some(session_id) = bail_api!(auth::get_session(&user_id).await) else {
         let session_id = bail_api!(auth::add_session(&user_id).await);
-        return Ok(ApiResponse::Success(session_id));
+        return Ok(Ok(session_id));
     };
-    Ok(ApiResponse::Success(session_id))
+    Ok(Ok(session_id))
 }
