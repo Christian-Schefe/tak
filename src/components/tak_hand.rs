@@ -10,9 +10,9 @@ pub fn TakHand(player: TakPlayer) -> Element {
         let _ = state.on_change.read();
         state
             .with_game(|game| {
-                let hand = &game.game().hands[player.index()];
+                let hand = &game.preview_game().hands[player.index()];
                 (
-                    game.game().current_player == player,
+                    game.get_visible_active_player() == player,
                     hand.stones,
                     hand.capstones,
                 )

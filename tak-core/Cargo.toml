@@ -5,12 +5,12 @@ edition.workspace = true
 authors.workspace = true
 
 [dependencies]
-web-sys = { version = "*", features = ["console"], optional = true }
 serde = { version = "*", features = ["derive"], optional = true }
 serde_json = { version = "*", optional = true }
 dioxus = { version = "*", optional = true }
 fixed-map = { version = "*" }
+chrono = { version = "*" }
 
 [features]
-wasm = ["dep:web-sys", "dep:dioxus"]
+wasm = ["dep:dioxus"]
 serde = ["dep:serde", "dep:serde_json"]

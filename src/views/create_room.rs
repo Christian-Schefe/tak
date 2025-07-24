@@ -1,4 +1,5 @@
-use crate::server::room::{create_room, CreateRoomResponse};
+use crate::server::api::create_room;
+use crate::server::{RoomSettings, ServerError};
 use crate::Route;
 use dioxus::prelude::*;
 use dioxus_free_icons::icons::fa_solid_icons::{
@@ -80,20 +81,14 @@ pub fn CreateRoomView(is_local: Option<bool>) -> Element {
         spawn(async move {
             let res = create_room(create_room_params).await;
             match res {
-                Ok(CreateRoomResponse::Unauthorized) => {
+                Ok(Err(ServerError::Unauthorized)) => {
                     nav.push(Route::Auth {});
                 }
-                Ok(CreateRoomResponse::Success(_)) => {
+                Ok(Ok(_)) => {
                     nav.push(Route::PlayOnline {});
                 }
-                Ok(CreateRoomResponse::InvalidSettings) => {
-                    dioxus::logger::tracing::error!("Invalid settings provided.");
-                }
-                Ok(CreateRoomResponse::AlreadyInRoom) => {
-                    dioxus::logger::tracing::error!("Already in a room, cannot create a new one.");
-                }
-                Ok(CreateRoomResponse::FailedToGenerateId) => {
-                    dioxus::logger::tracing::error!("Failed to generate id.");
+                Ok(Err(e)) => {
+                    dioxus::logger::tracing::error!("Failed to create room: {}", e);
                 }
                 Err(e) => {
                     dioxus::logger::tracing::error!("Failed to create room: {}", e);

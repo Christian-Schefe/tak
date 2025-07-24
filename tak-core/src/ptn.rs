@@ -163,6 +163,19 @@ impl TakPtn {
         }
     }
 
+    fn game_state_to_str(&self) -> String {
+        match self.game_state {
+            TakGameState::Win(TakPlayer::White, TakWinReason::Road) => "R-0".to_string(),
+            TakGameState::Win(TakPlayer::Black, TakWinReason::Road) => "0-R".to_string(),
+            TakGameState::Win(TakPlayer::White, TakWinReason::Flat) => "F-0".to_string(),
+            TakGameState::Win(TakPlayer::Black, TakWinReason::Flat) => "0-F".to_string(),
+            TakGameState::Win(TakPlayer::White, TakWinReason::Timeout) => "1-0".to_string(),
+            TakGameState::Win(TakPlayer::Black, TakWinReason::Timeout) => "0-1".to_string(),
+            TakGameState::Draw => "1/2-1/2".to_string(),
+            TakGameState::Ongoing => "".to_string(),
+        }
+    }
+
     pub fn to_str(&self) -> String {
         let mut result = String::new();
         self.attributes.iter().for_each(|attr| {
@@ -179,26 +192,12 @@ impl TakPtn {
                 result.push_str(&format!(" {}", black_turn));
             }
             if *i == self.turns.len() - 1 && self.game_state != TakGameState::Ongoing {
-                result.push_str(&format!(
-                    " {}",
-                    match self.game_state {
-                        TakGameState::Win(TakPlayer::White, TakWinReason::Road) =>
-                            "R-0".to_string(),
-                        TakGameState::Win(TakPlayer::Black, TakWinReason::Road) =>
-                            "0-R".to_string(),
-                        TakGameState::Win(TakPlayer::White, TakWinReason::Flat) =>
-                            "F-0".to_string(),
-                        TakGameState::Win(TakPlayer::Black, TakWinReason::Flat) =>
-                            "0-F".to_string(),
-                        TakGameState::Win(TakPlayer::White, TakWinReason::Timeout) =>
-                            "1-0".to_string(),
-                        TakGameState::Win(TakPlayer::Black, TakWinReason::Timeout) =>
-                            "0-1".to_string(),
-                        TakGameState::Draw => "1/2-1/2".to_string(),
-                        TakGameState::Ongoing => unreachable!(),
-                    }
-                ));
+                result.push_str(&format!(" {}", self.game_state_to_str()));
             }
+            result.push('\n');
+        }
+        if self.turns.len() == 0 && self.game_state != TakGameState::Ongoing {
+            result.push_str(&format!("1. {}", self.game_state_to_str()));
             result.push('\n');
         }
         result

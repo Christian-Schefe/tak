@@ -29,6 +29,7 @@ pub fn TakPiece(id: usize) -> Element {
             z_priority,
             can_be_picked,
             buried_piece_count,
+            deleted,
         },
     ) = data.read().clone();
 
@@ -87,7 +88,9 @@ pub fn TakPiece(id: usize) -> Element {
 
     rsx! {
         div { class: "tak-piece tak-piece-height-{height}", style,
-            div { class: "tak-piece-wrapper",
+            div {
+                class: "tak-piece-wrapper",
+                class: if deleted { "tak-piece-deleted" } else { "" },
                 div { class }
             }
         }

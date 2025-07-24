@@ -1,8 +1,8 @@
 use crate::views::Auth;
 use dioxus::prelude::*;
 use views::{
-    CreateRoomComputer, CreateRoomLocal, CreateRoomOnline, Home, More, Navbar, PlayComputer,
-    PlayLocal, PlayOnline, Puzzles, ReviewBoard, Rooms, Rules, Stats,
+    CreateRoomComputer, CreateRoomLocal, CreateRoomOnline, History, Home, More, Navbar,
+    PlayComputer, PlayLocal, PlayOnline, Puzzles, ReviewBoard, Rooms, Rules, Stats,
 };
 
 mod components;
@@ -24,8 +24,10 @@ enum Route {
     Rules {},
     #[route("/more/stats")]
     Stats {},
+    #[route("/more/history")]
+    History {},
 
-    #[route("/review")]
+    #[route("/review/:game_id")]
     ReviewBoard { game_id: String },
 
     #[route("/play/computer")]
@@ -44,6 +46,9 @@ enum Route {
 
     #[route("/rooms")]
     Rooms {},
+
+    #[route("/:..route")]
+    PageNotFound { route: Vec<String> },
 }
 
 const FAVICON: Asset = asset!("/assets/favicon.ico");
@@ -84,21 +89,22 @@ async fn main() {
     let port = dioxus::cli_config::server_port().unwrap_or(8080);
     let address = SocketAddr::new(ip, port);
 
-    let shared_state = server::websocket::SharedState::new();
     let session_store = server::internal::auth::create_session_store();
 
     let config = ServeConfig::new().unwrap();
 
     let router = axum::Router::new()
         .serve_dioxus_application(config, App)
-        .route("/ws", axum::routing::any(server::websocket::ws_handler))
+        .route(
+            "/ws",
+            axum::routing::any(server::internal::websocket::ws_handler),
+        )
         .route(
             "/ws2",
-            axum::routing::any(server::websocket::ws_test_handler),
+            axum::routing::any(server::internal::websocket::ws_test_handler),
         )
         .nest_service("/webworker", tower_http::services::ServeDir::new("workers"))
         .layer(Extension(session_store))
-        .layer(Extension(shared_state))
         .layer(CookieManagerLayer::new())
         .into_make_service_with_connect_info::<SocketAddr>();
 
@@ -114,5 +120,12 @@ fn App() -> Element {
         document::Link { rel: "icon", href: FAVICON }
         document::Link { rel: "stylesheet", href: MAIN_CSS }
         Router::<Route> {}
+    }
+}
+
+#[component]
+fn PageNotFound(route: Vec<String>) -> Element {
+    rsx! {
+        {format!("Not Found: {}", route.join("/"))}
     }
 }

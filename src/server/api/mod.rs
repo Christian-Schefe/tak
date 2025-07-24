@@ -1,21 +1,25 @@
 use dioxus::prelude::*;
 use serde::{Deserialize, Serialize};
 
-#[cfg(feature = "server")]
-use crate::server::error::ServerResult;
-use crate::server::{error::ServerError, UserId};
+mod room;
+
+pub use room::*;
+
+use crate::server::error::{ServerError, ServerResult};
+use crate::server::UserId;
 
 #[cfg(feature = "server")]
 use super::internal::*;
 
 #[cfg(feature = "server")]
-async fn authorize() -> ServerResult<UserId> {
+pub async fn authorize() -> ServerResult<UserId> {
     let Some(auth::AuthenticatedUser(Some(user_id))) = extract().await.ok() else {
         return Err(ServerError::Unauthorized);
     };
     Ok(user_id)
 }
 
+#[macro_export]
 macro_rules! bail_api {
     ($expr:expr) => {
         match $expr {

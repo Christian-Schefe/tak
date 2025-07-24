@@ -1,5 +1,5 @@
 use crate::components::tak_board_state::TakBoardState;
-use crate::server::room::{get_game_state, GetGameStateResponse};
+use crate::server::api::get_current_game;
 use dioxus::core_macro::component;
 use dioxus::prelude::*;
 use futures_util::{SinkExt, StreamExt};
@@ -164,17 +164,27 @@ fn resync_game_state(board: &TakBoardState) {
     let mut board = board.clone();
     spawn_local(async move {
         dioxus::logger::tracing::info!("[WebSocket] Resyncing game state");
-        let res = get_game_state().await;
+        let res = get_current_game().await;
         dioxus::logger::tracing::info!("[WebSocket] Game state resyncing: {:?}", res);
-        if let Ok(GetGameStateResponse::Success(game_state)) = res {
-            if let Some((ptn, time_remaining)) = game_state {
-                board.try_set_from_ptn(ptn.to_string());
-                board.has_started.set(true);
-                for (player, duration) in time_remaining {
-                    board.set_time_remaining(player, duration);
+        match res {
+            Ok(Ok(game_state)) => {
+                if let Some((ptn, time_remaining)) = game_state {
+                    board.try_set_from_ptn(ptn.to_string());
+                    board.has_started.set(true);
+                    for (player, duration) in time_remaining {
+                        board.set_time_remaining(player, duration);
+                    }
+                } else {
+                    dioxus::logger::tracing::warn!("[WebSocket] Game hasn't started yet");
+                    board.reset();
                 }
-            } else {
-                dioxus::logger::tracing::warn!("[WebSocket] Game hasn't started yet");
+            }
+            Ok(Err(e)) => {
+                dioxus::logger::tracing::error!("[WebSocket] Error resyncing game state: {e}");
+                board.reset();
+            }
+            Err(e) => {
+                dioxus::logger::tracing::error!("[WebSocket] Error resyncing game state: {e}");
                 board.reset();
             }
         }

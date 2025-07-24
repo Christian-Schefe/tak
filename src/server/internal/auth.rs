@@ -1,6 +1,6 @@
 use crate::server::error::{ServerError, ServerResult};
 use crate::server::internal::db::DB;
-use crate::server::internal::dto::UserRecord;
+use crate::server::internal::dto::{Record, UserRecord};
 use crate::server::UserId;
 use argon2::password_hash::rand_core::OsRng;
 use argon2::password_hash::SaltString;
@@ -142,7 +142,7 @@ pub async fn try_register(username: String, password: String) -> ServerResult<Us
 pub async fn try_login(username: String, password: String) -> ServerResult<UserId> {
     let mut result = DB
         .query("SELECT * FROM type::table($table) WHERE username = type::string($username)")
-        .bind(("table", "user"))
+        .bind(("table", UserRecord::table_name()))
         .bind(("username", username))
         .await?;
 

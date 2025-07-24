@@ -92,6 +92,7 @@ pub struct TakUIPiece {
     pub z_priority: Option<usize>,
     pub can_be_picked: bool,
     pub buried_piece_count: usize,
+    pub deleted: bool,
 }
 
 impl TakUIState {
@@ -116,6 +117,22 @@ impl TakUIState {
         F: FnMut() + 'static,
     {
         self.on_game_update.push(Box::new(listener));
+    }
+
+    pub fn preview_game(&self) -> &TakGame {
+        &self.preview_game
+    }
+
+    pub fn is_review(&self) -> bool {
+        self.actual_game.ply_index > self.preview_game.ply_index
+    }
+
+    pub fn get_visible_active_player(&self) -> TakPlayer {
+        if self.is_review() {
+            self.preview_game.current_player
+        } else {
+            self.actual_game.current_player
+        }
     }
 
     pub fn game(&self) -> &TakGame {
@@ -158,6 +175,17 @@ impl TakUIState {
         self.priority_pieces = Self::get_stones_from_last_action_in_order(&self.actual_game);
         self.on_game_update();
         Ok(())
+    }
+
+    pub fn try_seek_ply_index(&mut self, ply_index: usize) {
+        self.preview_game = self
+            .actual_game
+            .seek_ply_index(ply_index)
+            .expect("Should be able to seek to ply index");
+        self.preview_game.clock = None;
+        self.partial_move = None;
+        self.priority_pieces.clear();
+        self.on_game_update();
     }
 
     fn do_partial_move(&mut self, action: TakAction) {
@@ -293,9 +321,13 @@ impl TakUIState {
     }
 
     pub fn on_game_update(&mut self) {
+        let prev_pieces = self.pieces.clone();
         self.pieces.clear();
         self.tiles.clear();
         self.flat_counts = self.preview_game.board.count_flats();
+
+        #[cfg(feature = "wasm")]
+        dioxus::logger::tracing::info!("Updating UI: flat counts: {:?}", self.flat_counts);
 
         let drop_diff = match &self.partial_move {
             Some(TakPartialMove {
@@ -339,8 +371,15 @@ impl TakUIState {
                         } else {
                             TakPieceVariant::Flat
                         },
+                        deleted: false,
                     },
                 );
+            }
+        }
+        for (id, mut data) in prev_pieces {
+            if !self.pieces.contains_key(&id) {
+                data.deleted = true;
+                self.pieces.insert(id, data);
             }
         }
 
@@ -380,35 +419,44 @@ impl TakUIState {
         }
 
         let mut highlighted_tiles = Vec::new();
-        if let TakGameState::Win(player, TakWinReason::Road) = self.actual_game.game_state {
-            let all_positions =
-                TakCoord::iter_board(self.actual_game.board.size).collect::<Vec<TakCoord>>();
-            let road = self
-                .actual_game
-                .board
-                .check_for_road(&all_positions, player)
-                .expect("Player should have a road");
-            highlighted_tiles = self
-                .actual_game
-                .board
-                .find_shortest_path(road.0, road.1)
-                .expect("Should find a path for road");
-        } else if let TakGameState::Win(player, TakWinReason::Flat) = self.actual_game.game_state {
-            highlighted_tiles = TakCoord::iter_board(self.actual_game.board.size)
-                .filter(|pos| {
-                    self.actual_game
-                        .board
-                        .try_get_stack(*pos)
-                        .is_some_and(|stack| {
-                            stack.player() == player && stack.variant == TakPieceVariant::Flat
-                        })
-                })
-                .collect();
+        if self.preview_game.game_state != TakGameState::Ongoing {
+            if let TakGameState::Win(player, TakWinReason::Road) = self.actual_game.game_state {
+                let all_positions =
+                    TakCoord::iter_board(self.actual_game.board.size).collect::<Vec<TakCoord>>();
+                let road = self
+                    .actual_game
+                    .board
+                    .check_for_road(&all_positions, player)
+                    .expect("Player should have a road");
+                highlighted_tiles = self
+                    .actual_game
+                    .board
+                    .find_shortest_path(road.0, road.1)
+                    .expect("Should find a path for road");
+            } else if let TakGameState::Win(player, TakWinReason::Flat) =
+                self.actual_game.game_state
+            {
+                highlighted_tiles = TakCoord::iter_board(self.actual_game.board.size)
+                    .filter(|pos| {
+                        self.actual_game
+                            .board
+                            .try_get_stack(*pos)
+                            .is_some_and(|stack| {
+                                stack.player() == player && stack.variant == TakPieceVariant::Flat
+                            })
+                    })
+                    .collect();
+            }
         }
 
         let mut last_action_tiles = Vec::new();
         if highlighted_tiles.len() == 0 {
-            if let Some(last_action) = self.actual_game.action_history.last() {
+            let game = if self.actual_game.ply_index <= self.preview_game.ply_index {
+                &self.actual_game
+            } else {
+                &self.preview_game
+            };
+            if let Some(last_action) = game.action_history.last() {
                 last_action_tiles = match last_action {
                     TakActionRecord::PlacePiece { pos, .. } => vec![*pos],
                     TakActionRecord::MovePiece {

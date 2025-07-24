@@ -107,6 +107,10 @@
   justify-content: center;
 }
 
+.tak-piece-deleted {
+  animation: scaleOut $animation-speed ease-out forwards;
+}
+
 .tak-piece-inner {
   transition:
     width $animation-speed ease-in-out,
@@ -173,6 +177,16 @@
   to {
     transform: scale(1);
     opacity: 1;
+  }
+}
+@keyframes scaleOut {
+  from {
+    transform: scale(1);
+    opacity: 1;
+  }
+  to {
+    transform: scale(0.8);
+    opacity: 0;
   }
 }
 

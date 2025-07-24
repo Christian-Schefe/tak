@@ -2,7 +2,10 @@ use dioxus::prelude::*;
 use tak_core::TakTimeMode;
 
 use crate::{
-    server::room::{get_room_list, join_room, GetRoomListResponse, JoinRoomResponse},
+    server::{
+        api::{get_room_list, join_room},
+        ServerError,
+    },
     Route,
 };
 
@@ -14,10 +17,10 @@ pub fn Rooms() -> Element {
     let nav = use_navigator();
 
     use_effect(move || match &*rooms.read() {
-        Some(Ok(GetRoomListResponse::Success(list))) => {
+        Some(Ok(Ok(list))) => {
             room_list.set(list.clone());
         }
-        Some(Ok(GetRoomListResponse::Unauthorized)) => {
+        Some(Ok(Err(ServerError::Unauthorized))) => {
             nav.push(Route::Auth {});
         }
         _ => {}
@@ -40,10 +43,10 @@ pub fn Rooms() -> Element {
         spawn(async move {
             let res = join_room(room_id, is_spectator).await;
             match res {
-                Ok(JoinRoomResponse::Unauthorized) => {
+                Ok(Err(ServerError::Unauthorized)) => {
                     nav.push(Route::Auth {});
                 }
-                Ok(JoinRoomResponse::Success) => {
+                Ok(Ok(())) => {
                     nav.push(Route::PlayOnline {});
                 }
                 Ok(_) => {
@@ -68,11 +71,15 @@ pub fn Rooms() -> Element {
                         div { class: "room-info",
                             p { class: "room-code", "{room.room_id}" }
                             div { class: "room-details",
-                                p { "{room.settings.game_settings.size}x{room.settings.game_settings.size}" }
+                                p {
+                                    "{room.settings.game_settings.size}x{room.settings.game_settings.size}"
+                                }
                                 p { "{formatted_time_mode(&room.settings.game_settings.time_mode)}" }
                             }
                             div { class: "room-players",
-                                p { {room.usernames.join(", ")} }
+                                p {
+                                    {room.players.iter().map(|x| x.username.clone()).collect::<Vec<_>>().join(", ")}
+                                }
                             }
                         }
                         div { class: "room-actions",

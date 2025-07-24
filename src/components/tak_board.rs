@@ -18,17 +18,18 @@ pub fn TakBoard() -> Element {
         let _ = state_clone.on_change.read();
         state_clone
             .with_game(|game| {
+                let mut piece_ids = game.pieces.iter().map(|(id, _)| *id).collect::<Vec<_>>();
+                piece_ids.sort_unstable();
                 (
                     game.game().current_player,
                     game.game().board.size,
-                    game.pieces.iter().map(|(id, _)| *id).collect::<Vec<_>>(),
+                    piece_ids,
                 )
             })
             .expect("Game should exist to get board data")
     });
 
-    let (player, size, mut piece_ids) = data.read().clone();
-    piece_ids.sort_unstable();
+    let (player, size, piece_ids) = data.read().clone();
 
     let tile_coords = (0..size)
         .rev()
@@ -60,6 +61,9 @@ pub fn TakBoard() -> Element {
         let _ = state_clone.on_change.read();
         state_clone.correct_selected_piece_type();
     });
+
+    let state_clone = state.clone();
+    let show_piece_selector = use_memo(move || !state_clone.is_spectator());
 
     rsx! {
         div { class: "tak-board-container",
@@ -98,10 +102,12 @@ pub fn TakBoard() -> Element {
                 TakFlatsCounter {}
                 TakHand { player: TakPlayer::Black }
             }
-            div { class: "tak-piece-selector",
-                PieceTypeSelectorButton { piece_type: TakPieceVariant::Flat }
-                PieceTypeSelectorButton { piece_type: TakPieceVariant::Wall }
-                PieceTypeSelectorButton { piece_type: TakPieceVariant::Capstone }
+            if *show_piece_selector.read() {
+                div { class: "tak-piece-selector",
+                    PieceTypeSelectorButton { piece_type: TakPieceVariant::Flat }
+                    PieceTypeSelectorButton { piece_type: TakPieceVariant::Wall }
+                    PieceTypeSelectorButton { piece_type: TakPieceVariant::Capstone }
+                }
             }
         }
     }

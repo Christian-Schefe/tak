@@ -1,18 +1,14 @@
-use tak_core::{TakGame, TakPlayer};
+use tak_core::{TakGame, TakGameState, TakPlayer};
 use uuid::Uuid;
 
 use crate::server::{
     error::{ServerError, ServerResult},
-    internal::dto::{GameRecord, PlayerRecord},
-    UserId,
+    internal::{
+        db::DB,
+        dto::{GameRecord, PlayerRecord, Record},
+    },
+    GameId, UserId,
 };
-
-#[derive(Debug, Clone)]
-pub enum GameResult {
-    Win,
-    Draw,
-    Loss,
-}
 
 pub fn create_player(user_id: &str) -> PlayerRecord {
     PlayerRecord {
@@ -33,7 +29,8 @@ pub async fn add_game(
     player_mapping: fixed_map::Map<TakPlayer, String>,
 ) -> ServerResult<()> {
     let game_id = Uuid::new_v4().to_string();
-    let ptn = game.to_ptn().to_str();
+    let ptn = game.to_ptn();
+    println!("game: {:?}, ptn: {:?}", game, ptn);
 
     let white_player_id = player_mapping
         .get(TakPlayer::White)
@@ -55,36 +52,43 @@ pub async fn add_game(
         game_id: game_id.clone(),
         white_player,
         black_player,
-        ptn,
+        ptn: ptn.to_str(),
+        timestamp: chrono::Utc::now().into(),
     };
 
     super::dto::try_create(&game_id, game_record).await?;
+    add_game_result(&white_player_id, &black_player_id, &game).await?;
     Ok(())
 }
 
 pub async fn add_game_result(
-    player1_id: &UserId,
-    player2_id: &UserId,
-    result: GameResult,
+    white_player_id: &UserId,
+    black_player_id: &UserId,
+    game: &TakGame,
 ) -> ServerResult<()> {
-    let mut player1 = get_or_insert_player(player1_id).await?;
-    let mut player2 = get_or_insert_player(player2_id).await?;
+    let mut player1 = get_or_insert_player(white_player_id).await?;
+    let mut player2 = get_or_insert_player(black_player_id).await?;
 
-    let s = match result {
-        GameResult::Win => {
+    let s = match game.game_state {
+        TakGameState::Win(TakPlayer::White, _) => {
             player1.wins += 1;
             player2.losses += 1;
             1.0
         }
-        GameResult::Draw => {
+        TakGameState::Draw => {
             player1.draws += 1;
             player2.draws += 1;
             0.5
         }
-        GameResult::Loss => {
+        TakGameState::Win(TakPlayer::Black, _) => {
             player1.losses += 1;
             player2.wins += 1;
             0.0
+        }
+        TakGameState::Ongoing => {
+            return Err(ServerError::InternalServerError(
+                "Game is still ongoing, cannot update results".to_string(),
+            ));
         }
     };
 
@@ -97,14 +101,29 @@ pub async fn add_game_result(
 
     println!(
         "Updating player {}: wins={}, losses={}, draws={}, rating={}",
-        player1_id, player1.wins, player1.losses, player1.draws, player1.rating
+        white_player_id, player1.wins, player1.losses, player1.draws, player1.rating
     );
     println!(
         "Updating player {}: wins={}, losses={}, draws={}, rating={}",
-        player2_id, player2.wins, player2.losses, player2.draws, player2.rating
+        black_player_id, player2.wins, player2.losses, player2.draws, player2.rating
     );
 
-    super::dto::try_update(player1_id, player1).await?;
-    super::dto::try_update(player2_id, player2).await?;
+    super::dto::try_update(white_player_id, player1).await?;
+    super::dto::try_update(black_player_id, player2).await?;
     Ok(())
+}
+
+pub async fn get_game(game_id: &GameId) -> ServerResult<GameRecord> {
+    let game = super::dto::try_get(game_id).await?;
+    Ok(game)
+}
+
+pub async fn get_games_of_player(user_id: &UserId) -> ServerResult<Vec<GameRecord>> {
+    let mut result = DB
+        .query("SELECT * FROM type::table($table) WHERE black_player.user_id = type::string($user_id) OR white_player.user_id = type::string($user_id)")
+        .bind(("table", GameRecord::table_name()))
+        .bind(("user_id", user_id.clone()))
+        .await?;
+    let games: Vec<GameRecord> = result.take(0)?;
+    Ok(games)
 }

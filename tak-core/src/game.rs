@@ -298,6 +298,19 @@ impl TakGame {
         self.current_player = self.current_player.other();
     }
 
+    pub fn seek_ply_index(&self, ply_index: usize) -> Option<Self> {
+        if ply_index > self.ply_index {
+            return None;
+        }
+        let mut game = self.clone();
+        if ply_index < self.ply_index {
+            game.game_state = TakGameState::Ongoing;
+        }
+        game.action_history.truncate(ply_index);
+        let ptn = game.to_ptn();
+        Some(TakGame::try_from_ptn(ptn).expect("Should be able to seek to ply index"))
+    }
+
     pub fn try_do_action(&mut self, action: TakAction) -> Result<(), TakInvalidActionError> {
         let current_player = self.current_player;
         let now = if let Some(clock) = &mut self.clock {

@@ -12,8 +12,9 @@ use tak_core::{TakAction, TakGameState, TakPlayer};
 use tokio::sync::Mutex;
 
 use crate::components::ServerGameMessage;
-use crate::server::auth::SessionStore;
-use crate::server::room::{PlayerSocketMap, Room, Rooms};
+use crate::server::internal::auth::SessionStore;
+use crate::server::internal::room::{ArcMutexDashMap, Room, ROOMS};
+use crate::server::UserId;
 use crate::views::ClientGameMessage;
 use axum_extra::TypedHeader;
 use futures_util::stream::{SplitSink, SplitStream};
@@ -39,19 +40,6 @@ impl PlayerSocket {
 pub struct PlayerConnection {
     pub sender: SplitSink<WebSocket, Message>,
     pub join_handle: Option<tokio::task::JoinHandle<()>>,
-}
-
-#[derive(Clone)]
-pub struct SharedState {
-    pub rooms: Arc<Mutex<Rooms>>,
-}
-
-impl SharedState {
-    pub fn new() -> Self {
-        SharedState {
-            rooms: Arc::new(Mutex::new(Rooms::new())),
-        }
-    }
 }
 
 pub(crate) async fn ws_test_handler(
@@ -92,7 +80,6 @@ pub(crate) async fn ws_handler(
     ws: WebSocketUpgrade,
     user_agent: Option<TypedHeader<headers::UserAgent>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    Extension(state): Extension<SharedState>,
     Extension(store): Extension<SessionStore>,
 ) -> impl IntoResponse {
     let user_agent = if let Some(TypedHeader(user_agent)) = user_agent {
@@ -101,15 +88,10 @@ pub(crate) async fn ws_handler(
         String::from("Unknown browser")
     };
     println!("`{user_agent}` at {addr} connected.");
-    ws.on_upgrade(move |socket| handle_socket(socket, store, addr, state))
+    ws.on_upgrade(move |socket| handle_socket(socket, store, addr))
 }
 
-async fn handle_socket(
-    mut socket: WebSocket,
-    session_store: SessionStore,
-    who: SocketAddr,
-    state: SharedState,
-) {
+async fn handle_socket(mut socket: WebSocket, session_store: SessionStore, who: SocketAddr) {
     let Some(Ok(msg)) = socket.next().await else {
         println!("Unauthorized access from {who}");
         let _ = socket.close().await;
@@ -139,7 +121,7 @@ async fn handle_socket(
 
     let (mut sender, receiver) = socket.split();
 
-    let mut rooms = state.rooms.lock().await;
+    let rooms = ROOMS.read().await;
     let Some(room) = rooms.try_get_room(&player_id) else {
         println!("Player {player_id} not in any room");
         let _ = sender.close().await;
@@ -163,11 +145,12 @@ async fn handle_socket(
             recv_player.clone(),
         )
         .await;
-        Rooms::remove_connection(recv_sockets, &recv_player, id).await;
+        let rooms = ROOMS.read().await;
+        rooms.remove_connection(&recv_player, id).await;
         println!("Websocket receiver task of {who} ended.");
     });
 
-    let mut rooms = state.rooms.lock().await;
+    let rooms = ROOMS.read().await;
     rooms
         .add_handle_to_connection(&player_id, id, recv_task)
         .await;
@@ -176,7 +159,7 @@ async fn handle_socket(
 }
 
 async fn on_room_receive_move(
-    sockets: Arc<PlayerSocketMap>,
+    sockets: ArcMutexDashMap<UserId, PlayerSocket>,
     player: &str,
     room: &mut Room,
     action: &str,
@@ -251,7 +234,7 @@ async fn on_room_receive_move(
 
 async fn room_receive_task(
     room: Arc<Mutex<Room>>,
-    sockets: Arc<PlayerSocketMap>,
+    sockets: ArcMutexDashMap<UserId, PlayerSocket>,
     mut receiver: SplitStream<WebSocket>,
     player: String,
 ) {

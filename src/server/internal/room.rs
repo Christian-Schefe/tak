@@ -1,18 +1,21 @@
 use std::{
     collections::{HashMap, HashSet},
     sync::{Arc, LazyLock},
+    time::Duration,
 };
 
 use futures_util::SinkExt;
 use rand::Rng;
 use tak_core::{TakGame, TakGameState, TakPlayer};
 
-use crate::server::{
-    error::{ServerError, ServerResult},
-    PlayerInformation, RoomId, RoomInformation, RoomSettings, UserId,
+use crate::{
+    components::ServerGameMessage,
+    server::{
+        error::{ServerError, ServerResult},
+        internal::websocket::{PlayerConnection, PlayerSocket},
+        PlayerInformation, RoomId, RoomInformation, RoomSettings, UserId, ROOM_ID_LEN,
+    },
 };
-
-pub const ROOM_ID_LEN: usize = 4;
 
 pub struct Room {
     pub settings: RoomSettings,
@@ -31,7 +34,7 @@ pub struct RoomGame {
 pub struct Rooms {
     rooms: HashMap<RoomId, Arc<tokio::sync::Mutex<Room>>>,
     player_mapping: HashMap<UserId, RoomId>,
-    pub player_sockets: ArcMutexDashMap<UserId, crate::server::websocket::PlayerSocket>,
+    pub player_sockets: ArcMutexDashMap<UserId, PlayerSocket>,
 }
 
 pub type ArcMutexDashMap<K, V> = Arc<dashmap::DashMap<K, Arc<tokio::sync::Mutex<V>>>>;
@@ -124,7 +127,7 @@ impl Room {
         self.game.is_none() && self.players.len() == TakPlayer::ALL.len()
     }
 
-    fn is_rematch_ready(&self) -> bool {
+    pub fn is_rematch_ready(&self) -> bool {
         self.game
             .as_ref()
             .is_some_and(|game| game.game.game_state != TakGameState::Ongoing)
@@ -175,7 +178,11 @@ impl Rooms {
         }
     }
 
-    fn try_create_room(&mut self, settings: RoomSettings, owner: UserId) -> ServerResult<RoomId> {
+    pub fn try_create_room(
+        &mut self,
+        settings: RoomSettings,
+        owner: UserId,
+    ) -> ServerResult<RoomId> {
         if self.player_mapping.contains_key(&owner) {
             return Err(ServerError::Conflict(
                 "User is already in a room".to_string(),
@@ -197,7 +204,7 @@ impl Rooms {
         Ok(id)
     }
 
-    async fn try_join_room_as_player(
+    pub async fn try_join_room_as_player(
         &mut self,
         room_id: RoomId,
         player_id: UserId,
@@ -215,11 +222,17 @@ impl Rooms {
             return Err(ServerError::Conflict("Room is full".to_string()));
         }
         room_lock.players.push(player_id.clone());
-        self.player_mapping.insert(player_id, room_id);
+        self.player_mapping.insert(player_id, room_id.clone());
+
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            maybe_start_game(&room_id).await;
+        });
+
         Ok(())
     }
 
-    async fn try_join_room_as_spectator(
+    pub async fn try_join_room_as_spectator(
         &mut self,
         room_id: RoomId,
         player_id: UserId,
@@ -238,7 +251,7 @@ impl Rooms {
         Ok(())
     }
 
-    async fn try_leave_room(&mut self, player_id: UserId) -> ServerResult<()> {
+    pub async fn try_leave_room(&mut self, player_id: UserId) -> ServerResult<()> {
         let Some(room_id) = self.player_mapping.remove(&player_id) else {
             return Err(ServerError::NotFound);
         };
@@ -258,6 +271,8 @@ impl Rooms {
             self.rooms.remove(&room_id);
             println!("Room {} was empty and removed", room_id);
         }
+
+        self.terminate_socket(&player_id).await;
         Ok(())
     }
 
@@ -274,6 +289,25 @@ impl Rooms {
         } else {
             Err(ServerError::NotFound)
         }
+    }
+
+    pub async fn try_agree_rematch(&self, user_id: &UserId) -> ServerResult<()> {
+        let Some((room_id, room)) = self.try_get_room_pair(&user_id) else {
+            return Err(ServerError::NotFound);
+        };
+        let mut room_lock = room.lock().await;
+        if !room_lock.players.contains(&user_id) {
+            return Err(ServerError::NotFound);
+        }
+        room_lock.rematch_agree.insert(user_id.clone());
+
+        if room_lock.is_rematch_ready() {
+            tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_millis(250)).await;
+                maybe_start_game(&room_id).await;
+            });
+        }
+        Ok(())
     }
 
     pub fn try_get_room_pair(
@@ -300,7 +334,7 @@ impl Rooms {
         func(&mut lock)
     }
 
-    async fn try_get_players(
+    pub async fn try_get_players(
         &self,
         player_id: &UserId,
     ) -> ServerResult<Vec<(PlayerInformation, TakPlayer, bool)>> {
@@ -322,7 +356,7 @@ impl Rooms {
         Ok(player_info)
     }
 
-    async fn get_room_list(&self) -> ServerResult<Vec<RoomInformation>> {
+    pub async fn get_room_list(&self) -> ServerResult<Vec<RoomInformation>> {
         let mut room_list = Vec::with_capacity(self.rooms.len());
         for (room_id, room) in &self.rooms {
             let room_lock = room.lock().await;
@@ -342,20 +376,14 @@ impl Rooms {
         Ok(room_list)
     }
 
-    pub async fn add_connection(
-        &self,
-        player_id: &UserId,
-        connection: crate::server::websocket::PlayerConnection,
-    ) -> usize {
+    pub async fn add_connection(&self, player_id: &UserId, connection: PlayerConnection) -> usize {
         let socket = self
             .player_sockets
             .entry(player_id.to_string())
             .or_insert_with(|| {
-                Arc::new(tokio::sync::Mutex::new(
-                    crate::server::websocket::PlayerSocket {
-                        connections: Vec::new(),
-                    },
-                ))
+                Arc::new(tokio::sync::Mutex::new(PlayerSocket {
+                    connections: Vec::new(),
+                }))
             });
 
         let mut lock = socket.lock().await;
@@ -409,5 +437,110 @@ impl Rooms {
         let room = self.rooms.get(room_id).unwrap();
         let room_lock = room.lock().await;
         room_lock.get_broadcast_player_ids()
+    }
+}
+
+async fn maybe_start_game(room_id: &RoomId) {
+    let rooms = ROOMS.read().await;
+    if !rooms
+        .with_room_mut(room_id, |room| room.try_start_game())
+        .await
+    {
+        return;
+    }
+
+    let msg = ServerGameMessage::StartGame;
+    let msg = serde_json::to_string(&msg).unwrap();
+
+    for player in rooms.get_broadcast_player_ids(room_id).await {
+        if let Some(socket_ref) = rooms.player_sockets.get(&player) {
+            let socket_ref = socket_ref.clone();
+            let mut socket = socket_ref.lock().await;
+            socket.send(&msg).await;
+        }
+    }
+
+    println!("Sent start game message");
+
+    let Some(room) = rooms.rooms.get(room_id).cloned() else {
+        println!("Room {} not found", room_id);
+        return;
+    };
+    let sockets = rooms.player_sockets.clone();
+    let game_end_receiver = rooms
+        .with_room_mut(room_id, |room| {
+            room.game
+                .as_ref()
+                .expect("Room should have game")
+                .game_end_sender
+                .subscribe()
+        })
+        .await;
+    drop(rooms);
+    let room_clone = room.clone();
+    tokio::spawn(async move {
+        room_check_timeout_task(room_clone).await;
+    });
+    room_check_gameover_task(game_end_receiver, room, sockets).await;
+    println!("Sent end game message");
+}
+
+async fn room_check_timeout_task(room: Arc<tokio::sync::Mutex<Room>>) {
+    let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(1000));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    loop {
+        interval.tick().await;
+        let mut room_lock = room.lock().await;
+        if let Some(game) = room_lock.game.as_mut() {
+            game.game.check_timeout();
+            if game.game.game_state != TakGameState::Ongoing {
+                room_lock.check_end_game();
+                break;
+            };
+        } else {
+            println!("No game in room, stopping timeout check");
+            break;
+        }
+    }
+}
+
+async fn room_check_gameover_task(
+    mut game_end_receiver: tokio::sync::watch::Receiver<TakGameState>,
+    room: Arc<tokio::sync::Mutex<Room>>,
+    sockets: ArcMutexDashMap<UserId, PlayerSocket>,
+) {
+    if game_end_receiver.changed().await.is_err() {
+        return;
+    };
+    let game_state = game_end_receiver.borrow_and_update().clone();
+    let msg = serde_json::to_string(&ServerGameMessage::GameOver(game_state.clone())).unwrap();
+    let room_lock = room.lock().await;
+    for player in room_lock.get_broadcast_player_ids() {
+        if let Some(socket) = sockets.get(&player) {
+            let socket = socket.clone();
+            let sender = &mut socket.lock().await;
+            if sender.send(&msg).await {
+                println!("Sent game over {:?} to player {player}", game_state.clone());
+            } else {
+                println!(
+                    "Failed to send message {:?} to some connections of player {player}",
+                    game_state.clone()
+                );
+            }
+        }
+    }
+    if room_lock.game.is_none() {
+        println!("No game in room, stopping gameover check");
+        return;
+    }
+
+    let game_clone = room_lock.game.as_ref().unwrap().game.clone();
+    let player_mapping = room_lock.game.as_ref().unwrap().player_mapping.clone();
+
+    println!("Game over: {:?}, {:?}", game_state, game_clone.game_state);
+    drop(room_lock);
+
+    if let Err(e) = super::player::add_game(game_clone, player_mapping).await {
+        eprintln!("Failed to add game: {:?}", e);
     }
 }

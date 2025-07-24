@@ -6839,6 +6839,7 @@ dependencies = [
  "argon2",
  "axum",
  "axum-extra",
+ "chrono",
  "dashmap 6.1.0",
  "dioxus",
  "dioxus-cli-config",
@@ -6871,11 +6872,11 @@ dependencies = [
 name = "tak-core"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "dioxus",
  "fixed-map",
  "serde",
  "serde_json",
- "web-sys",
 ]
 
 [[package]]

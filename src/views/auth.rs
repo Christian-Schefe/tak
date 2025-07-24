@@ -56,7 +56,7 @@ pub fn Auth() -> Element {
 
     use_effect(move || {
         if let AuthState::Success = *auth_state.read() {
-            nav.push(Route::Home {});
+            nav.replace(Route::Home {});
         }
     });
 

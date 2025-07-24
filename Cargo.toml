@@ -57,6 +57,7 @@ tak-core = { path = "tak-core", version = "*", features = ["serde"] }
 takumi = { path = "takumi", version = "*", features = ["serde"] }
 moka = { version = "0.12.10", features = ["future"], optional = true }
 fixed-map = "0.9.5"
+chrono = { version = "0.4.41", features = ["serde"] }
 
 [features]
 web = ["dioxus/web", "tak-core/wasm"]

@@ -21,21 +21,9 @@ pub struct TakTimestamp {
 }
 
 impl TakTimestamp {
-    #[cfg(not(feature = "wasm"))]
     pub fn now() -> Self {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as u64;
-        TakTimestamp { millis: now }
-    }
-
-    #[cfg(feature = "wasm")]
-    pub fn now() -> Self {
-        use web_sys::js_sys::Date;
         TakTimestamp {
-            millis: Date::new_0().get_time() as u64,
+            millis: chrono::Utc::now().timestamp_millis() as u64,
         }
     }
 

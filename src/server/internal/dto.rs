@@ -55,6 +55,7 @@ pub struct GameRecord {
     pub white_player: PlayerInformation,
     pub black_player: PlayerInformation,
     pub ptn: String,
+    pub timestamp: surrealdb::sql::Datetime,
 }
 
 impl Record for GameRecord {

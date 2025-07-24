@@ -1,13 +1,15 @@
+mod history;
 mod rules;
 mod stats;
 
+pub use history::*;
 pub use rules::*;
 pub use stats::*;
 
 use crate::views::auth::do_logout;
 use crate::Route;
 use dioxus::prelude::*;
-use dioxus_free_icons::icons::fa_solid_icons::{FaBookOpen, FaChartBar};
+use dioxus_free_icons::icons::fa_solid_icons::{FaBookOpen, FaChartBar, FaScroll};
 use dioxus_free_icons::icons::io_icons::{IoLogOut, IoSettings};
 use dioxus_free_icons::Icon;
 
@@ -37,6 +39,10 @@ pub fn More() -> Element {
         nav.push(Route::Stats {});
     };
 
+    let on_click_history = move |_| {
+        nav.push(Route::History {});
+    };
+
     rsx! {
         div { id: "more-view",
             MoreButton {
@@ -48,6 +54,11 @@ pub fn More() -> Element {
                 onclick: on_click_rules,
                 icon: MoreButtonIcon::Rules,
                 label: "Rules",
+            }
+            MoreButton {
+                onclick: on_click_history,
+                icon: MoreButtonIcon::History,
+                label: "History",
             }
             MoreButton {
                 onclick: |_| (),
@@ -67,6 +78,7 @@ pub fn More() -> Element {
 pub enum MoreButtonIcon {
     Stats,
     Rules,
+    History,
     Settings,
     Logout,
 }
@@ -92,6 +104,14 @@ pub fn MoreButton(
                 height: 30,
                 fill: "black",
                 icon: FaBookOpen,
+            }
+        },
+        MoreButtonIcon::History => rsx! {
+            Icon {
+                width: 30,
+                height: 30,
+                fill: "black",
+                icon: FaScroll,
             }
         },
         MoreButtonIcon::Settings => rsx! {

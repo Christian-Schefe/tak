@@ -1,7 +1,7 @@
 use crate::components::tak_board_state::{PlayerInfo, PlayerType, TakBoardState};
 use crate::components::{TakBoard, TakEngine, TakWebSocket, TakWinModal};
-use crate::server::api::get_session_id;
-use crate::server::room::{get_room, GetRoomResponse};
+use crate::server::api::{get_room, get_session_id};
+use crate::server::ServerError;
 use crate::views::LOCAL_SETTINGS;
 use crate::Route;
 use dioxus::prelude::*;
@@ -142,7 +142,7 @@ pub fn PlayOnline() -> Element {
     });
 
     let room_id = use_memo(move || {
-        if let Some(Ok(GetRoomResponse::Success(id, _))) = room.read().as_ref() {
+        if let Some(Ok(Ok((id, _)))) = room.read().as_ref() {
             Some(id.clone())
         } else {
             None
@@ -153,13 +153,13 @@ pub fn PlayOnline() -> Element {
     use_effect(move || {
         dioxus::logger::tracing::info!("room: {:?}", room.read());
         match room.read().as_ref() {
-            Some(Ok(GetRoomResponse::Success(_, settings))) => {
+            Some(Ok(Ok((_, settings)))) => {
                 board_clone.try_set_from_settings(settings.game_settings.clone());
             }
-            Some(Ok(GetRoomResponse::Unauthorized)) => {
+            Some(Ok(Err(ServerError::Unauthorized))) => {
                 nav.replace(Route::Auth {});
             }
-            Some(Ok(GetRoomResponse::NotInARoom)) => {
+            Some(Ok(Err(ServerError::NotFound))) => {
                 nav.replace(Route::Home {});
             }
             _ => {}

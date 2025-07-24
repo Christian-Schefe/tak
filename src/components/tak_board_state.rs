@@ -1,4 +1,4 @@
-use crate::server::room::{get_players, GetPlayersResponse};
+use crate::server::api::get_players;
 use crate::views::ClientGameMessage;
 use dioxus::logger::tracing;
 use dioxus::prelude::{Readable, Signal, Writable, WritableVecExt};
@@ -155,14 +155,14 @@ impl TakBoardState {
             return;
         };
         match res {
-            GetPlayersResponse::Success(players) => {
+            Ok(players) => {
                 let mut map = self.player_info.write();
-                for (player, info) in players {
+                for (info, player, is_local) in players {
                     map.insert(
                         player,
                         PlayerInfo {
                             name: info.username,
-                            player_type: if info.is_local {
+                            player_type: if is_local {
                                 PlayerType::Local
                             } else {
                                 PlayerType::Remote
@@ -204,6 +204,13 @@ impl TakBoardState {
             return info.player_type == player_type;
         }
         false
+    }
+
+    pub fn is_spectator(&self) -> bool {
+        let player_info = self.player_info.read();
+        player_info
+            .values()
+            .all(|info| info.player_type != PlayerType::Local)
     }
 
     pub fn is_place_action(&self, pos: TakCoord) -> bool {

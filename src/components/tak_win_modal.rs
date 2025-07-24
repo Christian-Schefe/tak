@@ -4,7 +4,10 @@ use web_sys::window;
 
 use crate::{
     components::tak_board_state::{GameType, TakBoardState},
-    server::room::{agree_rematch, leave_room, AgreeRematchResponse, LeaveRoomResponse},
+    server::{
+        api::{agree_rematch, leave_room},
+        ServerError,
+    },
     Route,
 };
 
@@ -62,11 +65,14 @@ pub fn TakWinModal(is_local: bool) -> Element {
         spawn(async move {
             let res = leave_room().await;
             match res {
-                Ok(LeaveRoomResponse::Unauthorized) => {
+                Ok(Err(ServerError::Unauthorized)) => {
                     nav.push(Route::Auth {});
                 }
-                Ok(_) => {
+                Ok(Ok(())) => {
                     nav.push(Route::Home {});
+                }
+                Ok(Err(e)) => {
+                    dioxus::logger::tracing::error!("Failed to leave room: {}", e);
                 }
                 Err(e) => {
                     dioxus::logger::tracing::error!("Failed to leave room: {}", e);
@@ -99,12 +105,12 @@ pub fn TakWinModal(is_local: bool) -> Element {
         spawn(async move {
             let res = agree_rematch().await;
             match res {
-                Ok(AgreeRematchResponse::Unauthorized) => {
+                Ok(Err(ServerError::Unauthorized)) => {
                     nav.push(Route::Auth {});
                 }
-                Ok(AgreeRematchResponse::Success) => has_agreed_to_rematch.set(true),
-                Ok(AgreeRematchResponse::NotInARoom) => {
-                    dioxus::logger::tracing::error!("Failed to agree to rematch: not in a room");
+                Ok(Ok(())) => has_agreed_to_rematch.set(true),
+                Ok(Err(e)) => {
+                    dioxus::logger::tracing::error!("Failed to agree to rematch: {}", e);
                 }
                 Err(e) => {
                     dioxus::logger::tracing::error!("Failed to agree to rematch: {}", e);
