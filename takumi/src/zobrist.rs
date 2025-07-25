@@ -19,6 +19,7 @@ pub struct TranspositionEntry {
     pub zobrist: u64,
     pub score: i32,
     pub depth: usize,
+    pub ply: usize,
     pub node_type: TranspositionNodeType,
     pub best_move: Option<Action>,
 }
@@ -42,13 +43,26 @@ impl TranspositionTable {
         }
     }
 
-    pub fn insert(&mut self, entry: TranspositionEntry) {
-        let index = (entry.zobrist % (1 << self.size)) as usize;
+    fn index(&self, zobrist: u64) -> usize {
+        (zobrist & ((1 << self.size) - 1)) as usize
+    }
+
+    pub fn maybe_insert(&mut self, entry: TranspositionEntry) {
+        let index = self.index(entry.zobrist);
+        if let Some(existing) = &self.entries[index] {
+            if existing.depth >= entry.depth {
+                if entry.zobrist == existing.zobrist {
+                    return;
+                } else if existing.ply >= entry.ply {
+                    return;
+                }
+            }
+        }
         self.entries[index] = Some(entry);
     }
 
     pub fn get(&self, zobrist: u64) -> Option<&TranspositionEntry> {
-        let index = (zobrist % (1 << self.size)) as usize;
+        let index = self.index(zobrist);
         self.entries[index]
             .as_ref()
             .filter(|e| e.zobrist == zobrist)

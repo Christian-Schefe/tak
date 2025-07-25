@@ -76,6 +76,11 @@ pub fn TakTile(pos: TakCoord) -> Element {
 
     rendered_bridges.push({
         let center_corner_classes = center_corner_classes.join(" ");
+        let player_class = if !rendered_bridges.is_empty() {
+            player_class
+        } else {
+            "tak-bridge-none"
+        };
         rsx! {
             div { class: "tak-bridge tak-bridge-center {player_class} {center_corner_classes}" }
         }
@@ -93,9 +98,7 @@ pub fn TakTile(pos: TakCoord) -> Element {
                 }
             }
             if pos.x == 0 {
-                div { class: "tak-tile-label tak-tile-label-file",
-                    {format!("{}", pos.y + 1)}
-                }
+                div { class: "tak-tile-label tak-tile-label-file", {format!("{}", pos.y + 1)} }
             }
             {rendered_bridges.iter()}
         }

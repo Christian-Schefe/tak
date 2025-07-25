@@ -168,12 +168,9 @@ fn resync_game_state(board: &TakBoardState) {
         dioxus::logger::tracing::info!("[WebSocket] Game state resyncing: {:?}", res);
         match res {
             Ok(Ok(game_state)) => {
-                if let Some((ptn, time_remaining)) = game_state {
-                    board.try_set_from_ptn(ptn.to_string());
+                if let Some(game) = game_state {
+                    board.set_from_game(game.clone());
                     board.has_started.set(true);
-                    for (player, duration) in time_remaining {
-                        board.set_time_remaining(player, duration);
-                    }
                 } else {
                     dioxus::logger::tracing::warn!("[WebSocket] Game hasn't started yet");
                     board.reset();

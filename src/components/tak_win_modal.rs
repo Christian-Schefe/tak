@@ -23,27 +23,23 @@ pub fn TakWinModal(is_local: bool) -> Element {
     let data = use_memo(move || {
         let _ = state_clone.on_change.read();
         state_clone
-            .with_game(|game| match &game.game().game_state {
-                TakGameState::Ongoing => None,
-                TakGameState::Win(player, reason) => Some(Some((*player, reason.clone()))),
-                TakGameState::Draw => Some(None),
-            })
+            .with_game(|game| game.game().game_state.clone())
             .expect("Should have game state")
     });
 
     use_effect(move || {
-        if let None = &*data.read() {
+        if let TakGameState::Ongoing = &*data.read() {
             has_agreed_to_rematch.set(false);
         }
     });
 
     let data = data.read();
-    let Some(data) = data.as_ref() else {
+    if let TakGameState::Ongoing = &*data {
         return rsx! {};
     };
 
-    let message = match data {
-        Some((player, reason)) => {
+    let message = match &*data {
+        TakGameState::Win(player, reason) => {
             let player_str = match player {
                 TakPlayer::White => "White",
                 TakPlayer::Black => "Black",
@@ -54,7 +50,9 @@ pub fn TakWinModal(is_local: bool) -> Element {
                 TakWinReason::Timeout => format!("{} wins by timeout!", player_str),
             }
         }
-        None => "It's a draw!".to_string(),
+        TakGameState::Draw => "It's a draw!".to_string(),
+        TakGameState::Canceled => "The game was canceled.".to_string(),
+        TakGameState::Ongoing => unreachable!(),
     };
 
     let on_click_leave = move |_| {

@@ -23,15 +23,19 @@ pub async fn get_or_retrieve_player_info(user_id: &UserId) -> ServerResult<Playe
     if let Some(info) = get_player_info(user_id).await {
         Ok(info)
     } else {
-        let user = super::dto::try_get::<UserRecord>(user_id).await?;
-        let player = super::player::get_or_insert_player(user_id).await?;
-
-        let info = PlayerInformation {
-            user_id: user_id.clone(),
-            username: user.username.clone(),
-            rating: player.rating,
-        };
-        set_player_info(user_id, info.clone()).await;
-        Ok(info)
+        retrieve_player_info(user_id).await
     }
+}
+
+pub async fn retrieve_player_info(user_id: &UserId) -> ServerResult<PlayerInformation> {
+    let user = super::dto::try_get::<UserRecord>(user_id).await?;
+    let player = super::player::get_or_insert_player(user_id).await?;
+
+    let info = PlayerInformation {
+        user_id: user_id.clone(),
+        username: user.username.clone(),
+        rating: player.rating,
+    };
+    set_player_info(user_id, info.clone()).await;
+    Ok(info)
 }

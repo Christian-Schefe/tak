@@ -603,6 +603,9 @@ mod tests {
             game.game_state,
             TakGameState::Win(TakPlayer::Black, TakWinReason::Flat)
         );
-        assert_eq!(game.to_tps().to_string(), "2,2,12S,2,2,2/1,212S,2121S,2,1,1/2,222221C,2,11112C,1,2/2,2,1,x2,1/2,2,21,21,1,1/21,2,1,21,221S,1 1 41");
+        assert_eq!(
+            game.to_tps().to_string(),
+            "2,2,12S,2,2,2/1,212S,2121S,2,1,1/2,222221C,2,11112C,1,2/2,2,1,x2,1/2,2,21,21,1,1/21,2,1,21,221S,1 1 41"
+        );
     }
 }

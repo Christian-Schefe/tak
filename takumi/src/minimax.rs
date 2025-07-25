@@ -48,12 +48,15 @@ fn iterative_deepening_with_tt(
     let moves = gen_moves(board);
 
     for depth in 1..=max_depth {
+        let mut node_count = 0;
         let res = 'l: {
             let mut best_score = -INF;
             let mut best_move = None;
             for mv in moves.iter() {
                 let smash = board.make(mv);
-                let Some(score) = alphabeta(board, depth, 0, end_time, -INF, INF, tt).map(|s| -s)
+                let Some(score) =
+                    alphabeta(board, depth, 0, end_time, -INF, INF, tt, &mut node_count)
+                        .map(|s| -s)
                 else {
                     break 'l None;
                 };
@@ -76,7 +79,13 @@ fn iterative_deepening_with_tt(
         let grow_factor = 10000.min((used_time * 1000) / (prev_now - start_time + 1));
         prev_now = new_now;
 
-        console_log!("Depth: {}, Score: {:?}, Time: {}ms", depth, res, used_time);
+        console_log!(
+            "Depth: {}, Score: {:?}, Time: {}ms, Node Count: {}",
+            depth,
+            res,
+            used_time,
+            node_count
+        );
 
         best = res;
         best_depth = depth;
@@ -109,7 +118,9 @@ fn alphabeta(
     mut alpha: i32,
     beta: i32,
     tt: &mut TranspositionTable,
+    node_count: &mut usize,
 ) -> Option<i32> {
+    *node_count += 1;
     if depth == 0 || board.result.is_some() {
         return Some(evaluate_for_active_player(board));
     }
@@ -140,13 +151,23 @@ fn alphabeta(
 
     for mv in moves {
         let smash = board.make(&mv);
-        let score = -alphabeta(board, depth - 1, inv_depth + 1, end_time, -beta, -alpha, tt)?;
+        let score = -alphabeta(
+            board,
+            depth - 1,
+            inv_depth + 1,
+            end_time,
+            -beta,
+            -alpha,
+            tt,
+            node_count,
+        )?;
         board.unmake(&mv, smash);
         if score >= beta {
-            tt.insert(TranspositionEntry {
+            tt.maybe_insert(TranspositionEntry {
                 zobrist: board.zobrist,
                 score: beta,
                 depth,
+                ply: board.ply_index,
                 node_type: TranspositionNodeType::Beta,
                 best_move: Some(mv),
             });
@@ -168,9 +189,10 @@ fn alphabeta(
         }
     }
 
-    tt.insert(TranspositionEntry {
+    tt.maybe_insert(TranspositionEntry {
         zobrist: board.zobrist,
         depth,
+        ply: board.ply_index,
         score: alpha,
         node_type: flag,
         best_move,

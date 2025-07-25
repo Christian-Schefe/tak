@@ -70,7 +70,6 @@ pub fn ReviewBoard(game_id: String) -> Element {
     let mut board_clone = state.clone();
 
     use_effect(move || {
-        dioxus::logger::tracing::info!("Ply index changed");
         let ply_index = *ply_index.read();
         if !board_clone.has_game() {
             dioxus::logger::tracing::info!("No game yet");
@@ -78,39 +77,50 @@ pub fn ReviewBoard(game_id: String) -> Element {
         }
         board_clone
             .with_game_mut(|game| {
-                dioxus::logger::tracing::info!("Seeking to ply index: {}", ply_index);
                 game.try_seek_ply_index(ply_index);
             })
             .expect("Should be able to seek to ply index");
     });
 
-    let on_press_backwards = move |_| {
-        let val = *ply_index.peek();
-        dioxus::logger::tracing::info!("Ply index before decrement: {}", val);
+    let ply_index_clone = ply_index.clone();
+    let on_press_backwards = move || {
+        let mut ply_index_clone = ply_index_clone.clone();
+        let val = *ply_index_clone.peek();
         if val > 0 {
-            ply_index.set(val - 1);
+            ply_index_clone.set(val - 1);
         }
     };
 
-    let on_press_forwards = move |_| {
-        let val = *ply_index.peek();
-        dioxus::logger::tracing::info!("Ply index before increment: {}", val);
+    let ply_index_clone = ply_index.clone();
+    let on_press_forwards = move || {
+        let mut ply_index_clone = ply_index_clone.clone();
+        let val = *ply_index_clone.peek();
         if val
             < state
                 .with_game(|game| game.game().ply_index)
                 .expect("Game should have actions")
         {
-            ply_index.set(val + 1);
+            ply_index_clone.set(val + 1);
+        }
+    };
+
+    let on_press_backwards_clone = on_press_backwards.clone();
+    let on_press_forwards_clone = on_press_forwards.clone();
+    let on_key_down = move |event: KeyboardEvent| {
+        if event.key() == Key::ArrowLeft {
+            on_press_backwards_clone();
+        } else if event.key() == Key::ArrowRight {
+            on_press_forwards_clone();
         }
     };
 
     rsx! {
-        div { id: "review-board-view",
+        div { id: "review-board-view", onkeydown: on_key_down,
             if *show_board.read() {
                 TakBoard {}
                 div { class: "review-board-controls",
-                    button { onclick: on_press_backwards, "<" }
-                    button { onclick: on_press_forwards, ">" }
+                    button { onclick: move |_| on_press_backwards(), "<" }
+                    button { onclick: move |_| on_press_forwards(), ">" }
                 }
             }
         }

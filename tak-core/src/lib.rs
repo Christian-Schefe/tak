@@ -95,4 +95,5 @@ pub enum TakGameState {
     Ongoing,
     Win(TakPlayer, TakWinReason),
     Draw,
+    Canceled,
 }

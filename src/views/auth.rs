@@ -6,7 +6,7 @@ use dioxus::core_macro::{component, rsx};
 use dioxus::dioxus_core::Element;
 use dioxus::prelude::*;
 
-#[derive(Clone, Debug, Copy, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 enum AuthState {
     NotAttempted,
     TakenUsername,
@@ -55,7 +55,7 @@ pub fn Auth() -> Element {
     let mut form_state = use_signal(|| FormState::new());
 
     use_effect(move || {
-        if let AuthState::Success = *auth_state.read() {
+        if let AuthState::Success = &*auth_state.read() {
             nav.replace(Route::Home {});
         }
     });
@@ -100,8 +100,8 @@ pub fn Auth() -> Element {
             return;
         }
         let callback = move |res| match res {
-            Ok(Ok(message)) => {
-                dioxus::logger::tracing::info!("Registration successful: {}", message);
+            Ok(Ok(user_id)) => {
+                dioxus::logger::tracing::info!("Registration successful: {}", user_id);
                 auth_state.set(AuthState::Success);
             }
             Ok(Err(ServerError::Conflict(_))) => {
@@ -119,61 +119,66 @@ pub fn Auth() -> Element {
     };
 
     rsx! {
-        div {
-            class: "auth-container",
-            div {
-                class: "auth-form",
-                h2 {
-                    "Tak"
-                }
-                p {
-                    class: "auth-instruction",
-                    "Username"
-                }
+        div { class: "auth-container",
+            div { class: "auth-form",
+                h2 { "Tak" }
+                p { class: "auth-instruction", "Username" }
                 input {
-                    type: "text",
+                    r#type: "text",
                     class: "auth-input",
                     class: if !show_login && form_state.read().invalid_username { "auth-invalid" },
                     placeholder: "Username",
                     name: "username",
                     oninput: move |e| {
                         username.set(e.value().to_string());
-                    }
+                    },
                 }
-                p {
-                    class: "auth-instruction",
-                    "Password"
-                }
+                p { class: "auth-instruction", "Password" }
                 input {
-                    type: "password",
+                    r#type: "password",
                     class: "auth-input",
                     class: if !show_login && form_state.read().invalid_password { "auth-invalid" },
                     placeholder: "Password",
                     name: "password",
                     oninput: move |e| {
                         password.set(e.value().to_string());
+                    },
+                }
+                div { class: "auth-validation",
+                    {
+                        if !show_login && form_state.read().invalid_username {
+                            rsx! {
+                                p { class: "auth-error",
+                                    "Username must be between 3 and 100 characters and all characters must be from [a-zA-Z0-9_-]"
+                                }
+                            }
+                        } else {
+                            rsx! {}
+                        }
+                    }
+                    {
+                        if !show_login && form_state.read().invalid_password {
+                            rsx! {
+                                p { class: "auth-error", "Password must be between 8 and 100 characters" }
+                            }
+                        } else {
+                            rsx! {}
+                        }
+                    }
+                    {
+                        match *auth_state.read() {
+                            AuthState::TakenUsername => rsx! {
+                                p { class: "auth-error", "Username already taken" }
+                            },
+                            AuthState::InvalidCredentials => rsx! {
+                                p { class: "auth-error", "Invalid credentials" }
+                            },
+                            _ => rsx! {},
+                        }
                     }
                 }
-                div {
-                    class: "auth-validation",
-                    {if !show_login && form_state.read().invalid_username {
-                        rsx! { p { class: "auth-error", "Username must be between 3 and 100 characters and all characters must be from [a-zA-Z0-9_-]" } }
-                    } else {
-                        rsx! {}
-                    }}
-                    {if !show_login && form_state.read().invalid_password {
-                        rsx! { p { class: "auth-error", "Password must be between 8 and 100 characters" } }
-                    } else {
-                        rsx! {}
-                    }}
-                    {match *auth_state.read() {
-                        AuthState::TakenUsername => rsx! { p { class: "auth-error", "Username already taken" } },
-                        AuthState::InvalidCredentials => rsx! { p { class: "auth-error", "Invalid credentials" } },
-                        _ => rsx! { }
-                    }}
-                }
                 button {
-                    type: "submit",
+                    r#type: "submit",
                     class: "auth-button",
                     onclick: move |_| {
                         if show_login {
@@ -193,11 +198,7 @@ pub fn Auth() -> Element {
                     },
                     {if show_login { "Register instead" } else { "Login instead" }}
                 }
-                Link {
-                    class: "auth-skip",
-                    to: Route::Home {  },
-                    "Continue without logging in"
-                }
+                Link { class: "auth-skip", to: Route::Home {}, "Continue without logging in" }
             }
         }
     }

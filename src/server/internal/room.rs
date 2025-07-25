@@ -537,9 +537,12 @@ async fn room_check_gameover_task(
     let game_clone = room_lock.game.as_ref().unwrap().game.clone();
     let player_mapping = room_lock.game.as_ref().unwrap().player_mapping.clone();
 
-    println!("Game over: {:?}, {:?}", game_state, game_clone.game_state);
     drop(room_lock);
 
+    if game_clone.game_state == TakGameState::Canceled {
+        println!("Game was canceled, not saving game record");
+        return;
+    }
     if let Err(e) = super::player::add_game(game_clone, player_mapping).await {
         eprintln!("Failed to add game: {:?}", e);
     }

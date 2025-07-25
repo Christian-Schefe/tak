@@ -94,6 +94,10 @@ pub struct TakPtn {
 
 impl TakPtn {
     pub fn new(turns: Vec<String>, first_turn_index: usize, game_state: TakGameState) -> Self {
+        assert!(
+            game_state == TakGameState::Ongoing || !turns.is_empty(),
+            "At least one turn is required"
+        );
         let mut turn_vec = if first_turn_index % 2 == 0 {
             Vec::new()
         } else {
@@ -173,6 +177,7 @@ impl TakPtn {
             TakGameState::Win(TakPlayer::Black, TakWinReason::Timeout) => "0-1".to_string(),
             TakGameState::Draw => "1/2-1/2".to_string(),
             TakGameState::Ongoing => "".to_string(),
+            TakGameState::Canceled => "".to_string(),
         }
     }
 
@@ -194,10 +199,6 @@ impl TakPtn {
             if *i == self.turns.len() - 1 && self.game_state != TakGameState::Ongoing {
                 result.push_str(&format!(" {}", self.game_state_to_str()));
             }
-            result.push('\n');
-        }
-        if self.turns.len() == 0 && self.game_state != TakGameState::Ongoing {
-            result.push_str(&format!("1. {}", self.game_state_to_str()));
             result.push('\n');
         }
         result

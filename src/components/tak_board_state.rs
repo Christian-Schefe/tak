@@ -69,24 +69,19 @@ impl TakBoardState {
     }
 
     pub fn try_set_from_settings(&mut self, settings: TakGameSettings) -> Option<()> {
-        let mut new_game = TakUIState::new(TakGame::new(settings)?);
-        let mut on_change = self.on_change.clone();
-        new_game.add_listener(move || {
-            let new_val = !*on_change.peek();
-            on_change.set(new_val);
-        });
-        let mut game_lock = self.game.lock().unwrap();
-        *game_lock = Some(new_game);
-        drop(game_lock);
-        tracing::info!("Game initialized with settings, {}", self.has_game());
-        self.trigger_change();
+        self.set_from_game(TakGame::new(settings)?);
         Some(())
     }
 
     pub fn try_set_from_ptn(&mut self, ptn: String) -> Option<()> {
         tracing::info!("from ptn str: {:?}", ptn);
         let ptn = TakPtn::try_from_str(&ptn)?;
-        let mut new_game = TakUIState::new(TakGame::try_from_ptn(ptn)?);
+        self.set_from_game(TakGame::try_from_ptn(ptn)?);
+        Some(())
+    }
+
+    pub fn set_from_game(&mut self, game: TakGame) {
+        let mut new_game = TakUIState::new(game);
         let mut on_change = self.on_change.clone();
         new_game.add_listener(move || {
             let new_val = !*on_change.peek();
@@ -95,9 +90,8 @@ impl TakBoardState {
         let mut game_lock = self.game.lock().unwrap();
         *game_lock = Some(new_game);
         drop(game_lock);
-        tracing::info!("Game initialized with ptn, {}", self.has_game());
+        tracing::info!("Game set from game, {}", self.has_game());
         self.trigger_change();
-        Some(())
     }
 
     pub fn with_game<F, R>(&self, f: F) -> Result<R, ()>
@@ -279,12 +273,18 @@ impl TakBoardState {
     ) -> Result<(), ()> {
         self.with_game_mut(|game| {
             let index = game.game().ply_index;
-            if index < move_index {
+            if index > move_index {
                 return Ok(());
-            } else if index > move_index {
+            } else if index < move_index {
+                tracing::error!(
+                    "Received action for move index {} but current index is {}",
+                    move_index,
+                    index
+                );
                 return Err(());
             }
             if game.game().game_state != TakGameState::Ongoing {
+                tracing::error!("Game is not ongoing, cannot perform remote action");
                 return Err(());
             }
             if let Err(e) = game.try_do_action(action) {

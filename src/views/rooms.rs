@@ -13,13 +13,15 @@ use crate::{
 pub fn Rooms() -> Element {
     let rooms = use_resource(|| get_room_list());
 
-    let mut room_list = use_signal(|| Vec::new());
+    let room_list = use_memo(move || {
+        rooms.read().as_ref().map(|s| match s {
+            Ok(Ok(data)) => data.clone(),
+            _ => vec![],
+        })
+    });
     let nav = use_navigator();
 
     use_effect(move || match &*rooms.read() {
-        Some(Ok(Ok(list))) => {
-            room_list.set(list.clone());
-        }
         Some(Ok(Err(ServerError::Unauthorized))) => {
             nav.push(Route::Auth {});
         }
@@ -66,37 +68,44 @@ pub fn Rooms() -> Element {
     rsx! {
         div { class: "rooms-view",
             div { class: "room-list",
-                for room in room_list.read().iter() {
-                    div { key: room.room_id.clone(), class: "room-item",
-                        div { class: "room-info",
-                            p { class: "room-code", "{room.room_id}" }
-                            div { class: "room-details",
-                                p {
-                                    "{room.settings.game_settings.size}x{room.settings.game_settings.size}"
+                if let Some(data) = &*room_list.read() {
+                    for room in data.iter() {
+                        div { key: room.room_id.clone(), class: "room-item",
+                            div { class: "room-info",
+                                p { class: "room-code", "{room.room_id}" }
+                                div { class: "room-details",
+                                    p {
+                                        "{room.settings.game_settings.size}x{room.settings.game_settings.size}"
+                                    }
+                                    p { "{formatted_time_mode(&room.settings.game_settings.time_mode)}" }
                                 }
-                                p { "{formatted_time_mode(&room.settings.game_settings.time_mode)}" }
-                            }
-                            div { class: "room-players",
-                                p {
-                                    {room.players.iter().map(|x| x.username.clone()).collect::<Vec<_>>().join(", ")}
+                                div { class: "room-players",
+                                    p {
+                                        {room.players.iter().map(|x| x.username.clone()).collect::<Vec<_>>().join(", ")}
+                                    }
                                 }
                             }
-                        }
-                        div { class: "room-actions",
-                            if room.can_join {
+                            div { class: "room-actions",
+                                if room.can_join {
+                                    button {
+                                        class: "primary-button",
+                                        onclick: make_on_click_join(room.room_id.clone(), false),
+                                        "Join"
+                                    }
+                                }
                                 button {
-                                    class: "primary-button",
-                                    onclick: make_on_click_join(room.room_id.clone(), false),
-                                    "Join"
+                                    class: "secondary-button",
+                                    onclick: make_on_click_join(room.room_id.clone(), true),
+                                    "Spectate"
                                 }
-                            }
-                            button {
-                                class: "secondary-button",
-                                onclick: make_on_click_join(room.room_id.clone(), true),
-                                "Spectate"
                             }
                         }
                     }
+                    if data.is_empty() {
+                        p { "No rooms available." }
+                    }
+                } else {
+                    p { "Loading rooms..." }
                 }
             }
         }

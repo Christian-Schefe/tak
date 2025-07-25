@@ -29,6 +29,27 @@ macro_rules! bail_api {
     };
 }
 
+#[macro_export]
+macro_rules! bail_api_with_user {
+    ($expr:expr,$user:expr) => {
+        match $expr {
+            Ok(val) => val,
+            Err(e) => {
+                return Ok(ApiResult {
+                    data: Err(e),
+                    user_id: Some($user),
+                });
+            }
+        }
+    };
+}
+
+pub fn accept<T>(result: T, user_id: UserId) -> Result<AuthServerResult<T>, ServerFnError> {
+    Ok(Ok((result, user_id)))
+}
+
+pub type AuthServerResult<T> = ServerResult<(T, UserId)>;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct StatsData {
     pub rating: f64,

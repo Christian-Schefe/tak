@@ -1,11 +1,11 @@
 use dioxus::prelude::*;
-use tak_core::TakPlayer;
+use tak_core::{TakGame, TakPlayer};
 
 use crate::{
     bail_api,
     server::{
-        GameId, GameInformation, PlayerInformation, RoomId, RoomInformation, RoomSettings,
-        ServerError,
+        api::AuthServerResult, GameId, GameInformation, PlayerInformation, RoomId, RoomInformation,
+        RoomSettings, ServerError,
     },
 };
 
@@ -64,8 +64,7 @@ pub async fn get_players(
 }
 
 #[server]
-pub async fn get_current_game(
-) -> Result<ServerResult<Option<(String, Vec<(TakPlayer, u64)>)>>, ServerFnError> {
+pub async fn get_current_game() -> Result<ServerResult<Option<TakGame>>, ServerFnError> {
     let user_id = bail_api!(authorize().await);
     let rooms = room::ROOMS.read().await;
     let Some(room) = rooms.try_get_room(&user_id) else {
@@ -73,12 +72,8 @@ pub async fn get_current_game(
     };
     let room_lock = room.lock().await;
     if let Some(game) = &room_lock.game {
-        let game_state = game.game.to_ptn();
-        let time_remaining = TakPlayer::ALL
-            .into_iter()
-            .map(|x| (x, game.game.get_time_remaining(x, true).unwrap()))
-            .collect::<Vec<_>>();
-        Ok(Ok(Some((game_state.to_str(), time_remaining))))
+        let game_state = game.game.clone();
+        Ok(Ok(Some(game_state)))
     } else {
         Ok(Ok(None))
     }
@@ -112,7 +107,7 @@ pub async fn get_game(game_id: GameId) -> Result<ServerResult<GameInformation>, 
 }
 
 #[server]
-pub async fn get_history() -> Result<ServerResult<Vec<GameInformation>>, ServerFnError> {
+pub async fn get_history() -> Result<AuthServerResult<Vec<GameInformation>>, ServerFnError> {
     let user_id = bail_api!(authorize().await);
     let games = bail_api!(player::get_games_of_player(&user_id).await);
     let game_info: Vec<GameInformation> = games
@@ -125,5 +120,5 @@ pub async fn get_history() -> Result<ServerResult<Vec<GameInformation>>, ServerF
             timestamp: game_record.timestamp.into(),
         })
         .collect();
-    Ok(Ok(game_info))
+    super::accept(game_info, user_id)
 }

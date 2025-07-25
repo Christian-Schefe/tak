@@ -178,13 +178,21 @@ impl TakUIState {
     }
 
     pub fn try_seek_ply_index(&mut self, ply_index: usize) {
-        self.preview_game = self
-            .actual_game
-            .seek_ply_index(ply_index)
-            .expect("Should be able to seek to ply index");
+        let old_preview_game = std::mem::replace(
+            &mut self.preview_game,
+            self.actual_game
+                .seek_ply_index(ply_index)
+                .expect("Should be able to seek to ply index"),
+        );
         self.preview_game.clock = None;
         self.partial_move = None;
-        self.priority_pieces.clear();
+        self.priority_pieces = if old_preview_game.ply_index + 1 == ply_index {
+            Self::get_stones_from_last_action_in_order(&self.preview_game)
+        } else if old_preview_game.ply_index == ply_index + 1 {
+            Self::get_stones_from_last_action_in_order(&old_preview_game)
+        } else {
+            Vec::new()
+        };
         self.on_game_update();
     }
 
@@ -325,9 +333,6 @@ impl TakUIState {
         self.pieces.clear();
         self.tiles.clear();
         self.flat_counts = self.preview_game.board.count_flats();
-
-        #[cfg(feature = "wasm")]
-        dioxus::logger::tracing::info!("Updating UI: flat counts: {:?}", self.flat_counts);
 
         let drop_diff = match &self.partial_move {
             Some(TakPartialMove {

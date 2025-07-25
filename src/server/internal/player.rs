@@ -2,12 +2,12 @@ use tak_core::{TakGame, TakGameState, TakPlayer};
 use uuid::Uuid;
 
 use crate::server::{
+    GameId, UserId,
     error::{ServerError, ServerResult},
     internal::{
         db::DB,
         dto::{GameRecord, PlayerRecord, Record},
     },
-    GameId, UserId,
 };
 
 pub fn create_player(user_id: &str) -> PlayerRecord {
@@ -30,7 +30,6 @@ pub async fn add_game(
 ) -> ServerResult<()> {
     let game_id = Uuid::new_v4().to_string();
     let ptn = game.to_ptn();
-    println!("game: {:?}, ptn: {:?}", game, ptn);
 
     let white_player_id = player_mapping
         .get(TakPlayer::White)
@@ -45,8 +44,8 @@ pub async fn add_game(
         })?
         .to_string();
 
-    let white_player = super::cache::get_or_retrieve_player_info(&white_player_id).await?;
-    let black_player = super::cache::get_or_retrieve_player_info(&black_player_id).await?;
+    let white_player = super::cache::retrieve_player_info(&white_player_id).await?;
+    let black_player = super::cache::retrieve_player_info(&black_player_id).await?;
 
     let game_record = GameRecord {
         game_id: game_id.clone(),
@@ -55,6 +54,11 @@ pub async fn add_game(
         ptn: ptn.to_str(),
         timestamp: chrono::Utc::now().into(),
     };
+
+    println!(
+        "Adding game: {}, white: {}, black: {}, ptn: {}",
+        game_id, white_player_id, black_player_id, game_record.ptn
+    );
 
     super::dto::try_create(&game_id, game_record).await?;
     add_game_result(&white_player_id, &black_player_id, &game).await?;
@@ -84,6 +88,11 @@ pub async fn add_game_result(
             player1.losses += 1;
             player2.wins += 1;
             0.0
+        }
+        TakGameState::Canceled => {
+            return Err(ServerError::InternalServerError(
+                "Game was canceled, cannot update results".to_string(),
+            ));
         }
         TakGameState::Ongoing => {
             return Err(ServerError::InternalServerError(

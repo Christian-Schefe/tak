@@ -2,7 +2,7 @@ use chrono::{DateTime, Local};
 use dioxus::prelude::*;
 
 use crate::{
-    server::{api::get_history, error::ServerError},
+    server::{api::get_history, error::ServerError, GameInformation, UserId},
     Route,
 };
 
@@ -24,18 +24,35 @@ pub fn History() -> Element {
         })
     });
 
+    let get_opponent_info = |game: &GameInformation, user_id: &UserId| {
+        if game.white_player.user_id == *user_id {
+            format!(
+                "{} ({})",
+                game.black_player.username, game.black_player.rating
+            )
+        } else {
+            format!(
+                "{} ({})",
+                game.white_player.username, game.white_player.rating
+            )
+        }
+    };
+
     rsx! {
         div { id: "history-view",
-            if let Some(data) = &*data.read() {
+            if let Some((data, user_id)) = &*data.read() {
                 for game in data {
                     div { class: "history-game-entry",
-                        p { {format!("{}", std::convert::Into::<DateTime<Local>>::into(game.timestamp).format("%Y-%m-%d %H:%M:%S"))} }
                         p {
-                            "{game.white_player.username} ({game.white_player.rating})"
+                            {
+                                format!(
+                                    "{}",
+                                    std::convert::Into::<DateTime<Local>>::into(game.timestamp)
+                                        .format("%Y-%m-%d %H:%M:%S"),
+                                )
+                            }
                         }
-                        p {
-                            "{game.black_player.username} ({game.black_player.rating})"
-                        }
+                        p { {get_opponent_info(game, user_id)} }
                         Link {
                             to: Route::ReviewBoard {
                                 game_id: game.game_id.clone(),
@@ -43,6 +60,9 @@ pub fn History() -> Element {
                             "Review Game"
                         }
                     }
+                }
+                if data.len() == 0 {
+                    p { "No games found." }
                 }
             } else {
                 p { "Loading..." }
