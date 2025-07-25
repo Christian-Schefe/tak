@@ -8,6 +8,7 @@ use views::{
 mod components;
 mod server;
 mod views;
+mod storage;
 
 #[derive(Debug, Clone, Routable, PartialEq)]
 enum Route {
@@ -65,7 +66,6 @@ fn main() {
 #[cfg(feature = "server")]
 #[tokio::main]
 async fn main() {
-    use axum::Extension;
     use dioxus_fullstack::server::DioxusRouterExt;
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     use tokio::spawn;
@@ -89,8 +89,6 @@ async fn main() {
     let port = dioxus::cli_config::server_port().unwrap_or(8080);
     let address = SocketAddr::new(ip, port);
 
-    let session_store = server::internal::auth::create_session_store();
-
     let config = ServeConfig::new().unwrap();
 
     let router = axum::Router::new()
@@ -104,7 +102,6 @@ async fn main() {
             axum::routing::any(server::internal::websocket::ws_test_handler),
         )
         .nest_service("/webworker", tower_http::services::ServeDir::new("workers"))
-        .layer(Extension(session_store))
         .layer(CookieManagerLayer::new())
         .into_make_service_with_connect_info::<SocketAddr>();
 

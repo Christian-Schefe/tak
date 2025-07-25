@@ -1,7 +1,7 @@
-use crate::server::api::{get_auth, post_login, post_logout, post_register};
-use crate::server::UserId;
-use crate::server::{ServerError, ServerResult};
 use crate::Route;
+use crate::server::UserId;
+use crate::server::api::{get_auth, post_login, post_register};
+use crate::server::{ServerError, ServerResult};
 use dioxus::core_macro::{component, rsx};
 use dioxus::dioxus_core::Element;
 use dioxus::prelude::*;
@@ -11,7 +11,7 @@ enum AuthState {
     NotAttempted,
     TakenUsername,
     InvalidCredentials,
-    Success,
+    Success(String),
     UnknownError,
 }
 
@@ -42,6 +42,8 @@ fn validate_password(password: &str) -> bool {
     password.len() >= 8 && password.len() <= 100
 }
 
+pub const AUTH_TOKEN_KEY: &str = "auth_token";
+
 #[component]
 pub fn Auth() -> Element {
     let mut is_login = use_signal(|| true);
@@ -55,7 +57,10 @@ pub fn Auth() -> Element {
     let mut form_state = use_signal(|| FormState::new());
 
     use_effect(move || {
-        if let AuthState::Success = &*auth_state.read() {
+        if let AuthState::Success(token) = &*auth_state.read() {
+            if let Err(e) = crate::storage::set(AUTH_TOKEN_KEY, token.clone()) {
+                dioxus::logger::tracing::error!("Failed to store auth token: {}", e);
+            }
             nav.replace(Route::Home {});
         }
     });
@@ -69,18 +74,18 @@ pub fn Auth() -> Element {
 
     use_effect(move || {
         do_check_login(move |res| {
-            if let Ok(Ok(user_id)) = res {
-                dioxus::logger::tracing::info!("User is logged in: {}", user_id);
-                auth_state.set(AuthState::Success);
+            if let Ok(Ok(token)) = res {
+                dioxus::logger::tracing::info!("User is logged in: {}", token);
+                auth_state.set(AuthState::Success(token));
             }
         })
     });
 
     let on_login = move |username: String, password: String| {
         let callback = move |res| match res {
-            Ok(Ok(user_id)) => {
-                dioxus::logger::tracing::info!("Login successful: {}", user_id);
-                auth_state.set(AuthState::Success);
+            Ok(Ok(token)) => {
+                dioxus::logger::tracing::info!("Login successful: {}", token);
+                auth_state.set(AuthState::Success(token));
             }
             Ok(Err(_)) => {
                 dioxus::logger::tracing::error!("Login failed: Invalid credentials");
@@ -100,9 +105,9 @@ pub fn Auth() -> Element {
             return;
         }
         let callback = move |res| match res {
-            Ok(Ok(user_id)) => {
-                dioxus::logger::tracing::info!("Registration successful: {}", user_id);
-                auth_state.set(AuthState::Success);
+            Ok(Ok(token)) => {
+                dioxus::logger::tracing::info!("Registration successful: {}", token);
+                auth_state.set(AuthState::Success(token));
             }
             Ok(Err(ServerError::Conflict(_))) => {
                 dioxus::logger::tracing::warn!("Registration failed: Username already taken");
@@ -211,13 +216,6 @@ fn do_login(
 ) {
     spawn(async move {
         let res = post_login(username, password).await;
-        callback(res);
-    });
-}
-
-pub fn do_logout(callback: impl FnOnce(Result<ServerResult<()>, ServerFnError>) + Send + 'static) {
-    spawn(async move {
-        let res = post_logout().await;
         callback(res);
     });
 }

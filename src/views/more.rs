@@ -6,29 +6,23 @@ pub use history::*;
 pub use rules::*;
 pub use stats::*;
 
-use crate::views::auth::do_logout;
 use crate::Route;
+use crate::views::AUTH_TOKEN_KEY;
 use dioxus::prelude::*;
+use dioxus_free_icons::Icon;
 use dioxus_free_icons::icons::fa_solid_icons::{FaBookOpen, FaChartBar, FaScroll};
 use dioxus_free_icons::icons::io_icons::{IoLogOut, IoSettings};
-use dioxus_free_icons::Icon;
 
 #[component]
 pub fn More() -> Element {
-    let mut is_logging_out = use_signal_sync(|| false);
-
     let nav = use_navigator();
 
-    use_effect(move || {
-        if *is_logging_out.read() {
-            nav.push(Route::Auth {});
-        }
-    });
-
     let on_logout = move |_| {
-        do_logout(move |_| {
-            is_logging_out.set(true);
-        });
+        if let Err(e) = crate::storage::set(AUTH_TOKEN_KEY, None::<String>) {
+            dioxus::logger::tracing::error!("[More] Error logging out: {}", e);
+        }
+        dioxus::logger::tracing::info!("User logged out");
+        nav.push(Route::Auth {});
     };
 
     let on_click_rules = move |_| {

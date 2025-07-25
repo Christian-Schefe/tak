@@ -1,98 +1,65 @@
 use crate::server::error::{ServerError, ServerResult};
 use crate::server::internal::db::DB;
 use crate::server::internal::dto::{Record, UserRecord};
-use crate::server::UserId;
-use argon2::password_hash::rand_core::OsRng;
+use crate::server::{JWTToken, UserId};
 use argon2::password_hash::SaltString;
+use argon2::password_hash::rand_core::OsRng;
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
-use axum::{async_trait, Extension};
-use std::collections::HashMap;
-use std::sync::Arc;
-use tokio::sync::Mutex;
-use tower_cookies::{Cookie, Cookies};
+use axum::{RequestPartsExt, async_trait};
+use axum_extra::TypedHeader;
+use headers::Authorization;
+use headers::authorization::Bearer;
+use jsonwebtoken::{DecodingKey, EncodingKey, Validation, decode};
+use serde::{Deserialize, Serialize};
+use std::sync::LazyLock;
+
 use uuid::Uuid;
 
-pub type SessionStore = Arc<Mutex<HashMap<String, String>>>;
+struct Keys {
+    encoding: EncodingKey,
+    decoding: DecodingKey,
+}
 
-pub struct AuthenticatedUser(pub Option<UserId>);
+impl Keys {
+    fn new(secret: &[u8]) -> Self {
+        Self {
+            encoding: EncodingKey::from_secret(secret),
+            decoding: DecodingKey::from_secret(secret),
+        }
+    }
+}
+
+static KEYS: LazyLock<Keys> = LazyLock::new(|| {
+    let secret = "JWT_SECRET".to_string();
+    Keys::new(secret.as_bytes())
+});
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Claims {
+    pub sub: UserId,
+    exp: usize,
+}
 
 #[async_trait]
-impl<S> FromRequestParts<S> for AuthenticatedUser
+impl<S> FromRequestParts<S> for Claims
 where
     S: Send + Sync,
 {
     type Rejection = ();
 
-    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
-        let Some(Extension(store)): Option<Extension<SessionStore>> =
-            Extension::from_request_parts(parts, state).await.ok()
-        else {
-            return Ok(AuthenticatedUser(None));
-        };
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        let TypedHeader(Authorization(bearer)) = parts
+            .extract::<TypedHeader<Authorization<Bearer>>>()
+            .await
+            .map_err(|_| ())?;
 
-        let Some(cookies): Option<Cookies> = Cookies::from_request_parts(parts, state).await.ok()
-        else {
-            return Ok(AuthenticatedUser(None));
-        };
+        let token_data = decode::<Claims>(bearer.token(), &KEYS.decoding, &Validation::default())
+            .map_err(|_| ())?;
 
-        if let Some(cookie) = cookies.get("session_id") {
-            let session_id = cookie.value();
-            if let Some(user_id) = store.lock().await.get(session_id) {
-                return Ok(AuthenticatedUser(Some(user_id.clone())));
-            }
-        }
-
-        Ok(AuthenticatedUser(None))
+        Ok(token_data.claims)
     }
-}
-
-pub async fn get_session(user_id: &UserId) -> ServerResult<Option<String>> {
-    use dioxus::prelude::extract;
-
-    let Extension(session_store): Extension<SessionStore> = extract().await.map_err(|e| {
-        ServerError::InternalServerError(format!("Failed to extract session store: {}", e))
-    })?;
-
-    let lock = session_store.lock().await;
-    Ok(lock.get(user_id).cloned())
-}
-
-pub async fn add_session(user_id: &UserId) -> ServerResult<String> {
-    use dioxus::prelude::extract;
-
-    let Extension(session_store): Extension<SessionStore> = extract().await.map_err(|e| {
-        ServerError::InternalServerError(format!("Failed to extract session store: {}", e))
-    })?;
-    let cookies: tower_cookies::Cookies = extract().await.map_err(|(_, e)| {
-        ServerError::InternalServerError(format!("Failed to extract cookies: {}", e))
-    })?;
-
-    let session_id = Uuid::new_v4().to_string();
-    session_store
-        .lock()
-        .await
-        .insert(session_id.clone(), user_id.to_string());
-    let mut cookie = Cookie::new("session_id", session_id.clone());
-    cookie.set_http_only(Some(true));
-    cookies.add(cookie);
-    Ok(session_id)
-}
-
-pub async fn remove_session(user_id: &UserId) -> ServerResult<()> {
-    use dioxus::prelude::extract;
-
-    let Extension(session_store): Extension<SessionStore> = extract().await.map_err(|e| {
-        ServerError::InternalServerError(format!("Failed to extract session store: {}", e))
-    })?;
-
-    session_store.lock().await.remove(user_id);
-    Ok(())
-}
-
-pub fn create_session_store() -> SessionStore {
-    Arc::new(Mutex::new(HashMap::new()))
 }
 
 fn validate_username(username: &str) -> bool {
@@ -104,7 +71,27 @@ fn validate_password(password: &str) -> bool {
     password.len() >= 8 && password.len() <= 128
 }
 
-pub async fn try_register(username: String, password: String) -> ServerResult<UserId> {
+fn create_token(user_id: &UserId, expires_in_hours: usize) -> ServerResult<JWTToken> {
+    let claims = Claims {
+        sub: user_id.clone(),
+        exp: (chrono::Utc::now() + chrono::Duration::hours(expires_in_hours as i64)).timestamp()
+            as usize,
+    };
+    jsonwebtoken::encode(&jsonwebtoken::Header::default(), &claims, &KEYS.encoding)
+        .map_err(|_| ServerError::InternalServerError("Failed to create token".to_string()))
+}
+
+pub fn renew_token(user_id: &UserId) -> ServerResult<JWTToken> {
+    create_token(user_id, 24)
+}
+
+pub fn validate_token(token: &JWTToken) -> ServerResult<Claims> {
+    decode::<Claims>(token, &KEYS.decoding, &Validation::default())
+        .map(|data| data.claims)
+        .map_err(|_| ServerError::Unauthorized)
+}
+
+pub async fn try_register(username: String, password: String) -> ServerResult<JWTToken> {
     if !validate_username(&username) {
         return Err(ServerError::BadRequest("Invalid username".to_string()));
     }
@@ -135,11 +122,12 @@ pub async fn try_register(username: String, password: String) -> ServerResult<Us
         password_hash,
     };
 
-    let res = super::dto::try_create(&user_id, user).await?;
-    Ok(res.user_id)
+    super::dto::try_create(&user_id, user).await?;
+    let token = create_token(&user_id, 24)?;
+    Ok(token)
 }
 
-pub async fn try_login(username: String, password: String) -> ServerResult<UserId> {
+pub async fn try_login(username: String, password: String) -> ServerResult<JWTToken> {
     let mut result = DB
         .query("SELECT * FROM type::table($table) WHERE username = type::string($username)")
         .bind(("table", UserRecord::table_name()))
@@ -159,6 +147,7 @@ pub async fn try_login(username: String, password: String) -> ServerResult<UserI
     {
         Err(ServerError::Unauthorized)
     } else {
-        Ok(user.user_id)
+        let token = create_token(&user.user_id, 24)?;
+        Ok(token)
     }
 }

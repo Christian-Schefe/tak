@@ -13,6 +13,7 @@ authors.workspace = true
 edition.workspace = true
 
 [dependencies]
+ezsockets = { version = "0.7.0", default-features = false, optional = true }
 dioxus = { version = "0.6.3", features = ["router", "fullstack"] }
 dioxus-free-icons = { version = "0.9", features = [
     "font-awesome-solid",
@@ -58,11 +59,14 @@ takumi = { path = "takumi", version = "*", features = ["serde"] }
 moka = { version = "0.12.10", features = ["future"], optional = true }
 fixed-map = "0.9.5"
 chrono = { version = "0.4.41", features = ["serde"] }
+jsonwebtoken = { version = "9.3.1", optional = true }
+directories = "6.0.0"
+async-trait = "0.1.88"
 
 [features]
-web = ["dioxus/web", "tak-core/wasm"]
-desktop = ["dioxus/desktop", "tak-core/wasm"]
-mobile = ["dioxus/mobile", "tak-core/wasm"]
+web = ["dioxus/web", "tak-core/wasm", "ezsockets/wasm_client"]
+desktop = ["dioxus/desktop", "tak-core/wasm", "ezsockets/client"]
+mobile = ["dioxus/mobile", "tak-core/wasm", "ezsockets/client"]
 server = [
     "dioxus/server",
     "dioxus-fullstack/axum",
@@ -76,9 +80,8 @@ server = [
     "dep:axum-extra",
     "dep:moka",
     "dep:tower-http",
+    "dep:jsonwebtoken",
 ]
-
-[profile]
 
 [profile.wasm-dev]
 inherits = "dev"

@@ -2,7 +2,6 @@ use axum::extract::ConnectInfo;
 use axum::{
     extract::ws::{Message, WebSocket, WebSocketUpgrade},
     response::IntoResponse,
-    Extension,
 };
 use futures_util::{SinkExt, StreamExt};
 use std::net::SocketAddr;
@@ -12,9 +11,9 @@ use tak_core::{TakAction, TakGameState, TakPlayer};
 use tokio::sync::Mutex;
 
 use crate::components::ServerGameMessage;
-use crate::server::internal::auth::SessionStore;
-use crate::server::internal::room::{ArcMutexDashMap, Room, ROOMS};
 use crate::server::UserId;
+use crate::server::internal::auth::{Claims, validate_token};
+use crate::server::internal::room::{ArcMutexDashMap, ROOMS, Room};
 use crate::views::ClientGameMessage;
 use axum_extra::TypedHeader;
 use futures_util::stream::{SplitSink, SplitStream};
@@ -80,7 +79,6 @@ pub(crate) async fn ws_handler(
     ws: WebSocketUpgrade,
     user_agent: Option<TypedHeader<headers::UserAgent>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    Extension(store): Extension<SessionStore>,
 ) -> impl IntoResponse {
     let user_agent = if let Some(TypedHeader(user_agent)) = user_agent {
         user_agent.to_string()
@@ -88,25 +86,24 @@ pub(crate) async fn ws_handler(
         String::from("Unknown browser")
     };
     println!("`{user_agent}` at {addr} connected.");
-    ws.on_upgrade(move |socket| handle_socket(socket, store, addr))
+    ws.on_upgrade(move |socket| handle_socket(socket, addr))
 }
 
-async fn handle_socket(mut socket: WebSocket, session_store: SessionStore, who: SocketAddr) {
+async fn handle_socket(mut socket: WebSocket, who: SocketAddr) {
     let Some(Ok(msg)) = socket.next().await else {
         println!("Unauthorized access from {who}");
         let _ = socket.close().await;
         return;
     };
 
-    let Message::Text(session_id) = msg else {
+    let Message::Text(token) = msg else {
         println!("Unauthorized access from {who} with non-text message: {msg:?}");
         let _ = socket.close().await;
         return;
     };
 
-    let session_store = session_store.lock().await;
-    let Some(player_id) = session_store.get(&session_id).cloned() else {
-        println!("Unauthorized access from {who} with session_id {session_id}");
+    let Ok(Claims { sub: player_id, .. }) = validate_token(&token) else {
+        println!("Unauthorized access from {who} with session_id {token}");
         let _ = socket.close().await;
         return;
     };

@@ -4,8 +4,9 @@ use tak_core::{TakGame, TakPlayer};
 use crate::{
     bail_api,
     server::{
-        api::AuthServerResult, GameId, GameInformation, PlayerInformation, RoomId, RoomInformation,
-        RoomSettings, ServerError,
+        GameId, GameInformation, PlayerInformation, RoomId, RoomInformation, RoomSettings,
+        ServerError,
+        api::{AuthClient, AuthServerResult},
     },
 };
 
@@ -16,14 +17,14 @@ use crate::server::api::authorize;
 #[cfg(feature = "server")]
 use crate::server::internal::*;
 
-#[server]
+#[server(client=AuthClient)]
 pub async fn create_room(settings: RoomSettings) -> Result<ServerResult<RoomId>, ServerFnError> {
     let user_id = bail_api!(authorize().await);
     let mut rooms = room::ROOMS.write().await;
     Ok(rooms.try_create_room(settings, user_id))
 }
 
-#[server]
+#[server(client=AuthClient)]
 pub async fn join_room(
     room_id: String,
     is_spectator: bool,
@@ -41,29 +42,29 @@ pub async fn join_room(
     })
 }
 
-#[server]
+#[server(client=AuthClient)]
 pub async fn leave_room() -> Result<ServerResult<()>, ServerFnError> {
     let user_id = bail_api!(authorize().await);
     let mut rooms = room::ROOMS.write().await;
     Ok(rooms.try_leave_room(user_id).await)
 }
 
-#[server]
+#[server(client=AuthClient)]
 pub async fn get_room() -> Result<ServerResult<(RoomId, RoomSettings)>, ServerFnError> {
     let user_id = bail_api!(authorize().await);
     let rooms = room::ROOMS.read().await;
     Ok(rooms.try_get_room_id(&user_id).await)
 }
 
-#[server]
-pub async fn get_players(
-) -> Result<ServerResult<Vec<(PlayerInformation, TakPlayer, bool)>>, ServerFnError> {
+#[server(client=AuthClient)]
+pub async fn get_players()
+-> Result<ServerResult<Vec<(PlayerInformation, TakPlayer, bool)>>, ServerFnError> {
     let user_id = bail_api!(authorize().await);
     let rooms = room::ROOMS.read().await;
     Ok(rooms.try_get_players(&user_id).await)
 }
 
-#[server]
+#[server(client=AuthClient)]
 pub async fn get_current_game() -> Result<ServerResult<Option<TakGame>>, ServerFnError> {
     let user_id = bail_api!(authorize().await);
     let rooms = room::ROOMS.read().await;
@@ -79,21 +80,21 @@ pub async fn get_current_game() -> Result<ServerResult<Option<TakGame>>, ServerF
     }
 }
 
-#[server]
+#[server(client=AuthClient)]
 pub async fn get_room_list() -> Result<ServerResult<Vec<RoomInformation>>, ServerFnError> {
     let _ = bail_api!(authorize().await);
     let rooms = room::ROOMS.read().await;
     Ok(rooms.get_room_list().await)
 }
 
-#[server]
+#[server(client=AuthClient)]
 pub async fn agree_rematch() -> Result<ServerResult<()>, ServerFnError> {
     let user_id = bail_api!(authorize().await);
     let rooms = room::ROOMS.read().await;
     Ok(rooms.try_agree_rematch(&user_id).await)
 }
 
-#[server]
+#[server(client=AuthClient)]
 pub async fn get_game(game_id: GameId) -> Result<ServerResult<GameInformation>, ServerFnError> {
     let game_record = bail_api!(player::get_game(&game_id).await);
     let game = GameInformation {
@@ -106,7 +107,7 @@ pub async fn get_game(game_id: GameId) -> Result<ServerResult<GameInformation>, 
     Ok(Ok(game))
 }
 
-#[server]
+#[server(client=AuthClient)]
 pub async fn get_history() -> Result<AuthServerResult<Vec<GameInformation>>, ServerFnError> {
     let user_id = bail_api!(authorize().await);
     let games = bail_api!(player::get_games_of_player(&user_id).await);

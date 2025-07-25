@@ -1,9 +1,9 @@
+use crate::Route;
 use crate::components::tak_board_state::{PlayerInfo, PlayerType, TakBoardState};
 use crate::components::{TakBoard, TakEngine, TakWebSocket, TakWinModal};
-use crate::server::api::{get_room, get_session_id};
 use crate::server::ServerError;
+use crate::server::api::get_room;
 use crate::views::LOCAL_SETTINGS;
-use crate::Route;
 use dioxus::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -126,7 +126,6 @@ pub fn PlayLocal() -> Element {
 #[component]
 pub fn PlayOnline() -> Element {
     let room = use_resource(|| get_room());
-    let session_id = use_resource(|| get_session_id());
 
     let nav = use_navigator();
 
@@ -180,9 +179,7 @@ pub fn PlayOnline() -> Element {
                     TakBoard {
                     }
                     TakWinModal { is_local: false }
-                    if let Some(Ok(Ok(session_id))) = session_id.read().as_ref() {
-                        TakWebSocket { session_id }
-                    }
+                    TakWebSocket {}
                 }
             } else {
                 h2 { "No room found or not connected." }

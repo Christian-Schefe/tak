@@ -11,6 +11,8 @@ pub type UserId = String;
 pub type GameId = String;
 pub type RoomId = String;
 
+pub type JWTToken = String;
+
 pub const ROOM_ID_LEN: usize = 4;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

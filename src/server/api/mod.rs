@@ -1,19 +1,22 @@
 use dioxus::prelude::*;
 use serde::{Deserialize, Serialize};
 
+mod auth_client;
 mod room;
 
+pub use auth_client::*;
 pub use room::*;
 
-use crate::server::error::{ServerError, ServerResult};
+use crate::server::JWTToken;
 use crate::server::UserId;
+use crate::server::error::{ServerError, ServerResult};
 
 #[cfg(feature = "server")]
 use super::internal::*;
 
 #[cfg(feature = "server")]
 pub async fn authorize() -> ServerResult<UserId> {
-    let Some(auth::AuthenticatedUser(Some(user_id))) = extract().await.ok() else {
+    let Some(auth::Claims { sub: user_id, .. }) = extract().await.ok() else {
         return Err(ServerError::Unauthorized);
     };
     Ok(user_id)
@@ -58,7 +61,7 @@ pub struct StatsData {
     pub draws: usize,
 }
 
-#[server]
+#[server(client=AuthClient)]
 pub async fn get_stats() -> Result<ServerResult<StatsData>, ServerFnError> {
     let user_id = bail_api!(authorize().await);
     let player = bail_api!(player::get_or_insert_player(&user_id).await);
@@ -74,41 +77,29 @@ pub async fn get_stats() -> Result<ServerResult<StatsData>, ServerFnError> {
 pub async fn post_register(
     username: String,
     password: String,
-) -> Result<ServerResult<UserId>, ServerFnError> {
-    let user_id = bail_api!(auth::try_register(username, password).await);
-    bail_api!(auth::add_session(&user_id).await);
-    Ok(Ok(user_id))
+) -> Result<ServerResult<JWTToken>, ServerFnError> {
+    let token = bail_api!(auth::try_register(username, password).await);
+    Ok(Ok(token))
 }
 
 #[server]
 pub async fn post_login(
     username: String,
     password: String,
-) -> Result<ServerResult<UserId>, ServerFnError> {
-    let user_id = bail_api!(auth::try_login(username, password).await);
-    bail_api!(auth::add_session(&user_id).await);
-    Ok(Ok(user_id))
+) -> Result<ServerResult<JWTToken>, ServerFnError> {
+    let token = bail_api!(auth::try_login(username, password).await);
+    Ok(Ok(token))
 }
 
-#[server]
-pub async fn post_logout() -> Result<ServerResult<()>, ServerFnError> {
+#[server(client=AuthClient)]
+pub async fn post_renew_token() -> Result<ServerResult<JWTToken>, ServerFnError> {
     let user_id = bail_api!(authorize().await);
-    bail_api!(auth::remove_session(&user_id).await);
-    Ok(Ok(()))
+    let token = bail_api!(auth::renew_token(&user_id));
+    Ok(Ok(token))
 }
 
-#[server]
-pub async fn get_auth() -> Result<ServerResult<UserId>, ServerFnError> {
-    let user_id = bail_api!(authorize().await);
-    Ok(Ok(user_id))
-}
-
-#[server]
-pub async fn get_session_id() -> Result<ServerResult<String>, ServerFnError> {
-    let user_id = bail_api!(authorize().await);
-    let Some(session_id) = bail_api!(auth::get_session(&user_id).await) else {
-        let session_id = bail_api!(auth::add_session(&user_id).await);
-        return Ok(Ok(session_id));
-    };
-    Ok(Ok(session_id))
+#[server(client=AuthClient)]
+pub async fn get_auth() -> Result<ServerResult<JWTToken>, ServerFnError> {
+    let token = bail_api!(authorize().await);
+    Ok(Ok(token))
 }
