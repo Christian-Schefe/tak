@@ -1,14 +1,15 @@
-use crate::views::Auth;
+use crate::{components::ColorApplier, views::Auth};
 use dioxus::prelude::*;
 use views::{
-    CreateRoomComputer, CreateRoomLocal, CreateRoomOnline, History, Home, More, Navbar,
+    Colors, CreateRoomComputer, CreateRoomLocal, CreateRoomOnline, History, Home, More, Navbar,
     PlayComputer, PlayLocal, PlayOnline, Puzzles, ReviewBoard, Rooms, Rules, Stats,
 };
 
 mod components;
+mod future;
 mod server;
-mod views;
 mod storage;
+mod views;
 
 #[derive(Debug, Clone, Routable, PartialEq)]
 enum Route {
@@ -27,6 +28,8 @@ enum Route {
     Stats {},
     #[route("/more/history")]
     History {},
+    #[route("/more/colors")]
+    Colors {},
 
     #[route("/review/:game_id")]
     ReviewBoard { game_id: String },
@@ -52,11 +55,27 @@ enum Route {
     PageNotFound { route: Vec<String> },
 }
 
+const _MAIN_HTML: Asset = asset!("/index.html");
 const FAVICON: Asset = asset!("/assets/favicon.ico");
 const MAIN_CSS: Asset = asset!("/assets/styling/main.scss");
 
+fn check_features() {
+    #[cfg(feature = "web")]
+    println!("Running in web mode");
+
+    #[cfg(feature = "desktop")]
+    println!("Running in desktop mode");
+
+    #[cfg(feature = "mobile")]
+    println!("Running in mobile mode");
+
+    #[cfg(feature = "server")]
+    println!("Running in server mode");
+}
+
 #[cfg(not(feature = "server"))]
 fn main() {
+    check_features();
     let server_url = option_env!("SERVER_URL").unwrap_or("http://localhost:8080");
     dioxus::logger::tracing::info!("[Client] Using server URL: {server_url}");
     server_fn::client::set_server_url(server_url);
@@ -66,10 +85,12 @@ fn main() {
 #[cfg(feature = "server")]
 #[tokio::main]
 async fn main() {
+    check_features();
     use dioxus_fullstack::server::DioxusRouterExt;
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     use tokio::spawn;
-    use tower_cookies::CookieManagerLayer;
+
+    println!("Starting server...");
 
     spawn(async move {
         let db_url = std::env::var("DB_URL").unwrap_or_else(|_| "localhost:8000".to_string());
@@ -102,7 +123,6 @@ async fn main() {
             axum::routing::any(server::internal::websocket::ws_test_handler),
         )
         .nest_service("/webworker", tower_http::services::ServeDir::new("workers"))
-        .layer(CookieManagerLayer::new())
         .into_make_service_with_connect_info::<SocketAddr>();
 
     println!("Server running at {}", address);
@@ -117,6 +137,7 @@ fn App() -> Element {
         document::Link { rel: "icon", href: FAVICON }
         document::Link { rel: "stylesheet", href: MAIN_CSS }
         Router::<Route> {}
+        ColorApplier {}
     }
 }
 

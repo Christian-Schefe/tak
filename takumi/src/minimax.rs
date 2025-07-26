@@ -1,6 +1,6 @@
 use crate::{
-    console_log, gen_moves, Action, Board, TranspositionEntry, TranspositionNodeType,
-    TranspositionTable, TRANSPOSITION_TABLE,
+    Action, Board, TRANSPOSITION_TABLE, TranspositionEntry, TranspositionNodeType,
+    TranspositionTable, console_log, gen_moves,
 };
 
 #[cfg(target_arch = "wasm32")]
@@ -16,6 +16,13 @@ pub fn now() -> u64 {
         .duration_since(UNIX_EPOCH)
         .expect("Time went backwards")
         .as_millis() as u64
+}
+
+#[derive(Debug, Clone)]
+struct Stats {
+    node_count: usize,
+    found_in_tt: usize,
+    saved_by_tt: usize,
 }
 
 pub fn iterative_deepening(
@@ -48,15 +55,18 @@ fn iterative_deepening_with_tt(
     let moves = gen_moves(board);
 
     for depth in 1..=max_depth {
-        let mut node_count = 0;
+        let mut stats = Stats {
+            node_count: 0,
+            found_in_tt: 0,
+            saved_by_tt: 0,
+        };
         let res = 'l: {
             let mut best_score = -INF;
             let mut best_move = None;
             for mv in moves.iter() {
                 let smash = board.make(mv);
                 let Some(score) =
-                    alphabeta(board, depth, 0, end_time, -INF, INF, tt, &mut node_count)
-                        .map(|s| -s)
+                    alphabeta(board, depth, 0, end_time, -INF, INF, tt, &mut stats).map(|s| -s)
                 else {
                     break 'l None;
                 };
@@ -80,11 +90,11 @@ fn iterative_deepening_with_tt(
         prev_now = new_now;
 
         console_log!(
-            "Depth: {}, Score: {:?}, Time: {}ms, Node Count: {}",
+            "Depth: {}, Score: {:?}, Time: {}ms, Stat: {:?}",
             depth,
             res,
             used_time,
-            node_count
+            stats
         );
 
         best = res;
@@ -118,21 +128,27 @@ fn alphabeta(
     mut alpha: i32,
     beta: i32,
     tt: &mut TranspositionTable,
-    node_count: &mut usize,
+    stats: &mut Stats,
 ) -> Option<i32> {
-    *node_count += 1;
-    if depth == 0 || board.result.is_some() {
-        return Some(evaluate_for_active_player(board));
-    }
+    stats.node_count += 1;
+
+    let is_leaf = depth == 0 || board.result.is_some();
 
     let prev_best_move = if let Some(entry) = tt.get(board.zobrist) {
+        stats.found_in_tt += 1;
         if entry.depth >= depth {
+            stats.saved_by_tt += 1;
             match entry.node_type {
                 TranspositionNodeType::Exact => return Some(entry.score),
-                TranspositionNodeType::Alpha if entry.score <= alpha => return Some(entry.score),
-                TranspositionNodeType::Beta if entry.score >= beta => return Some(entry.score),
+                TranspositionNodeType::Alpha if entry.score <= alpha && !is_leaf => {
+                    return Some(entry.score);
+                }
+                TranspositionNodeType::Beta if entry.score >= beta && !is_leaf => {
+                    return Some(entry.score);
+                }
                 _ => {}
             }
+            stats.saved_by_tt -= 1;
             None
         } else {
             entry.best_move.as_ref()
@@ -140,6 +156,10 @@ fn alphabeta(
     } else {
         None
     };
+
+    if is_leaf {
+        return Some(evaluate_for_active_player(board));
+    }
 
     let mut moves = gen_moves(board);
     if let Some(prev_move_pos) = prev_best_move.and_then(|m| moves.iter().position(|x| x == m)) {
@@ -159,7 +179,7 @@ fn alphabeta(
             -beta,
             -alpha,
             tt,
-            node_count,
+            stats,
         )?;
         board.unmake(&mv, smash);
         if score >= beta {

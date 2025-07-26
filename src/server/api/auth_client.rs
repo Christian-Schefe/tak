@@ -23,11 +23,7 @@ impl<CustomErr> Client<CustomErr> for AuthClient {
         if let Some(token) = &token {
             headers.append("Authorization", &format!("Bearer {token}"));
         }
-        dioxus::logger::tracing::info!(
-            "Sending request with headers: {:?}, token: {:?}",
-            headers,
-            token
-        );
+
         BrowserClient::send(req)
     }
 }
@@ -49,11 +45,7 @@ impl<CustomErr> Client<CustomErr> for AuthClient {
         if let Some(token) = &token {
             headers.append("Authorization", format!("Bearer {token}").parse().unwrap());
         }
-        dioxus::logger::tracing::info!(
-            "Sending request with headers: {:?}, token: {:?}",
-            headers,
-            token
-        );
+
         dioxus::prelude::server_fn::client::reqwest::ReqwestClient::send(req)
     }
 }

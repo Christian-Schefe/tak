@@ -13,19 +13,18 @@ authors.workspace = true
 edition.workspace = true
 
 [dependencies]
-ezsockets = { version = "0.7.0", default-features = false, optional = true }
 dioxus = { version = "0.6.3", features = ["router", "fullstack"] }
 dioxus-free-icons = { version = "0.9", features = [
     "font-awesome-solid",
     "ionicons",
 ] }
-regex = "1.11.1"
 web-sys = { version = "0.3.77", features = [
     "HtmlDocument",
     "Clipboard",
     "Window",
     "Navigator",
     "Permissions",
+    "CssStyleDeclaration",
 ] }
 tokio = { version = "1.45.1", features = [
     "time",
@@ -35,7 +34,7 @@ tokio = { version = "1.45.1", features = [
 gloo = { version = "0.11.0", features = ["timers", "futures"] }
 gloo-worker = { version = "0.5.0", features = ["futures"] }
 axum = { version = "0.7.9", features = ["ws"], optional = true }
-axum-extra = { version = "0.9.6", optional = true, features = ["typed-header"] }
+axum-extra = { version = "0.9.6", features = ["typed-header"] }
 futures-util = { version = "0.3.31" }
 uuid = { version = "1.17.0", features = ["v4"], optional = true }
 dioxus-fullstack = { version = "0.6.3" }
@@ -48,9 +47,6 @@ headers = "0.4.1"
 argon2 = "0.5"
 surrealdb = { version = "2.3.6", optional = true }
 thiserror = "2.0.12"
-tower-cookies = { version = "0.10.0", features = [
-    "axum-core",
-], optional = true }
 tower-http = { version = "0.6.6", optional = true, features = ["fs"] }
 rand = "0.8.5"
 dashmap = { version = "6.1.0", optional = true }
@@ -61,23 +57,27 @@ fixed-map = "0.9.5"
 chrono = { version = "0.4.41", features = ["serde"] }
 jsonwebtoken = { version = "9.3.1", optional = true }
 directories = "6.0.0"
-async-trait = "0.1.88"
+tokio-tungstenite-wasm = { version = "0.6.0", features = [
+    "rustls-tls-native-roots",
+] }
 
 [features]
-web = ["dioxus/web", "tak-core/wasm", "ezsockets/wasm_client"]
-desktop = ["dioxus/desktop", "tak-core/wasm", "ezsockets/client"]
-mobile = ["dioxus/mobile", "tak-core/wasm", "ezsockets/client"]
+_not_web = ["dep:tokio"]
+
+web = ["dioxus/web", "tak-core/wasm"]
+desktop = ["dioxus/desktop", "tak-core/wasm", "_not_web"]
+mobile = ["dioxus/mobile", "tak-core/wasm", "_not_web"]
 server = [
+    "_not_web",
     "dioxus/server",
     "dioxus-fullstack/axum",
     "dep:dashmap",
-    "dep:tower-cookies",
+
     "dep:surrealdb",
     "dep:axum",
-    "dep:tokio",
     "dep:uuid",
     "dioxus-cli-config",
-    "dep:axum-extra",
+
     "dep:moka",
     "dep:tower-http",
     "dep:jsonwebtoken",

@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>{app_title}</title>
+    <script>
+      try {
+        const theme = localStorage.getItem("color_scheme_colors");
+        if (theme) {
+          items = JSON.parse(JSON.parse(theme));
+          const root = document.documentElement;
+          for (const [key, value] of items) {
+            root.style.setProperty(`--${key}`, value);
+          }
+        }
+      } catch (e) {
+        console.error("Error parsing color scheme from localStorage:", e);
+      }
+    </script>
+    <meta content="text/html;charset=utf-8" http-equiv="Content-Type" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta charset="UTF-8" />
+  </head>
+  <body>
+    <div id="main"></div>
+  </body>
+</html>

@@ -13,7 +13,7 @@ pub fn TakClock(player: TakPlayer) -> Element {
         let mut board_clone = board.clone();
         async move {
             loop {
-                gloo::timers::future::sleep(std::time::Duration::from_millis(100)).await;
+                crate::future::sleep(std::time::Duration::from_millis(100)).await;
                 let time = board_clone.get_time_remaining(player);
                 time_remaining.set(time);
                 if time.is_some_and(|x| x == 0) {

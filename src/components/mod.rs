@@ -1,3 +1,4 @@
+mod color_applier;
 mod nav_button;
 mod tak_board;
 pub mod tak_board_state;
@@ -10,6 +11,7 @@ mod tak_tile;
 mod tak_websocket;
 mod tak_win_modal;
 
+pub use color_applier::*;
 pub use nav_button::*;
 pub use tak_board::*;
 pub use tak_clock::*;

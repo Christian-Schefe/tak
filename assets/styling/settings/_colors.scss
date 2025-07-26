@@ -1,24 +1,51 @@
-$clr-black: #000000;
-$clr-white: #ffffff;
+:root {
+    --clr-black: #000000;
+    --clr-white: #ffffff;
 
-$clr-error: #ff0000;
-$clr-warning: #e8a01b;
+    --clr-error: #ff0000;
+    --clr-warning: #e8a01b;
 
-$clr-primary: oklch(0.6601 0.144 254.84);
-$clr-primary-light: oklch(0.7001 0.144 254.84);
+    --clr-primary: oklch(0.6601 0.144 254.84);
+    --clr-primary-light: oklch(0.7001 0.144 254.84);
 
-$clr-background: oklch(0.2049 0.0292 254.84);
-$clr-surface: oklch(0.3549 0.0292 254.84);
-$clr-surface-light: oklch(0.5049 0.0292 254.84);
+    --clr-background: oklch(0.2049 0.0292 254.84);
+    --clr-surface: oklch(0.3549 0.0292 254.84);
+    --clr-surface-light: oklch(0.5049 0.0292 254.84);
 
-$clr-board-dark: oklch(0.6756 0.0292 254.84);
-$clr-board-light: oklch(0.7049 0.0292 254.84);
+    --clr-board-dark: oklch(0.6756 0.0292 254.84);
+    --clr-board-light: oklch(0.7049 0.0292 254.84);
 
-$clr-board-selected-dark: oklch(0.7602 0.0292 254.84);
-$clr-board-selected-light: oklch(0.7702 0.0292 254.84);
-$clr-board-highlight-dark: oklch(0.6401 0.144 254.84);
-$clr-board-highlight-light: oklch(0.6601 0.144 254.84);
-$clr-board-selected-highlight-dark: oklch(0.7502 0.104 254.84);
-$clr-board-selected-highlight-light: oklch(0.7602 0.104 254.84);
-$clr-piece-dark: oklch(0.3533 0.0292 254.84);
-$clr-piece-light: oklch(0.9233 0.0292 254.84);
+    --clr-board-selected-dark: oklch(0.7602 0.0292 254.84);
+    --clr-board-selected-light: oklch(0.7702 0.0292 254.84);
+    --clr-board-highlight-dark: oklch(0.6401 0.144 254.84);
+    --clr-board-highlight-light: oklch(0.6601 0.144 254.84);
+    --clr-board-selected-highlight-dark: oklch(0.7502 0.104 254.84);
+    --clr-board-selected-highlight-light: oklch(0.7602 0.104 254.84);
+    --clr-piece-dark: oklch(0.3533 0.0292 254.84);
+    --clr-piece-light: oklch(0.9233 0.0292 254.84);
+}
+
+$clr-black: var(--clr-black);
+$clr-white: var(--clr-white);
+
+$clr-error: var(--clr-error);
+$clr-warning: var(--clr-warning);
+
+$clr-primary: var(--clr-primary);
+$clr-primary-light: var(--clr-primary-light);
+
+$clr-background: var(--clr-background);
+$clr-surface: var(--clr-surface);
+$clr-surface-light: var(--clr-surface-light);
+
+$clr-board-dark: var(--clr-board-dark);
+$clr-board-light: var(--clr-board-light);
+
+$clr-board-selected-dark: var(--clr-board-selected-dark);
+$clr-board-selected-light: var(--clr-board-selected-light);
+$clr-board-highlight-dark: var(--clr-board-highlight-dark);
+$clr-board-highlight-light: var(--clr-board-highlight-light);
+$clr-board-selected-highlight-dark: var(--clr-board-selected-highlight-dark);
+$clr-board-selected-highlight-light: var(--clr-board-selected-highlight-light);
+$clr-piece-dark: var(--clr-piece-dark);
+$clr-piece-light: var(--clr-piece-light);

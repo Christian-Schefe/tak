@@ -5,6 +5,11 @@
 # HTML title tag content
 title = "tak"
 
+[web.watcher]
+
+# when watcher trigger, regenerate the `index.html`
+reload_html = true
+
 # include `assets` in web platform
 [web.resource]
 
@@ -19,3 +24,8 @@ script = []
 # Javascript code file
 # serve: [dev-server] only
 script = []
+
+[bundle]
+identifier = "com.meeshroom.tak"
+publisher = "Meeshroom"
+icon = ["icons/icon.ico"]

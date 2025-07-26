@@ -1,7 +1,9 @@
+mod colors;
 mod history;
 mod rules;
 mod stats;
 
+pub use colors::*;
 pub use history::*;
 pub use rules::*;
 pub use stats::*;
@@ -10,7 +12,7 @@ use crate::Route;
 use crate::views::AUTH_TOKEN_KEY;
 use dioxus::prelude::*;
 use dioxus_free_icons::Icon;
-use dioxus_free_icons::icons::fa_solid_icons::{FaBookOpen, FaChartBar, FaScroll};
+use dioxus_free_icons::icons::fa_solid_icons::{FaBookOpen, FaChartBar, FaPalette, FaScroll};
 use dioxus_free_icons::icons::io_icons::{IoLogOut, IoSettings};
 
 #[component]
@@ -37,6 +39,10 @@ pub fn More() -> Element {
         nav.push(Route::History {});
     };
 
+    let on_click_colors = move |_| {
+        nav.push(Route::Colors {});
+    };
+
     rsx! {
         div { id: "more-view",
             MoreButton {
@@ -60,6 +66,11 @@ pub fn More() -> Element {
                 label: "Settings",
             }
             MoreButton {
+                onclick: on_click_colors,
+                icon: MoreButtonIcon::Theme,
+                label: "Theme",
+            }
+            MoreButton {
                 onclick: on_logout,
                 icon: MoreButtonIcon::Logout,
                 label: "Logout",
@@ -74,6 +85,7 @@ pub enum MoreButtonIcon {
     Rules,
     History,
     Settings,
+    Theme,
     Logout,
 }
 
@@ -114,6 +126,14 @@ pub fn MoreButton(
                 height: 30,
                 fill: "black",
                 icon: IoSettings,
+            }
+        },
+        MoreButtonIcon::Theme => rsx! {
+            Icon {
+                width: 30,
+                height: 30,
+                fill: "black",
+                icon: FaPalette,
             }
         },
         MoreButtonIcon::Logout => rsx! {

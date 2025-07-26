@@ -71,4 +71,8 @@ impl TranspositionTable {
     pub fn clear(&mut self) {
         self.entries = vec![None; 1 << self.size];
     }
+
+    pub fn count(&self) -> usize {
+        self.entries.iter().filter(|e| e.is_some()).count()
+    }
 }

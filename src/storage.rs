@@ -12,9 +12,23 @@ mod web {
     pub fn get<T: for<'de> Deserialize<'de>>(key: impl AsRef<str>) -> Result<T, String> {
         gloo::storage::LocalStorage::get(key).map_err(|e| e.to_string())
     }
+
+    pub fn try_get<T: for<'de> Deserialize<'de>>(
+        key: impl AsRef<str>,
+    ) -> Result<Option<T>, String> {
+        match gloo::storage::LocalStorage::get(key) {
+            Ok(value) => Ok(Some(value)),
+            Err(gloo::storage::errors::StorageError::KeyNotFound(_)) => Ok(None),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    pub fn remove(key: impl AsRef<str>) -> Result<(), String> {
+        Ok(gloo::storage::LocalStorage::delete(key))
+    }
 }
 
-//#[cfg(not(feature = "web"))]
+#[cfg(not(feature = "web"))]
 mod fs {
     use directories::ProjectDirs;
     use serde::{Deserialize, Serialize};
@@ -52,6 +66,26 @@ mod fs {
         let data = std::fs::read_to_string(file_path).map_err(|e| e.to_string())?;
         serde_json::from_str(&data).map_err(|e| e.to_string())
     }
+
+    pub fn try_get<T: for<'de> Deserialize<'de>>(
+        key: impl AsRef<str>,
+    ) -> Result<Option<T>, String> {
+        let file_path = get_data_dir()
+            .map(|dir| dir.join(key.as_ref()))
+            .ok_or("Failed to get data dir")?;
+        if !file_path.exists() {
+            return Ok(None);
+        }
+        let data = std::fs::read_to_string(file_path).map_err(|e| e.to_string())?;
+        serde_json::from_str(&data).map_err(|e| e.to_string())
+    }
+
+    pub fn remove(key: impl AsRef<str>) -> Result<(), String> {
+        let file_path = get_data_dir()
+            .map(|dir| dir.join(key.as_ref()))
+            .ok_or("Failed to get data dir")?;
+        std::fs::remove_file(file_path).map_err(|e| e.to_string())
+    }
 }
 
 pub fn set<T: Serialize>(key: impl AsRef<str>, value: T) -> Result<(), String> {
@@ -68,4 +102,20 @@ pub fn get<T: for<'de> Deserialize<'de>>(key: impl AsRef<str>) -> Result<T, Stri
 
     #[cfg(not(feature = "web"))]
     return fs::get(key);
+}
+
+pub fn try_get<T: for<'de> Deserialize<'de>>(key: impl AsRef<str>) -> Result<Option<T>, String> {
+    #[cfg(feature = "web")]
+    return web::try_get(key);
+
+    #[cfg(not(feature = "web"))]
+    return fs::try_get(key);
+}
+
+pub fn remove(key: impl AsRef<str>) -> Result<(), String> {
+    #[cfg(feature = "web")]
+    return web::remove(key);
+
+    #[cfg(not(feature = "web"))]
+    return fs::remove(key);
 }
