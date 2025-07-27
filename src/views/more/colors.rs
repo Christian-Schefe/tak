@@ -5,42 +5,41 @@ use crate::components::{COLOR_SCHEME_COLORS, COLOR_SCHEME_KEY, ColorScheme};
 
 #[component]
 pub fn Colors() -> Element {
-    let on_click = |_| {
-        set_color_scheme(ColorSchemes::Jungle);
-    };
-    let on_click2 = |_| {
+    let unset_theme = |_| {
         unset_color_scheme();
     };
 
     rsx! {
         div { id: "colors-view",
-            h1 { "Colors" }
-            p { "This is a placeholder for the colors settings page." }
-            button {
-                onclick: on_click,
-                "Change Jungle"
-            }
-            button {
-                onclick: on_click2,
-                "Unset Color Scheme"
+            h1 { "Themes" }
+            button { class: "color-theme-button", onclick: unset_theme, "Classic" }
+            for scheme in ColorSchemes::ALL.iter() {
+                button {
+                    class: "color-theme-button",
+                    onclick: move |_| set_color_scheme(scheme.clone()),
+                    "{scheme.name()}"
+                }
             }
         }
     }
 }
 
 fn set_color_scheme(scheme: ColorSchemes) {
-    let colors = scheme.scheme();
+    let Some(colors) = scheme.scheme() else {
+        dioxus::logger::tracing::error!("Failed to get color scheme for: {:?}", scheme);
+        return;
+    };
     colors.apply();
     if let Err(e) = crate::storage::set(COLOR_SCHEME_KEY, scheme) {
         dioxus::logger::tracing::error!("Failed to set color scheme: {}", e);
     }
-    if let Err(e) = crate::storage::set(COLOR_SCHEME_COLORS, colors) {
+    if let Err(e) = crate::storage::set(COLOR_SCHEME_COLORS, colors.to_json_array()) {
         dioxus::logger::tracing::error!("Failed to set color scheme colors: {}", e);
     }
 }
 
 fn unset_color_scheme() {
-    jungle_theme().unset();
+    ColorScheme::default().unset();
     if let Err(e) = crate::storage::remove(COLOR_SCHEME_KEY) {
         dioxus::logger::tracing::error!("Failed to unset color scheme: {}", e);
     }
@@ -52,42 +51,52 @@ fn unset_color_scheme() {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ColorSchemes {
     Jungle,
+    Aether,
+    Ignis,
+    Bubblegum,
 }
 
 impl ColorSchemes {
-    pub fn scheme(&self) -> ColorScheme {
+    pub const ALL: [ColorSchemes; 4] = [
+        ColorSchemes::Jungle,
+        ColorSchemes::Aether,
+        ColorSchemes::Ignis,
+        ColorSchemes::Bubblegum,
+    ];
+
+    pub fn scheme(&self) -> Option<ColorScheme> {
+        serde_json::from_str(match self {
+            ColorSchemes::Jungle => JUNGLE_THEME,
+            ColorSchemes::Aether => AETHER_THEME,
+            ColorSchemes::Ignis => IGNIS_THEME,
+            ColorSchemes::Bubblegum => BUBBLEGUM_THEME,
+        })
+        .ok()
+    }
+
+    fn name(&self) -> &str {
         match self {
-            ColorSchemes::Jungle => jungle_theme(),
+            ColorSchemes::Jungle => "Jungle",
+            ColorSchemes::Aether => "Aether",
+            ColorSchemes::Ignis => "Ignis",
+            ColorSchemes::Bubblegum => "Bubblegum",
         }
     }
 }
 
-pub fn jungle_theme() -> ColorScheme {
-    ColorScheme {
-        clr_black: "#000000".to_string(),
-        clr_white: "#ffffff".to_string(),
-
-        clr_error: "#ff0000".to_string(),
-        clr_warning: "#e8a01b".to_string(),
-
-        clr_primary: "oklch(0.7938 0.1422 87.06)".to_string(),
-        clr_primary_light: "oklch(0.8438 0.1422 87.06)".to_string(),
-
-        clr_background: "oklch(0.2049 0.0292 196.02)".to_string(),
-        clr_surface: "oklch(0.3549 0.0292 196.02)".to_string(),
-        clr_surface_light: "oklch(0.5049 0.0292 196.02)".to_string(),
-
-        clr_board_dark: "oklch(0.6756 0.0292 196.02)".to_string(),
-        clr_board_light: "oklch(0.7049 0.0292 196.02)".to_string(),
-
-        clr_board_selected_dark: "oklch(0.7602 0.0292 196.02)".to_string(),
-        clr_board_selected_light: "oklch(0.7702 0.0292 196.02)".to_string(),
-        clr_board_highlight_dark: "oklch(0.6401 0.1147 91.34)".to_string(),
-        clr_board_highlight_light: "oklch(0.6869 0.1213 91.34)".to_string(),
-        clr_board_selected_highlight_dark: "oklch(0.7502 0.104 254.84)".to_string(),
-        clr_board_selected_highlight_light: "oklch(0.7602 0.104 254.84)".to_string(),
-
-        clr_piece_dark: "oklch(0.3533 0.0292 254.84)".to_string(),
-        clr_piece_light: "oklch(0.9233 0.0292 254.84)".to_string(),
-    }
-}
+pub const JUNGLE_THEME: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/assets/themes/jungle_theme.json"
+));
+pub const AETHER_THEME: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/assets/themes/aether_theme.json"
+));
+pub const IGNIS_THEME: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/assets/themes/ignis_theme.json"
+));
+pub const BUBBLEGUM_THEME: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/assets/themes/bubblegum_theme.json"
+));

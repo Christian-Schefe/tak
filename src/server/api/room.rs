@@ -108,9 +108,11 @@ pub async fn get_game(game_id: GameId) -> Result<ServerResult<GameInformation>, 
 }
 
 #[server(client=AuthClient)]
-pub async fn get_history() -> Result<AuthServerResult<Vec<GameInformation>>, ServerFnError> {
+pub async fn get_history(
+    pagination: Option<(usize, usize)>,
+) -> Result<AuthServerResult<Vec<GameInformation>>, ServerFnError> {
     let user_id = bail_api!(authorize().await);
-    let games = bail_api!(player::get_games_of_player(&user_id).await);
+    let games = bail_api!(player::get_games_of_player(&user_id, pagination).await);
     let game_info: Vec<GameInformation> = games
         .into_iter()
         .map(|game_record| GameInformation {

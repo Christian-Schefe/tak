@@ -32,9 +32,18 @@ impl Keys {
 }
 
 static KEYS: LazyLock<Keys> = LazyLock::new(|| {
-    let secret = "JWT_SECRET".to_string();
-    Keys::new(secret.as_bytes())
+    let secret = read_or_generate_secret();
+    Keys::new(&secret)
 });
+
+fn read_or_generate_secret() -> Vec<u8> {
+    if let Ok(secret) = std::env::var("JWT_SECRET") {
+        secret.as_bytes().to_vec()
+    } else {
+        println!("JWT secret not found, generating a random one...");
+        Uuid::new_v4().as_bytes().to_vec()
+    }
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims {

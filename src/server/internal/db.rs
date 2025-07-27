@@ -1,9 +1,9 @@
 use std::sync::LazyLock;
 
 use surrealdb::{
+    Surreal,
     engine::remote::ws::{Client, Ws},
     opt::auth::Root,
-    Surreal,
 };
 
 pub static DB: LazyLock<Surreal<Client>> = LazyLock::new(Surreal::init);
@@ -23,16 +23,12 @@ async fn retry_connect_db(url: &str, max_attempts: usize) -> Result<(), surreald
     }
 }
 
-pub async fn connect_db(url: &str) -> Result<(), surrealdb::Error> {
+pub async fn connect_db(url: &str, username: &str, password: &str) -> Result<(), surrealdb::Error> {
     println!("Connecting to database at {}...", url);
     retry_connect_db(url, 5).await?;
 
     println!("Connected to database");
-    DB.signin(Root {
-        username: "root",
-        password: "secret",
-    })
-    .await?;
+    DB.signin(Root { username, password }).await?;
 
     DB.use_ns("app").use_db("main").await?;
 

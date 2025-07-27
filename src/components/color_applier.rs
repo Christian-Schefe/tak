@@ -16,6 +16,10 @@ pub fn ColorApplier() -> Element {
                 return;
             }
         };
+        let Some(scheme) = scheme else {
+            dioxus::logger::tracing::error!("[ColorApplier] No color scheme found");
+            return;
+        };
         scheme.apply();
         if let Err(e) = crate::storage::set(COLOR_SCHEME_COLORS, scheme.to_json_array()) {
             dioxus::logger::tracing::error!(
@@ -63,10 +67,12 @@ pub fn unset_css_variable(name: &str) {
         .expect("failed to unset CSS variable");
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct ColorScheme {
     pub clr_black: String,
     pub clr_white: String,
+
+    pub clr_text: String,
 
     pub clr_error: String,
     pub clr_warning: String,
@@ -80,13 +86,7 @@ pub struct ColorScheme {
 
     pub clr_board_dark: String,
     pub clr_board_light: String,
-
-    pub clr_board_selected_dark: String,
-    pub clr_board_selected_light: String,
-    pub clr_board_highlight_dark: String,
-    pub clr_board_highlight_light: String,
-    pub clr_board_selected_highlight_dark: String,
-    pub clr_board_selected_highlight_light: String,
+    pub clr_board_highlight: String,
 
     pub clr_piece_dark: String,
     pub clr_piece_light: String,
@@ -120,6 +120,7 @@ impl ColorScheme {
         vec![
             ("clr-black".to_string(), self.clr_black.clone()),
             ("clr-white".to_string(), self.clr_white.clone()),
+            ("clr-text".to_string(), self.clr_text.clone()),
             ("clr-error".to_string(), self.clr_error.clone()),
             ("clr-warning".to_string(), self.clr_warning.clone()),
             ("clr-primary".to_string(), self.clr_primary.clone()),
@@ -136,28 +137,8 @@ impl ColorScheme {
             ("clr-board-dark".to_string(), self.clr_board_dark.clone()),
             ("clr-board-light".to_string(), self.clr_board_light.clone()),
             (
-                "clr-board-selected-dark".to_string(),
-                self.clr_board_selected_dark.clone(),
-            ),
-            (
-                "clr-board-selected-light".to_string(),
-                self.clr_board_selected_light.clone(),
-            ),
-            (
-                "clr-board-highlight-dark".to_string(),
-                self.clr_board_highlight_dark.clone(),
-            ),
-            (
-                "clr-board-highlight-light".to_string(),
-                self.clr_board_highlight_light.clone(),
-            ),
-            (
-                "clr-board-selected-highlight-dark".to_string(),
-                self.clr_board_selected_highlight_dark.clone(),
-            ),
-            (
-                "clr-board-selected-highlight-light".to_string(),
-                self.clr_board_selected_highlight_light.clone(),
+                "clr-board-highlight".to_string(),
+                self.clr_board_highlight.clone(),
             ),
             ("clr-piece-dark".to_string(), self.clr_piece_dark.clone()),
             ("clr-piece-light".to_string(), self.clr_piece_light.clone()),

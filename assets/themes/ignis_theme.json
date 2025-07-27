@@ -1,0 +1,21 @@
+{
+  "clr_black": "#000000",
+  "clr_white": "#ffffff",
+  "clr_text": "#ffffff",
+  "clr_error": "#ff0000",
+  "clr_warning": "#e8a01b",
+
+  "clr_primary": "#fde577",
+  "clr_primary_light": "#ecd778",
+
+  "clr_background": "#330721",
+  "clr_surface": "#bba074",
+  "clr_surface_light": "#a89068",
+
+  "clr_board_dark": "#981930",
+  "clr_board_light": "#a61c33",
+  "clr_board_highlight": "#fde577",
+
+  "clr_piece_dark": "#690d42",
+  "clr_piece_light": "#ff6c40"
+}

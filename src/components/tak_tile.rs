@@ -1,5 +1,4 @@
 use crate::components::tak_board_state::TakBoardState;
-use dioxus::logger::tracing;
 use dioxus::prelude::*;
 use tak_core::{TakCoord, TakDir, TakPlayer};
 
@@ -23,7 +22,6 @@ pub fn TakTile(pos: TakCoord) -> Element {
             if !cloned_state.check_ongoing_game() || !cloned_state.is_local_player_turn() {
                 return;
             }
-            tracing::info!("Clicked on tile: {:?}", pos);
             if cloned_state.is_place_action(pos) {
                 let piece_type = *cloned_state.selected_piece_type.read();
                 cloned_state.try_do_local_place(pos, piece_type);
@@ -76,7 +74,7 @@ pub fn TakTile(pos: TakCoord) -> Element {
 
     rendered_bridges.push({
         let center_corner_classes = center_corner_classes.join(" ");
-        let player_class = if !rendered_bridges.is_empty() {
+        let player_class = if tile.bridges.iter().any(|&(_, has_bridge)| has_bridge) {
             player_class
         } else {
             "tak-bridge-none"

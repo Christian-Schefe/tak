@@ -5,11 +5,20 @@
     <script>
       try {
         const theme = localStorage.getItem("color_scheme_colors");
+        console.log("Theme from localStorage:", theme);
         if (theme) {
-          items = JSON.parse(JSON.parse(theme));
-          const root = document.documentElement;
-          for (const [key, value] of items) {
-            root.style.setProperty(`--${key}`, value);
+          item_str = JSON.parse(theme);
+          if (typeof item_str === "string") {
+            items = JSON.parse(item_str);
+            const root = document.documentElement;
+            for (const [key, value] of items) {
+              root.style.setProperty(`--${key}`, value);
+            }
+          } else {
+            console.error(
+              "Invalid color scheme format in localStorage:",
+              JSON.stringify(item_str)
+            );
           }
         }
       } catch (e) {

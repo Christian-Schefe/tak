@@ -127,12 +127,29 @@ pub async fn get_game(game_id: &GameId) -> ServerResult<GameRecord> {
     Ok(game)
 }
 
-pub async fn get_games_of_player(user_id: &UserId) -> ServerResult<Vec<GameRecord>> {
-    let mut result = DB
-        .query("SELECT * FROM type::table($table) WHERE black_player.user_id = type::string($user_id) OR white_player.user_id = type::string($user_id)")
+pub async fn get_games_of_player(
+    user_id: &UserId,
+    pagination: Option<(usize, usize)>,
+) -> ServerResult<Vec<GameRecord>> {
+    let query = match pagination {
+        Some(_) => format!(
+            "SELECT * FROM type::table($table) WHERE black_player.user_id = type::string($user_id) OR white_player.user_id = type::string($user_id) ORDER BY timestamp DESC START $offset LIMIT $limit"
+        ),
+        None => format!(
+            "SELECT * FROM type::table($table) WHERE black_player.user_id = type::string($user_id) OR white_player.user_id = type::string($user_id) ORDER BY timestamp DESC"
+        ),
+    };
+    let mut q = DB
+        .query(&query)
         .bind(("table", GameRecord::table_name()))
-        .bind(("user_id", user_id.clone()))
-        .await?;
+        .bind(("user_id", user_id.clone()));
+    if let Some((page, page_size)) = pagination {
+        let offset = page * page_size;
+        q = q
+            .bind(("offset", offset as i64))
+            .bind(("limit", page_size as i64));
+    }
+    let mut result = q.await?;
     let games: Vec<GameRecord> = result.take(0)?;
     Ok(games)
 }

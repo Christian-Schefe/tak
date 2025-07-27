@@ -1,0 +1,13 @@
+@import "../settings/colors";
+@import "../settings/defaults";
+
+#colors-view {
+    @include flex-col-container;
+    width: 100%;
+    padding: 10px;
+    gap: 10px;
+}
+
+.color-theme-button {
+    min-width: 200px;
+}

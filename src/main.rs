@@ -94,8 +94,16 @@ async fn main() {
 
     spawn(async move {
         let db_url = std::env::var("DB_URL").unwrap_or_else(|_| "localhost:8000".to_string());
+        let Ok(db_user) = std::env::var("SURREALDB_USER") else {
+            eprintln!("SURREALDB_USER not set");
+            return;
+        };
+        let Ok(db_pass) = std::env::var("SURREALDB_PASS") else {
+            eprintln!("SURREALDB_PASS not set");
+            return;
+        };
 
-        if let Err(e) = server::internal::db::connect_db(&db_url).await {
+        if let Err(e) = server::internal::db::connect_db(&db_url, &db_user, &db_pass).await {
             eprintln!("Failed to connect to database: {}", e);
             return;
         }

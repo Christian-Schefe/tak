@@ -2,14 +2,14 @@ use chrono::{DateTime, Local};
 use dioxus::prelude::*;
 
 use crate::{
-    server::{api::get_history, error::ServerError, GameInformation, UserId},
     Route,
+    server::{GameInformation, UserId, api::get_history, error::ServerError},
 };
 
 #[component]
 pub fn History() -> Element {
     let nav = use_navigator();
-    let stats = use_resource(|| async { get_history().await });
+    let stats = use_resource(|| async { get_history(Some((0, 100))).await });
 
     use_effect(move || {
         if let Some(Ok(Err(ServerError::Unauthorized))) = stats.read().as_ref() {

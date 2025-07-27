@@ -47,27 +47,35 @@
 }
 
 .tak-tile-light.tak-tile-highlight {
-  background-color: $clr-board-highlight-light;
+  background-color: $clr-primary-light;
 }
 
 .tak-tile-dark.tak-tile-highlight {
-  background-color: $clr-board-highlight-dark;
+  background-color: $clr-primary;
 }
 
 .tak-tile-light.tak-tile-selected {
-  background-color: $clr-board-selected-light;
+  background-color: color-mix(in oklab, $clr-board-light 60%, $clr-board-highlight);
 }
 
 .tak-tile-dark.tak-tile-selected {
-  background-color: $clr-board-selected-dark;
+  background-color: color-mix(in oklab, $clr-board-dark 60%, $clr-board-highlight);
 }
 
 .tak-tile-light.tak-tile-selected.tak-tile-highlight {
-  background-color: $clr-board-selected-highlight-light;
+  background-color: color-mix(
+    in oklab,
+    color-mix(in oklab, $clr-board-light 60%, $clr-board-highlight) 60%,
+    $clr-primary
+  );
 }
 
 .tak-tile-dark.tak-tile-selected.tak-tile-highlight {
-  background-color: $clr-board-selected-highlight-dark;
+  background-color: color-mix(
+    in oklab,
+    color-mix(in oklab, $clr-board-dark 60%, $clr-board-highlight) 60%,
+    $clr-primary
+  );
 }
 
 .tak-tile-label {

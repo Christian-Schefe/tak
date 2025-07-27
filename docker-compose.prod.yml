@@ -3,18 +3,15 @@ services:
     image: surrealdb/surrealdb:latest
     container_name: surrealdb
     restart: always
-    command: start --user root --pass secret rocksdb:/data/database.db
+    command: start --user $SURREALDB_USER --pass $SURREALDB_PASS rocksdb:/data/database.db
+    env_file:
+      - .env
     ports:
       - 8000:8000
     volumes:
       - ./data:/data
     networks:
       - internal
-    healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
-      interval: 10s
-      timeout: 5s
-      retries: 3
 
   db-wait:
     image: curlimages/curl:latest
@@ -39,6 +36,8 @@ services:
       - 8080
     networks:
       - internal
+    env_file:
+      - .env
     depends_on:
       db-wait:
         condition: service_completed_successfully
