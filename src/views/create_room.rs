@@ -1,11 +1,11 @@
-use crate::server::api::create_room;
-use crate::server::{RoomSettings, ServerError};
 use crate::Route;
+use crate::server::api::create_seek;
+use crate::server::{SeekSettings, ServerError};
 use dioxus::prelude::*;
+use dioxus_free_icons::Icon;
 use dioxus_free_icons::icons::fa_solid_icons::{
     FaBolt, FaChessBoard, FaClock, FaPalette, FaPlusMinus,
 };
-use dioxus_free_icons::Icon;
 use tak_core::{TakGameSettings, TakKomi, TakPlayer, TakTimeMode};
 
 pub static LOCAL_SETTINGS: GlobalSignal<LocalSettings> = GlobalSignal::new(|| LocalSettings {
@@ -61,9 +61,10 @@ pub fn CreateRoomView(is_local: Option<bool>) -> Element {
         let board_size = *board_size.read();
         let komi = komi.read().clone();
         let first_player_mode = first_player_mode.read().clone();
-        let create_room_params = RoomSettings {
+        let create_room_params = SeekSettings {
             game_settings: TakGameSettings::new(board_size, None, komi, Some(time_mode)),
-            first_player_mode,
+            creator_color: first_player_mode,
+            rated: true,
         };
         if let Some(is_computer) = is_local {
             let mut local_settings = LOCAL_SETTINGS.write();
@@ -79,13 +80,13 @@ pub fn CreateRoomView(is_local: Option<bool>) -> Element {
             return;
         }
         spawn(async move {
-            let res = create_room(create_room_params).await;
+            let res = create_seek(create_room_params).await;
             match res {
                 Ok(Err(ServerError::Unauthorized)) => {
                     nav.push(Route::Auth {});
                 }
                 Ok(Ok(_)) => {
-                    nav.push(Route::PlayOnline {});
+                    nav.push(Route::Home {});
                 }
                 Ok(Err(e)) => {
                     dioxus::logger::tracing::error!("Failed to create room: {}", e);
@@ -108,7 +109,7 @@ pub fn CreateRoomView(is_local: Option<bool>) -> Element {
 
     rsx! {
         div { id: "create-room-view",
-            h1 { "Create Room" }
+            h1 { "Create Seek" }
             div { id: "board-size-chooser",
                 div { class: "category-header",
                     Icon { icon: FaChessBoard }

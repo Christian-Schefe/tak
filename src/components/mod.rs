@@ -1,5 +1,6 @@
 mod color_applier;
 mod nav_button;
+mod playtak_client;
 mod tak_board;
 pub mod tak_board_state;
 mod tak_clock;
@@ -13,6 +14,7 @@ mod tak_win_modal;
 
 pub use color_applier::*;
 pub use nav_button::*;
+pub use playtak_client::*;
 pub use tak_board::*;
 pub use tak_clock::*;
 pub use tak_engine::*;

@@ -22,8 +22,8 @@ pub fn Navbar() -> Element {
                 icon: NavButtonIcon::Home,
             }
             NavButton {
-                to: Route::Rooms {},
-                label: "Rooms",
+                to: Route::Seeks {},
+                label: "Seeks",
                 icon: NavButtonIcon::Room,
             }
             NavButton {

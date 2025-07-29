@@ -5,6 +5,7 @@
   justify-content: start;
   width: 100%;
   height: 30px;
+  min-height: 30px;
   background-color: $clr-background;
 }
 
@@ -73,10 +74,18 @@
 
     &:hover {
       cursor: pointer;
-      color: $clr-primary;
+      color: oklch(from $clr-primary #{"calc(l + 0.05)"} c h);
 
       svg {
-        fill: $clr-primary;
+        fill: oklch(from $clr-primary #{"calc(l + 0.05)"} c h);
+      }
+    }
+    &:active {
+      cursor: pointer;
+      color: oklch(from $clr-primary #{"calc(l + 0.1)"} c h);
+
+      svg {
+        fill: oklch(from $clr-primary #{"calc(l + 0.1)"} c h);
       }
     }
   }

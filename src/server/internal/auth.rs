@@ -1,6 +1,6 @@
 use crate::server::error::{ServerError, ServerResult};
 use crate::server::internal::db::DB;
-use crate::server::internal::dto::{Record, UserRecord};
+use crate::server::internal::dto::{Record, UserPasswordMerge, UserRecord};
 use crate::server::{JWTToken, UserId};
 use argon2::password_hash::SaltString;
 use argon2::password_hash::rand_core::OsRng;
@@ -159,4 +159,39 @@ pub async fn try_login(username: String, password: String) -> ServerResult<JWTTo
         let token = create_token(&user.user_id, 24)?;
         Ok(token)
     }
+}
+
+pub async fn try_change_password(
+    user_id: &UserId,
+    old_password: String,
+    new_password: String,
+) -> ServerResult<()> {
+    if !validate_password(&new_password) {
+        return Err(ServerError::BadRequest("Invalid new password".to_string()));
+    }
+
+    let user = super::dto::try_get::<UserRecord>(user_id).await?;
+
+    let parsed_hash = PasswordHash::new(&user.password_hash)
+        .map_err(|_| ServerError::BadRequest("Failed to create hash".to_string()))?;
+
+    if Argon2::default()
+        .verify_password(old_password.as_bytes(), &parsed_hash)
+        .is_err()
+    {
+        return Err(ServerError::Unauthorized);
+    }
+
+    let salt = SaltString::generate(&mut OsRng);
+    let new_password_hash = Argon2::default()
+        .hash_password(new_password.as_bytes(), &salt)
+        .map_err(|_| ServerError::BadRequest("Failed to create hash".to_string()))?
+        .to_string();
+
+    let merge = UserPasswordMerge {
+        password_hash: new_password_hash,
+    };
+    super::dto::try_merge(user_id, merge).await?;
+
+    Ok(())
 }

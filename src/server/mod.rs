@@ -22,6 +22,13 @@ pub struct PlayerInformation {
     pub rating: f64,
 }
 
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SeekSettings {
+    pub game_settings: TakGameSettings,
+    pub rated: bool,
+    pub creator_color: Option<TakPlayer>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RoomSettings {
     pub game_settings: TakGameSettings,

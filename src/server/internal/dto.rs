@@ -1,10 +1,10 @@
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use surrealdb::RecordIdKey;
 
 use crate::server::{
+    GameId, PlayerInformation, UserId,
     error::{ServerError, ServerResult},
     internal::db::DB,
-    GameId, PlayerInformation, UserId,
 };
 
 pub trait Record {
@@ -12,6 +12,8 @@ pub trait Record {
     fn table_name() -> &'static str;
     fn record_id_key(key: &Self::K) -> RecordIdKey;
 }
+
+pub trait PartialRecord<R: Record> {}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserRecord {
@@ -29,6 +31,13 @@ impl Record for UserRecord {
         RecordIdKey::from(key)
     }
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserPasswordMerge {
+    pub password_hash: String,
+}
+
+impl PartialRecord<UserRecord> for UserPasswordMerge {}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlayerRecord {
@@ -108,6 +117,16 @@ pub async fn try_update<T: Record + DeserializeOwned + Serialize + 'static>(
 ) -> ServerResult<T> {
     DB.update((T::table_name(), T::record_id_key(key)))
         .content(value)
+        .await?
+        .ok_or(ServerError::NotFound)
+}
+
+pub async fn try_merge<T: Record + DeserializeOwned + Serialize + 'static>(
+    key: &T::K,
+    value: impl PartialRecord<T> + DeserializeOwned + Serialize + 'static,
+) -> ServerResult<T> {
+    DB.update((T::table_name(), T::record_id_key(key)))
+        .merge(value)
         .await?
         .ok_or(ServerError::NotFound)
 }

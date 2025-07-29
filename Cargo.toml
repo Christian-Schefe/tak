@@ -1,5 +1,5 @@
 [workspace]
-members = ["tak-core", "takumi", "takumi-worker"]
+members = ["tak-core", "takumi", "takumi-worker", "ws-pubsub"]
 
 [workspace.package]
 version = "0.1.0"

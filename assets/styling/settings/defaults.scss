@@ -39,11 +39,11 @@ button {
   user-select: none;
 
   &:hover {
-    background-color: $clr-surface-light;
+    background-color: oklch(from $clr-surface #{"calc(l + 0.05)"} c h);
   }
 
   &:active {
-    background-color: $clr-board-dark;
+    background-color: oklch(from $clr-surface #{"calc(l + 0.1)"} c h);
   }
 }
 
@@ -52,11 +52,11 @@ button.primary-button {
   color: $clr-text;
 
   &:hover {
-    background-color: $clr-primary-light;
+    background-color: oklch(from $clr-primary #{"calc(l + 0.05)"} c h);
   }
 
   &:active {
-    background-color: $clr-primary-light;
+    background-color: oklch(from $clr-primary #{"calc(l + 0.1)"} c h);
   }
 }
 

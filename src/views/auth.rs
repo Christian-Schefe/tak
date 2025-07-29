@@ -44,6 +44,8 @@ fn validate_password(password: &str) -> bool {
 
 pub const AUTH_TOKEN_KEY: &str = "auth_token";
 
+pub static AUTH_DATA: GlobalSignal<Option<(String, String)>> = GlobalSignal::new(|| None);
+
 #[component]
 pub fn Auth() -> Element {
     let mut is_login = use_signal(|| true);
@@ -60,6 +62,9 @@ pub fn Auth() -> Element {
         if let AuthState::Success(token) = &*auth_state.read() {
             if let Err(e) = crate::storage::set(AUTH_TOKEN_KEY, token.clone()) {
                 dioxus::logger::tracing::error!("Failed to store auth token: {}", e);
+            }
+            if !username.peek().is_empty() && !password.peek().is_empty() {
+                *AUTH_DATA.write() = Some((username.peek().clone(), password.peek().clone()));
             }
             nav.replace(Route::Home {});
         }

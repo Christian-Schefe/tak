@@ -1,11 +1,13 @@
 mod colors;
 mod history;
 mod rules;
+mod settings;
 mod stats;
 
 pub use colors::*;
 pub use history::*;
 pub use rules::*;
+pub use settings::*;
 pub use stats::*;
 
 use crate::Route;
@@ -43,6 +45,10 @@ pub fn More() -> Element {
         nav.push(Route::Colors {});
     };
 
+    let on_click_settings = move |_| {
+        nav.push(Route::Settings {});
+    };
+
     rsx! {
         div { id: "more-view",
             MoreButton {
@@ -61,7 +67,7 @@ pub fn More() -> Element {
                 label: "History",
             }
             MoreButton {
-                onclick: |_| (),
+                onclick: on_click_settings,
                 icon: MoreButtonIcon::Settings,
                 label: "Settings",
             }

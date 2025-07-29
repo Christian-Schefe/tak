@@ -7,6 +7,7 @@ mod play;
 mod puzzles;
 mod review_board;
 mod rooms;
+mod seeks;
 
 pub use auth::*;
 pub use create_room::*;
@@ -17,3 +18,4 @@ pub use play::*;
 pub use puzzles::Puzzles;
 pub use review_board::*;
 pub use rooms::Rooms;
+pub use seeks::*;

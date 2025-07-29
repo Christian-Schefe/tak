@@ -3,9 +3,11 @@ use serde::{Deserialize, Serialize};
 
 mod auth_client;
 mod room;
+mod seek;
 
 pub use auth_client::*;
 pub use room::*;
+pub use seek::*;
 
 use crate::server::JWTToken;
 use crate::server::UserId;
@@ -96,6 +98,16 @@ pub async fn post_renew_token() -> Result<ServerResult<JWTToken>, ServerFnError>
     let user_id = bail_api!(authorize().await);
     let token = bail_api!(auth::renew_token(&user_id));
     Ok(Ok(token))
+}
+
+#[server(client=AuthClient)]
+pub async fn post_change_password(
+    old_password: String,
+    new_password: String,
+) -> Result<ServerResult<()>, ServerFnError> {
+    let user_id = bail_api!(authorize().await);
+    bail_api!(auth::try_change_password(&user_id, old_password, new_password).await);
+    Ok(Ok(()))
 }
 
 #[server(client=AuthClient)]

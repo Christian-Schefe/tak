@@ -1,8 +1,11 @@
-use crate::{components::ColorApplier, views::Auth};
+use crate::{
+    components::{ColorApplier, PlaytakClient},
+    views::Auth,
+};
 use dioxus::prelude::*;
 use views::{
     Colors, CreateRoomComputer, CreateRoomLocal, CreateRoomOnline, History, Home, More, Navbar,
-    PlayComputer, PlayLocal, PlayOnline, Puzzles, ReviewBoard, Rooms, Rules, Stats,
+    PlayComputer, PlayLocal, PlayOnline, Puzzles, ReviewBoard, Rules, Seeks, Settings, Stats,
 };
 
 mod components;
@@ -30,6 +33,8 @@ enum Route {
     History {},
     #[route("/more/colors")]
     Colors {},
+    #[route("/more/settings")]
+    Settings {},
 
     #[route("/review/:game_id")]
     ReviewBoard { game_id: String },
@@ -48,8 +53,8 @@ enum Route {
     #[route("/create/computer")]
     CreateRoomComputer {},
 
-    #[route("/rooms")]
-    Rooms {},
+    #[route("/seeks")]
+    Seeks {},
 
     #[route("/:..route")]
     PageNotFound { route: Vec<String> },
@@ -146,6 +151,7 @@ fn App() -> Element {
         document::Link { rel: "stylesheet", href: MAIN_CSS }
         Router::<Route> {}
         ColorApplier {}
+        PlaytakClient {}
     }
 }
 

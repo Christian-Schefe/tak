@@ -4,4 +4,5 @@ pub mod db;
 pub mod dto;
 pub mod player;
 pub mod room;
+pub mod seek;
 pub mod websocket;
