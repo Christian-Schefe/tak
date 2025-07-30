@@ -44,7 +44,7 @@ fn validate_password(password: &str) -> bool {
 
 pub const AUTH_TOKEN_KEY: &str = "auth_token";
 
-pub static AUTH_DATA: GlobalSignal<Option<(String, String)>> = GlobalSignal::new(|| None);
+pub static AUTH_CHANGED: GlobalSignal<bool> = GlobalSignal::new(|| false);
 
 #[component]
 pub fn Auth() -> Element {
@@ -64,7 +64,8 @@ pub fn Auth() -> Element {
                 dioxus::logger::tracing::error!("Failed to store auth token: {}", e);
             }
             if !username.peek().is_empty() && !password.peek().is_empty() {
-                *AUTH_DATA.write() = Some((username.peek().clone(), password.peek().clone()));
+                let toggled = !*AUTH_CHANGED.read();
+                *AUTH_CHANGED.write() = toggled;
             }
             nav.replace(Route::Home {});
         }

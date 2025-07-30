@@ -7,11 +7,14 @@ use dashmap::{
 };
 use futures_util::{SinkExt, StreamExt, stream::SplitSink};
 
-use crate::{
-    ClientId,
-    message::{ClientMessage, ServerMessage},
-};
+use crate::message::{ClientMessage, ServerMessage};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+
+#[derive(Debug, Clone, Eq, Hash, PartialEq)]
+pub struct ClientId {
+    pub connection_id: String,
+    pub user_id: String,
+}
 
 struct PubSub {
     subscribers: DashMap<String, HashSet<ClientId>>,
@@ -78,18 +81,27 @@ impl PubSub {
 
 static SERVER: LazyLock<PubSub> = LazyLock::new(|| PubSub::new());
 
-pub async fn handle_socket<F: FnOnce(&str) -> bool + Send + Sync>(stream: WebSocket, auth: F) {
+pub async fn handle_socket<F: FnOnce(&str) -> Option<String> + Send + Sync>(
+    stream: WebSocket,
+    auth: F,
+) {
     let (mut tx, mut rx) = stream.split();
-    let client_id = uuid::Uuid::new_v4().to_string();
 
     let Some(Ok(Message::Text(token))) = rx.next().await else {
+        println!("Connection closed before auth");
         return;
     };
-    if !auth(&token) {
+    let Some(user_id) = auth(&token) else {
         println!("Unauthorized access with token: {token}");
         let _ = tx.close().await;
         return;
-    }
+    };
+    println!("User {user_id} connected with token: {token}");
+
+    let client_id = ClientId {
+        connection_id: uuid::Uuid::new_v4().to_string(),
+        user_id,
+    };
 
     SERVER.add_connection(client_id.clone(), tx);
 
@@ -102,11 +114,17 @@ pub async fn handle_socket<F: FnOnce(&str) -> bool + Send + Sync>(stream: WebSoc
             match ws_msg {
                 ClientMessage::Subscribe { topic } => {
                     SERVER.subscribe(&client_id, &topic);
-                    println!("Client {client_id} subscribed to topic: {topic}");
+                    println!(
+                        "Client {} subscribed to topic: {}",
+                        client_id.connection_id, topic
+                    );
                 }
                 ClientMessage::Unsubscribe { topic } => {
                     SERVER.unsubscribe(&client_id, &topic);
-                    println!("Client {client_id} unsubscribed from topic: {topic}");
+                    println!(
+                        "Client {} unsubscribed from topic: {}",
+                        client_id.connection_id, topic
+                    );
                 }
                 ClientMessage::Publish { topic, payload } => {
                     for sub_id in SERVER.get_subscribers(&topic) {
@@ -124,8 +142,8 @@ pub async fn handle_socket<F: FnOnce(&str) -> bool + Send + Sync>(stream: WebSoc
                         }
                     }
                     println!(
-                        "Client {client_id} published message to topic: {}, payload: {:?}",
-                        topic, payload
+                        "Client {} published message to topic: {}, payload: {:?}",
+                        client_id.connection_id, topic, payload
                     );
                 }
             }
@@ -134,7 +152,7 @@ pub async fn handle_socket<F: FnOnce(&str) -> bool + Send + Sync>(stream: WebSoc
 
     if let Some(mut tx) = SERVER.remove_connection(&client_id) {
         let _ = tx.close().await;
-        println!("Connection closed for client: {client_id}");
+        println!("Connection closed for client: {}", client_id.connection_id);
     }
 }
 
@@ -144,16 +162,17 @@ pub async fn subscribe_to_topic(topic: impl AsRef<str>) -> UnboundedReceiver<ser
     rx
 }
 
-pub async fn handle_subscribe_to_topic<F>(topic: impl AsRef<str>, handler: F)
+pub async fn handle_subscribe_to_topic<F, Fut>(topic: impl AsRef<str>, handler: F)
 where
-    F: Fn(serde_json::Value) + Send + 'static,
+    F: (Fn(serde_json::Value) -> Fut) + Send + 'static,
+    Fut: Future<Output = ()> + Send,
 {
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     SERVER.add_handler(topic.as_ref().to_string(), tx);
 
     tokio::spawn(async move {
         while let Some(value) = rx.recv().await {
-            handler(value);
+            handler(value).await;
         }
     });
 }
@@ -163,8 +182,8 @@ where
     T: serde::Serialize + Send + 'static,
 {
     let payload = serde_json::to_value(payload).unwrap();
-    for sub_id in SERVER.get_subscribers(topic.as_ref()) {
-        if let Some(mut tx) = SERVER.get_connection(&sub_id) {
+    for client_id in SERVER.get_subscribers(topic.as_ref()) {
+        if let Some(mut tx) = SERVER.get_connection(&client_id) {
             let msg = ServerMessage {
                 topic: topic.as_ref().to_string(),
                 payload: payload.clone(),
@@ -173,7 +192,10 @@ where
                 .send(Message::Text(serde_json::to_string(&msg).unwrap()))
                 .await
             {
-                println!("Failed to send message to subscriber {}: {}", sub_id, e);
+                println!(
+                    "Failed to send message to subscriber {}: {}",
+                    client_id.connection_id, e
+                );
             }
         }
     }

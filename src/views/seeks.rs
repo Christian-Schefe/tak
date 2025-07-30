@@ -74,7 +74,9 @@ pub fn Seeks() -> Element {
             div { class: "seek-list",
                 if let Some(data) = &*seek_list.read() {
                     for (opponent_info , seek_settings , can_join) in data.iter() {
-                        div { key: opponent_info.clone(), class: "seek-item",
+                        div {
+                            key: opponent_info.user_id.clone(),
+                            class: "seek-item",
                             div { class: "seek-info",
                                 p { class: "seek-owner", "{opponent_info.username}" }
                                 div { class: "seek-details",

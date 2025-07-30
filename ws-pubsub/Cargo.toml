@@ -19,7 +19,10 @@ tokio = { version = "*", features = [
     "rt-multi-thread",
 ], optional = true }
 futures-intrusive = { version = "*" }
+wasm-bindgen-futures = { version = "*", optional = true }
+dioxus = { version = "*" }
 
 [features]
+client-wasm = ["client", "wasm-bindgen-futures"]
 client = ["dep:tokio-tungstenite-wasm"]
 server = ["dep:axum", "dep:uuid", "dep:dashmap", "dep:tokio"]

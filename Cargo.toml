@@ -60,13 +60,14 @@ directories = "6.0.0"
 tokio-tungstenite-wasm = { version = "0.6.0", features = [
     "rustls-tls-native-roots",
 ] }
+ws-pubsub = { path = "ws-pubsub", version = "*" }
 
 [features]
 _not_web = ["dep:tokio"]
 
-web = ["dioxus/web", "tak-core/wasm"]
-desktop = ["dioxus/desktop", "tak-core/wasm", "_not_web"]
-mobile = ["dioxus/mobile", "tak-core/wasm", "_not_web"]
+web = ["dioxus/web", "tak-core/wasm", "ws-pubsub/client-wasm"]
+desktop = ["dioxus/desktop", "tak-core/wasm", "_not_web", "ws-pubsub/client"]
+mobile = ["dioxus/mobile", "tak-core/wasm", "_not_web", "ws-pubsub/client"]
 server = [
     "_not_web",
     "dioxus/server",
@@ -81,6 +82,8 @@ server = [
     "dep:moka",
     "dep:tower-http",
     "dep:jsonwebtoken",
+    "ws-pubsub/client",
+    "ws-pubsub/server",
 ]
 
 [profile.wasm-dev]

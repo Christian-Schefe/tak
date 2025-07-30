@@ -1,10 +1,9 @@
 #[cfg(feature = "client")]
 mod client;
+mod future;
 mod message;
 #[cfg(feature = "server")]
 mod server;
-
-type ClientId = String;
 
 #[cfg(feature = "server")]
 pub use server::*;

@@ -1,5 +1,5 @@
 use crate::{
-    components::{ColorApplier, PlaytakClient},
+    components::{ColorApplier, PubSubClient},
     views::Auth,
 };
 use dioxus::prelude::*;
@@ -151,7 +151,7 @@ fn App() -> Element {
         document::Link { rel: "stylesheet", href: MAIN_CSS }
         Router::<Route> {}
         ColorApplier {}
-        PlaytakClient {}
+        PubSubClient {}
     }
 }
 

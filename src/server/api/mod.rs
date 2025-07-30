@@ -111,7 +111,7 @@ pub async fn post_change_password(
 }
 
 #[server(client=AuthClient)]
-pub async fn get_auth() -> Result<ServerResult<JWTToken>, ServerFnError> {
-    let token = bail_api!(authorize().await);
-    Ok(Ok(token))
+pub async fn get_auth() -> Result<ServerResult<UserId>, ServerFnError> {
+    let user_id = bail_api!(authorize().await);
+    Ok(Ok(user_id))
 }

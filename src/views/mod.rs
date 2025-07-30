@@ -17,5 +17,4 @@ pub use navbar::Navbar;
 pub use play::*;
 pub use puzzles::Puzzles;
 pub use review_board::*;
-pub use rooms::Rooms;
 pub use seeks::*;

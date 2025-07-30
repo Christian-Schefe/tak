@@ -41,37 +41,13 @@ pub struct PlayerConnection {
     pub join_handle: Option<tokio::task::JoinHandle<()>>,
 }
 
-pub(crate) async fn ws_test_handler(
-    ws: WebSocketUpgrade,
-    user_agent: Option<TypedHeader<headers::UserAgent>>,
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
-) -> impl IntoResponse {
-    let user_agent = if let Some(TypedHeader(user_agent)) = user_agent {
-        user_agent.to_string()
-    } else {
-        String::from("Unknown browser")
-    };
-    println!("`{user_agent}` at {addr} connected.");
-    ws.on_upgrade(move |mut socket| async move {
-        println!("WebSocket connection established with {addr}");
-        while let Some(Ok(msg)) = socket.next().await {
-            match msg {
-                Message::Text(text) => {
-                    println!("Received text message: {text}");
-                    if socket.send(Message::Text(text)).await.is_err() {
-                        println!("Failed to echo text message back to {addr}");
-                    }
-                }
-                Message::Ping(_) => {
-                    println!("Received ping, sending pong...");
-                    if socket.send(Message::Pong(vec![])).await.is_err() {
-                        println!("Failed to send pong");
-                    }
-                }
-                _ => {}
-            }
-        }
-        println!("WebSocket connection with {addr} closed");
+pub(crate) async fn ws_test_handler(ws: WebSocketUpgrade) -> impl IntoResponse {
+    ws.on_upgrade(move |socket| {
+        ws_pubsub::handle_socket(socket, |token| {
+            validate_token(&token.to_string())
+                .ok()
+                .map(|claims| claims.sub)
+        })
     })
 }
 

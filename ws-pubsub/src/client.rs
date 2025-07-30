@@ -3,16 +3,29 @@ use std::{collections::HashMap, sync::Arc};
 use futures::{
     StreamExt,
     channel::{
-        mpsc::{UnboundedReceiver, UnboundedSender, unbounded},
+        mpsc::{SendError, UnboundedReceiver, UnboundedSender, unbounded},
         oneshot,
     },
-    stream::{SplitSink, SplitStream},
+    join, select,
 };
 use futures_intrusive::sync::Mutex;
 use futures_util::SinkExt;
+use serde::{Serialize, de::DeserializeOwned};
 use tokio_tungstenite_wasm::{Message, WebSocketStream};
 
-use crate::message::{ClientMessage, ServerMessage};
+use crate::{
+    future::spawn_local,
+    message::{ClientMessage, ServerMessage},
+};
+
+#[derive(Debug)]
+pub enum WebSocketError {
+    SerializationError(serde_json::Error),
+    ConnectionError(tokio_tungstenite_wasm::Error),
+    LocalConnectionError(String),
+    ProtocolError(String),
+    ConnectionClosed,
+}
 
 pub enum ClientAction {
     Subscribe(String, UnboundedSender<serde_json::Value>),
@@ -20,240 +33,271 @@ pub enum ClientAction {
     Publish(String, serde_json::Value),
 }
 
-pub struct WebSocketSender {
-    sender: UnboundedSender<(ClientAction, oneshot::Sender<Result<(), WebSocketError>>)>,
-}
-
-impl WebSocketSender {
-    pub fn new(
-        sender: UnboundedSender<(ClientAction, oneshot::Sender<Result<(), WebSocketError>>)>,
-    ) -> Self {
-        WebSocketSender { sender }
-    }
-
-    pub async fn send(&mut self, message: ClientAction) -> Result<(), WebSocketError> {
-        let (tx, rx) = oneshot::channel();
-        self.sender
-            .send((message, tx))
-            .await
-            .map_err(WebSocketError::LocalConnectionError)?;
-        match rx.await {
-            Ok(result) => result,
-            Err(_) => Err(WebSocketError::ConnectionClosed),
-        }
-    }
-}
-
 pub struct WebSocket {
-    sender: Option<SplitSink<WebSocketStream, Message>>,
-    receiver: Option<SplitStream<WebSocketStream>>,
-    handlers: Arc<Mutex<HashMap<String, Vec<UnboundedSender<serde_json::Value>>>>>,
-    send_tx: Option<UnboundedSender<Message>>,
-    send_rx: Option<UnboundedReceiver<Message>>,
-    channel: Option<(
-        UnboundedSender<(ClientAction, oneshot::Sender<Result<(), WebSocketError>>)>,
-        UnboundedReceiver<(ClientAction, oneshot::Sender<Result<(), WebSocketError>>)>,
-    )>,
+    action_sender: UnboundedSender<ClientAction>,
 }
 
-#[derive(Debug)]
-pub enum WebSocketError {
-    SerializationError(serde_json::Error),
-    ConnectionError(tokio_tungstenite_wasm::Error),
-    LocalConnectionError(futures::channel::mpsc::SendError),
-    ProtocolError(String),
-    ConnectionClosed,
+pub struct WebSocketRunner {
+    stream: WebSocketStream,
+    action_receiver: UnboundedReceiver<ClientAction>,
+}
+
+pub struct WebSocketReconnector {
+    action_receiver: UnboundedReceiver<ClientAction>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ConnectionData {
+    pub url: String,
+    pub auth: Option<String>,
 }
 
 impl WebSocket {
-    pub async fn connect(url: &str) -> Option<WebSocket> {
-        if let Ok(stream) = tokio_tungstenite_wasm::connect(url).await {
-            let (sender, receiver) = stream.split();
-            let (channel_tx, channel_rx) = unbounded();
-            let (send_tx, send_rx) = unbounded();
-            Some(WebSocket {
-                sender: Some(sender),
-                receiver: Some(receiver),
-                handlers: Arc::new(Mutex::new(HashMap::new(), true)),
-                send_tx: Some(send_tx),
-                send_rx: Some(send_rx),
-                channel: Some((channel_tx, channel_rx)),
-            })
-        } else {
-            None
-        }
-    }
-
-    pub async fn connect_auth(url: &str, auth: &str) -> Option<WebSocket> {
-        if let Ok(stream) = tokio_tungstenite_wasm::connect(url).await {
-            let (mut sender, receiver) = stream.split();
-            let (channel_tx, channel_rx) = unbounded();
-            let (send_tx, send_rx) = unbounded();
-
-            // Send authentication token
-            if let Err(e) = sender.send(Message::Text(auth.into())).await {
-                eprintln!("Failed to send auth token: {}", e);
-                return None;
-            }
-
-            Some(WebSocket {
-                sender: Some(sender),
-                receiver: Some(receiver),
-                handlers: Arc::new(Mutex::new(HashMap::new(), true)),
-                send_tx: Some(send_tx),
-                send_rx: Some(send_rx),
-                channel: Some((channel_tx, channel_rx)),
-            })
-        } else {
-            None
-        }
-    }
-
-    pub fn get_sender(&self) -> Option<WebSocketSender> {
-        self.channel
-            .as_ref()
-            .map(|(tx, _)| WebSocketSender::new(tx.clone()))
-    }
-
-    async fn send(
-        send_channel: &mut UnboundedSender<Message>,
-        message: ClientMessage,
-    ) -> Result<(), WebSocketError> {
-        let payload =
-            serde_json::to_string(&message).map_err(WebSocketError::SerializationError)?;
-        send_channel
-            .send(Message::Text(payload.into()))
+    pub async fn connect(
+        connection_data: &ConnectionData,
+    ) -> Result<(WebSocket, WebSocketRunner), WebSocketError> {
+        let mut stream = tokio_tungstenite_wasm::connect(&connection_data.url)
             .await
-            .map_err(WebSocketError::LocalConnectionError)
-    }
+            .map_err(WebSocketError::ConnectionError)?;
 
-    async fn publish(
-        send_channel: &mut UnboundedSender<Message>,
-        topic: &str,
-        payload: serde_json::Value,
-    ) -> Result<(), WebSocketError> {
-        let msg = ClientMessage::Publish {
-            topic: topic.to_string(),
-            payload,
+        if let Some(auth) = &connection_data.auth {
+            if let Err(e) = stream.send(Message::Text(auth.into())).await {
+                eprintln!("Failed to send auth token: {}", e);
+                return Err(WebSocketError::ConnectionError(e));
+            }
+        }
+        let (tx, rx) = unbounded();
+
+        let run_data = WebSocketRunner {
+            stream,
+            action_receiver: rx,
         };
-        Self::send(send_channel, msg).await
+        Ok((WebSocket { action_sender: tx }, run_data))
     }
 
-    async fn subscribe(
-        send_channel: &mut UnboundedSender<Message>,
-        handlers: Arc<Mutex<HashMap<String, Vec<UnboundedSender<serde_json::Value>>>>>,
-        topic: &str,
-        handler: UnboundedSender<serde_json::Value>,
-    ) -> Result<(), WebSocketError> {
-        let mut handlers = handlers.lock().await;
-        if handlers.contains_key(topic) {
-            handlers.get_mut(topic).unwrap().push(handler);
-            Ok(())
-        } else {
-            handlers.insert(topic.to_string(), vec![handler]);
-            let msg = ClientMessage::Subscribe {
-                topic: topic.to_string(),
-            };
-            drop(handlers);
-            Self::send(send_channel, msg).await
+    pub async fn reconnect(
+        connection_data: &ConnectionData,
+        reconnector: WebSocketReconnector,
+    ) -> Result<WebSocketRunner, (WebSocketError, WebSocketReconnector)> {
+        let mut stream = match tokio_tungstenite_wasm::connect(&connection_data.url).await {
+            Ok(stream) => stream,
+            Err(e) => {
+                eprintln!("Failed to reconnect: {}", e);
+                return Err((WebSocketError::ConnectionError(e), reconnector));
+            }
+        };
+
+        if let Some(auth) = &connection_data.auth {
+            if let Err(e) = stream.send(Message::Text(auth.into())).await {
+                eprintln!("Failed to send auth token: {}", e);
+                return Err((WebSocketError::ConnectionError(e), reconnector));
+            }
         }
+
+        let run_data = WebSocketRunner {
+            stream,
+            action_receiver: reconnector.action_receiver,
+        };
+        Ok(run_data)
     }
 
-    async fn unsubscribe(
-        send_channel: &mut UnboundedSender<Message>,
-        handlers: Arc<Mutex<HashMap<String, Vec<UnboundedSender<serde_json::Value>>>>>,
-        topic: &str,
-    ) -> Result<(), WebSocketError> {
-        let mut handlers = handlers.lock().await;
-        if let Some(_) = handlers.remove(topic) {
-            let msg = ClientMessage::Unsubscribe {
-                topic: topic.to_string(),
-            };
-            drop(handlers);
-            Self::send(send_channel, msg).await?;
-        }
-        Ok(())
-    }
-
-    pub async fn handle_ws_send(ws: Arc<Mutex<Self>>) -> Result<(), WebSocketError> {
-        let mut lock = ws.lock().await;
-        let mut sender = lock.sender.take().ok_or(WebSocketError::ConnectionClosed)?;
-        let mut rx = lock
-            .send_rx
-            .take()
-            .ok_or(WebSocketError::ConnectionClosed)?;
-        drop(lock);
-
-        while let Some(msg) = rx.next().await {
-            sender
-                .send(msg)
-                .await
-                .map_err(WebSocketError::ConnectionError)?;
-        }
-        Ok(())
-    }
-
-    pub async fn handle_client_actions(ws: Arc<Mutex<Self>>) -> Result<(), WebSocketError> {
-        let mut lock = ws.lock().await;
-        let mut sender = lock
-            .send_tx
-            .take()
-            .ok_or(WebSocketError::ConnectionClosed)?;
-        let handlers = lock.handlers.clone();
-        let (_, mut rx) = lock
-            .channel
-            .take()
-            .ok_or(WebSocketError::ConnectionClosed)?;
-        drop(lock);
-
-        while let Some((action, callback)) = rx.next().await {
-            let res = match action {
-                ClientAction::Subscribe(topic, handler) => {
-                    Self::subscribe(&mut sender, handlers.clone(), &topic, handler).await
-                }
-                ClientAction::Unsubscribe(topic) => {
-                    Self::unsubscribe(&mut sender, handlers.clone(), &topic).await
-                }
-                ClientAction::Publish(topic, payload) => {
-                    Self::publish(&mut sender, &topic, payload).await
-                }
-            };
-            let _ = callback.send(res);
-        }
-        Ok(())
-    }
-
-    pub async fn handle_receive(ws: Arc<Mutex<Self>>) -> Result<(), WebSocketError> {
-        let mut lock = ws.lock().await;
-        let mut receiver = lock
-            .receiver
-            .take()
-            .ok_or(WebSocketError::ConnectionClosed)?;
-        let handlers = lock.handlers.clone();
-        drop(lock);
-
-        while let Some(msg) = receiver.next().await {
-            match msg {
-                Ok(Message::Text(text)) => {
-                    if let Ok(msg) = serde_json::from_str::<ServerMessage>(&text) {
-                        let mut lock = handlers.lock().await;
-                        if let Some(handlers) = lock.get_mut(&msg.topic) {
-                            for handler in handlers {
-                                let _ = handler.send(msg.payload.clone());
-                            }
+    pub fn run_reconnecting(
+        connection_data: impl Fn() -> ConnectionData,
+        run_data: WebSocketRunner,
+    ) -> impl Future<Output = WebSocketError> {
+        async move {
+            let mut runner = run_data;
+            loop {
+                let mut reconnector = WebSocket::run(runner).await;
+                dioxus::logger::tracing::info!("Disconnected, attempting to reconnect...");
+                let data = connection_data();
+                let mut retry_count = 0;
+                runner = loop {
+                    reconnector = match WebSocket::reconnect(&data, reconnector).await {
+                        Ok(new_runner) => {
+                            dioxus::logger::tracing::info!("Reconnected successfully");
+                            break new_runner;
                         }
-                        drop(lock);
-                    } else {
-                        println!("Failed to parse message: {}", text);
+                        Err((e, reconnector)) => {
+                            dioxus::logger::tracing::error!("Reconnection failed: {:?}", e);
+                            retry_count += 1;
+                            if retry_count == 5 {
+                                dioxus::logger::tracing::error!(
+                                    "Failed to reconnect after 5 attempts"
+                                );
+                                return WebSocketError::ConnectionClosed;
+                            }
+                            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                            reconnector
+                        }
+                    };
+                };
+                dioxus::logger::tracing::info!("Reconnected successfully");
+            }
+        }
+    }
+
+    pub fn run(run_data: WebSocketRunner) -> impl Future<Output = WebSocketReconnector> {
+        dioxus::logger::tracing::info!("Run started");
+        async move {
+            let stream = run_data.stream;
+            let mut rx = run_data.action_receiver;
+            let (mut sender, mut receiver) = stream.split();
+
+            let handlers_arc = Arc::new(Mutex::new(
+                HashMap::<String, Vec<UnboundedSender<serde_json::Value>>>::new(),
+                true,
+            ));
+
+            let handlers = handlers_arc.clone();
+            let (stop_send, mut stop_recv) = oneshot::channel();
+
+            let receiver_fut = async move {
+                while let Some(msg) = receiver.next().await {
+                    match msg {
+                        Ok(Message::Text(text)) => {
+                            let msg = match serde_json::from_str::<ServerMessage>(&text) {
+                                Ok(msg) => msg,
+                                Err(e) => {
+                                    eprintln!("Failed to deserialize message: {}", e);
+                                    continue;
+                                }
+                            };
+                            let mut handlers = handlers.lock().await;
+                            let Some(topic_handlers) = handlers.get_mut(&msg.topic) else {
+                                println!("No handlers for topic {}", msg.topic);
+                                continue;
+                            };
+                            for handler in topic_handlers {
+                                if let Err(e) = handler.send(msg.payload.clone()).await {
+                                    eprintln!("Failed to send message to handler: {}", e);
+                                }
+                            }
+                            drop(handlers);
+                        }
+                        Ok(Message::Close(_)) => {
+                            println!("Connection closed");
+                            break;
+                        }
+                        Err(e) => {
+                            eprintln!("WebSocket error: {}", e);
+                            break;
+                        }
+                        _ => {}
                     }
                 }
-                Ok(Message::Close(_)) => break,
-                Err(e) => return Err(WebSocketError::ConnectionError(e)),
-                Ok(Message::Binary(_)) => {
-                    println!("Received binary message, which is not supported.")
+                dioxus::logger::tracing::info!("Receiver task finished");
+                stop_send.send(()).unwrap_or_else(|_| {
+                    eprintln!("Failed to send stop signal");
+                });
+            };
+
+            let handlers = handlers_arc.clone();
+            let sender_fut = async move {
+                loop {
+                    let Some(action) = (select! {
+                        action = rx.next() => action,
+                        _ = stop_recv => break,
+                    }) else {
+                        break;
+                    };
+                    match action {
+                        ClientAction::Subscribe(topic, callback) => {
+                            let mut handlers = handlers.lock().await;
+                            handlers.entry(topic.clone()).or_default().push(callback);
+                            drop(handlers);
+                            let msg = Message::Text(
+                                serde_json::to_string(&ClientMessage::Subscribe { topic })
+                                    .unwrap_or_else(|e| {
+                                        eprintln!("Serialization error: {}", e);
+                                        String::new()
+                                    })
+                                    .into(),
+                            );
+                            sender.send(msg).await.unwrap_or_else(|e| {
+                                eprintln!("Failed to send message: {}", e);
+                            });
+                        }
+                        ClientAction::Unsubscribe(topic) => {
+                            let mut handlers = handlers.lock().await;
+                            handlers.remove(&topic);
+                            drop(handlers);
+                            let msg = Message::Text(
+                                serde_json::to_string(&ClientMessage::Unsubscribe { topic })
+                                    .unwrap_or_else(|e| {
+                                        eprintln!("Serialization error: {}", e);
+                                        String::new()
+                                    })
+                                    .into(),
+                            );
+                            sender.send(msg).await.unwrap_or_else(|e| {
+                                eprintln!("Failed to send message: {}", e);
+                            });
+                        }
+                        ClientAction::Publish(topic, message) => {
+                            let msg = Message::Text(
+                                serde_json::to_string(&ClientMessage::Publish {
+                                    topic,
+                                    payload: message,
+                                })
+                                .unwrap_or_else(|e| {
+                                    eprintln!("Serialization error: {}", e);
+                                    String::new()
+                                })
+                                .into(),
+                            );
+                            sender.send(msg).await.unwrap_or_else(|e| {
+                                eprintln!("Failed to send message: {}", e);
+                            });
+                        }
+                    }
                 }
+                dioxus::logger::tracing::info!("Send task finished");
+                rx
+            };
+
+            let res = join!(receiver_fut, sender_fut);
+            dioxus::logger::tracing::info!("Run task finished");
+            WebSocketReconnector {
+                action_receiver: res.1,
             }
         }
+    }
+
+    pub fn publish<T>(&self, topic: String, message: T) -> Result<(), WebSocketError>
+    where
+        T: Serialize + 'static,
+    {
+        let payload = serde_json::to_value(message).map_err(WebSocketError::SerializationError)?;
+
+        self.action_sender
+            .unbounded_send(ClientAction::Publish(topic, payload))
+            .map_err(|e| WebSocketError::LocalConnectionError(e.to_string()))
+    }
+
+    pub fn subscribe<F, T>(&self, topic: String, callback: F) -> Result<(), SendError>
+    where
+        F: Fn(Result<T, serde_json::Error>) + Send + 'static,
+        T: DeserializeOwned + 'static,
+    {
+        let (tx, mut rx) = unbounded();
+
+        self.action_sender
+            .unbounded_send(ClientAction::Subscribe(topic, tx))
+            .map_err(|e| e.into_send_error())?;
+
+        spawn_local(async move {
+            while let Some(message) = rx.next().await {
+                callback(serde_json::from_value(message));
+            }
+        });
+
         Ok(())
+    }
+
+    pub fn unsubscribe(&self, topic: String) -> Result<(), SendError> {
+        self.action_sender
+            .unbounded_send(ClientAction::Unsubscribe(topic))
+            .map_err(|e| e.into_send_error())
     }
 }

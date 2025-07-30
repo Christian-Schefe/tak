@@ -6901,6 +6901,7 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
+ "ws-pubsub",
 ]
 
 [[package]]
@@ -8738,6 +8739,7 @@ dependencies = [
  "async-trait",
  "axum",
  "dashmap 6.1.0",
+ "dioxus",
  "futures",
  "futures-intrusive",
  "futures-util",
@@ -8746,6 +8748,7 @@ dependencies = [
  "tokio",
  "tokio-tungstenite-wasm",
  "uuid",
+ "wasm-bindgen-futures",
 ]
 
 [[package]]
