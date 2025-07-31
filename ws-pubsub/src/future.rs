@@ -1,5 +1,5 @@
 #[cfg(feature = "client-wasm")]
-pub fn spawn_local<F>(f: F)
+pub fn spawn_maybe_local<F>(f: F)
 where
     F: std::future::Future<Output = ()> + 'static,
 {
@@ -7,9 +7,9 @@ where
 }
 
 #[cfg(not(feature = "client-wasm"))]
-pub fn spawn_local<F>(f: F)
+pub fn spawn_maybe_local<F>(f: F)
 where
-    F: std::future::Future<Output = ()> + 'static,
+    F: std::future::Future<Output = ()> + Send + 'static,
 {
-    tokio::task::spawn_local(f);
+    tokio::task::spawn(f);
 }

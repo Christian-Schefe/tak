@@ -1,7 +1,9 @@
 use std::{collections::HashMap, sync::LazyLock};
 
+use ws_pubsub::StaticTopic;
+
 use crate::server::{
-    PlayerInformation, SeekSettings, ServerError, ServerResult, UserId, internal::cache,
+    PlayerInformation, SeekSettings, SeekUpdate, ServerError, ServerResult, UserId, internal::cache,
 };
 
 pub struct Seeks {
@@ -28,6 +30,8 @@ impl Seeks {
     }
 }
 
+pub static SEEK_TOPIC: StaticTopic<SeekUpdate> = StaticTopic::new("seeks");
+
 pub static SEEKS: LazyLock<tokio::sync::RwLock<Seeks>> =
     LazyLock::new(|| tokio::sync::RwLock::new(Seeks::new()));
 
@@ -38,7 +42,15 @@ pub async fn create_seek(player_id: &UserId, settings: SeekSettings) -> ServerRe
             "Seek already exists for this player".to_string(),
         ));
     }
-    seeks.add_seek(player_id.clone(), settings);
+    seeks.add_seek(player_id.clone(), settings.clone());
+    ws_pubsub::publish_to_topic(
+        &SEEK_TOPIC,
+        SeekUpdate::Created {
+            player_id: player_id.clone(),
+            settings,
+        },
+    )
+    .await;
     Ok(())
 }
 
@@ -48,6 +60,13 @@ pub async fn cancel_seek(player_id: &UserId) -> ServerResult<()> {
         return Err(ServerError::NotFound);
     }
     seeks.remove_seek(player_id);
+    ws_pubsub::publish_to_topic(
+        SEEK_TOPIC,
+        SeekUpdate::Removed {
+            player_id: player_id.clone(),
+        },
+    )
+    .await;
     Ok(())
 }
 
@@ -77,5 +96,12 @@ pub async fn accept_seek(player_id: &UserId, opponent_id: &UserId) -> ServerResu
     }
 
     seeks.remove_seek(opponent_id);
+    ws_pubsub::publish_to_topic(
+        SEEK_TOPIC,
+        SeekUpdate::Removed {
+            player_id: player_id.clone(),
+        },
+    )
+    .await;
     Ok(())
 }

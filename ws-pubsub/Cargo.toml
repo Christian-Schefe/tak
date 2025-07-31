@@ -20,9 +20,10 @@ tokio = { version = "*", features = [
 ], optional = true }
 futures-intrusive = { version = "*" }
 wasm-bindgen-futures = { version = "*", optional = true }
-dioxus = { version = "*" }
+dioxus = { version = "*", optional = true }
 
 [features]
 client-wasm = ["client", "wasm-bindgen-futures"]
 client = ["dep:tokio-tungstenite-wasm"]
 server = ["dep:axum", "dep:uuid", "dep:dashmap", "dep:tokio"]
+dioxus = ["dep:dioxus"]

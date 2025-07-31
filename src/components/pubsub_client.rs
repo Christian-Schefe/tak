@@ -9,6 +9,7 @@ use crate::{
 };
 
 pub static WS_CLIENT: OnceLock<Arc<ws_pubsub::WebSocket>> = OnceLock::new();
+static IS_CONNECTING: OnceLock<()> = OnceLock::new();
 
 #[component]
 pub fn PubSubClient() -> Element {
@@ -18,7 +19,7 @@ pub fn PubSubClient() -> Element {
         let token = crate::storage::get(AUTH_TOKEN_KEY).unwrap_or(None::<String>);
 
         dioxus::prelude::spawn(async move {
-            if WS_CLIENT.get().is_some() {
+            if !IS_CONNECTING.set(()).is_ok() {
                 return;
             }
             let Some(token) = token else {
@@ -35,18 +36,21 @@ pub fn PubSubClient() -> Element {
                 url: url.to_string(),
                 auth: Some(token.clone()),
             };
-            let (ws, ws_runner) = WebSocket::connect(&connection_data)
+            let (ws, ws_runner) = WebSocket::try_connect(&connection_data, None)
                 .await
                 .expect("Failed to connect to WebSocket server");
-
-            dioxus::prelude::spawn(async move {
-                WebSocket::run_reconnecting(move || connection_data.clone(), ws_runner).await;
-            });
 
             WS_CLIENT
                 .set(Arc::new(ws))
                 .ok()
                 .expect("Failed to set WebSocket client");
+
+            dioxus::prelude::spawn(async move {
+                let err =
+                    WebSocket::run_reconnecting(move || connection_data.clone(), ws_runner, None)
+                        .await;
+                dioxus::logger::tracing::error!("WebSocket failed irrecoverably: {:?}", err);
+            });
         });
     });
     rsx! {}

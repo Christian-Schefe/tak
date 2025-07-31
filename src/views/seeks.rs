@@ -9,9 +9,16 @@ use crate::{
     },
 };
 
+fn on_seeks_changed() {}
+
 #[component]
 pub fn Seeks() -> Element {
     let seeks = use_resource(|| get_seeks());
+
+    use_effect(move || {
+        let _ = seeks.read();
+        on_seeks_changed();
+    });
 
     let seek_list = use_memo(move || {
         seeks.read().as_ref().map(|s| match s {

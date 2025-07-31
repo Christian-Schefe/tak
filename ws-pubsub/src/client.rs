@@ -14,17 +14,25 @@ use serde::{Serialize, de::DeserializeOwned};
 use tokio_tungstenite_wasm::{Message, WebSocketStream};
 
 use crate::{
-    future::spawn_local,
+    AUTH_ACK, TopicTrait, error,
+    future::spawn_maybe_local,
+    info,
     message::{ClientMessage, ServerMessage},
 };
 
 #[derive(Debug)]
-pub enum WebSocketError {
+pub enum WebSocketActionError {
     SerializationError(serde_json::Error),
+    LocalConnectionError(SendError),
+    Disconnected,
+}
+
+#[derive(Debug)]
+pub enum WebSocketError {
     ConnectionError(tokio_tungstenite_wasm::Error),
-    LocalConnectionError(String),
     ProtocolError(String),
-    ConnectionClosed,
+    MaxRetriesExceeded,
+    AuthError,
 }
 
 pub enum ClientAction {
@@ -33,17 +41,26 @@ pub enum ClientAction {
     Publish(String, serde_json::Value),
 }
 
+pub struct WebSocketState {
+    connected: bool,
+}
+
 pub struct WebSocket {
     action_sender: UnboundedSender<ClientAction>,
+    state: Arc<Mutex<WebSocketState>>,
 }
 
 pub struct WebSocketRunner {
     stream: WebSocketStream,
     action_receiver: UnboundedReceiver<ClientAction>,
+    handlers: Arc<Mutex<HashMap<String, Vec<UnboundedSender<serde_json::Value>>>>>,
+    state: Arc<Mutex<WebSocketState>>,
 }
 
 pub struct WebSocketReconnector {
     action_receiver: UnboundedReceiver<ClientAction>,
+    handlers: Arc<Mutex<HashMap<String, Vec<UnboundedSender<serde_json::Value>>>>>,
+    state: Arc<Mutex<WebSocketState>>,
 }
 
 #[derive(Debug, Clone)]
@@ -61,18 +78,49 @@ impl WebSocket {
             .map_err(WebSocketError::ConnectionError)?;
 
         if let Some(auth) = &connection_data.auth {
-            if let Err(e) = stream.send(Message::Text(auth.into())).await {
-                eprintln!("Failed to send auth token: {}", e);
-                return Err(WebSocketError::ConnectionError(e));
-            }
+            do_auth(&mut stream, auth).await?;
         }
         let (tx, rx) = unbounded();
 
         let run_data = WebSocketRunner {
             stream,
             action_receiver: rx,
+            handlers: Arc::new(Mutex::new(HashMap::new(), true)),
+            state: Arc::new(Mutex::new(WebSocketState { connected: true }, true)),
         };
-        Ok((WebSocket { action_sender: tx }, run_data))
+        info!(
+            "[WebSocket] Connected to {} with auth: {:?}",
+            connection_data.url, connection_data.auth
+        );
+        let state = run_data.state.clone();
+        Ok((
+            WebSocket {
+                action_sender: tx,
+                state,
+            },
+            run_data,
+        ))
+    }
+
+    pub async fn try_connect(
+        connection_data: &ConnectionData,
+        max_retries: Option<usize>,
+    ) -> Result<(WebSocket, WebSocketRunner), WebSocketError> {
+        let mut i = 0;
+        loop {
+            match Self::connect(connection_data).await {
+                Ok(run_data) => return Ok(run_data),
+                Err(e) => {
+                    error!("Reconnection failed: {:?}", e);
+                }
+            }
+            if max_retries.is_some_and(|max| i >= max) {
+                error!("Max retries exceeded");
+                return Err(WebSocketError::MaxRetriesExceeded);
+            }
+            tokio::time::sleep(tokio::time::Duration::from_millis(exponential_backoff(i))).await;
+            i += 1;
+        }
     }
 
     pub async fn reconnect(
@@ -82,74 +130,80 @@ impl WebSocket {
         let mut stream = match tokio_tungstenite_wasm::connect(&connection_data.url).await {
             Ok(stream) => stream,
             Err(e) => {
-                eprintln!("Failed to reconnect: {}", e);
+                error!("Failed to reconnect: {}", e);
                 return Err((WebSocketError::ConnectionError(e), reconnector));
             }
         };
 
         if let Some(auth) = &connection_data.auth {
-            if let Err(e) = stream.send(Message::Text(auth.into())).await {
-                eprintln!("Failed to send auth token: {}", e);
-                return Err((WebSocketError::ConnectionError(e), reconnector));
+            if let Err(e) = do_auth(&mut stream, auth).await {
+                return Err((e, reconnector));
             }
         }
 
         let run_data = WebSocketRunner {
             stream,
             action_receiver: reconnector.action_receiver,
+            handlers: reconnector.handlers,
+            state: reconnector.state,
         };
         Ok(run_data)
+    }
+
+    pub async fn try_reconnect(
+        connection_data: &ConnectionData,
+        mut reconnector: WebSocketReconnector,
+        max_retries: Option<usize>,
+    ) -> Result<WebSocketRunner, WebSocketError> {
+        let mut i = 0;
+        loop {
+            match Self::reconnect(connection_data, reconnector).await {
+                Ok(run_data) => return Ok(run_data),
+                Err((e, new_reconnector)) => {
+                    error!("Reconnection failed: {:?}", e);
+                    reconnector = new_reconnector;
+                }
+            }
+            if max_retries.is_some_and(|max| i >= max) {
+                error!("Max retries exceeded");
+                return Err(WebSocketError::MaxRetriesExceeded);
+            }
+            tokio::time::sleep(tokio::time::Duration::from_millis(exponential_backoff(i))).await;
+            i += 1;
+        }
     }
 
     pub fn run_reconnecting(
         connection_data: impl Fn() -> ConnectionData,
         run_data: WebSocketRunner,
+        max_retries: Option<usize>,
     ) -> impl Future<Output = WebSocketError> {
         async move {
             let mut runner = run_data;
             loop {
-                let mut reconnector = WebSocket::run(runner).await;
-                dioxus::logger::tracing::info!("Disconnected, attempting to reconnect...");
+                let reconnector = WebSocket::run(runner).await;
+                info!("Disconnected, attempting to reconnect...");
                 let data = connection_data();
-                let mut retry_count = 0;
-                runner = loop {
-                    reconnector = match WebSocket::reconnect(&data, reconnector).await {
-                        Ok(new_runner) => {
-                            dioxus::logger::tracing::info!("Reconnected successfully");
-                            break new_runner;
-                        }
-                        Err((e, reconnector)) => {
-                            dioxus::logger::tracing::error!("Reconnection failed: {:?}", e);
-                            retry_count += 1;
-                            if retry_count == 5 {
-                                dioxus::logger::tracing::error!(
-                                    "Failed to reconnect after 5 attempts"
-                                );
-                                return WebSocketError::ConnectionClosed;
-                            }
-                            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-                            reconnector
-                        }
-                    };
+                runner = match Self::try_reconnect(&data, reconnector, max_retries).await {
+                    Ok(new_runner) => new_runner,
+                    Err(e) => {
+                        error!("Reconnection failed: {:?}", e);
+                        return e;
+                    }
                 };
-                dioxus::logger::tracing::info!("Reconnected successfully");
+                info!("Reconnected successfully");
             }
         }
     }
 
     pub fn run(run_data: WebSocketRunner) -> impl Future<Output = WebSocketReconnector> {
-        dioxus::logger::tracing::info!("Run started");
+        info!("Run started");
         async move {
             let stream = run_data.stream;
             let mut rx = run_data.action_receiver;
             let (mut sender, mut receiver) = stream.split();
 
-            let handlers_arc = Arc::new(Mutex::new(
-                HashMap::<String, Vec<UnboundedSender<serde_json::Value>>>::new(),
-                true,
-            ));
-
-            let handlers = handlers_arc.clone();
+            let handlers = run_data.handlers.clone();
             let (stop_send, mut stop_recv) = oneshot::channel();
 
             let receiver_fut = async move {
@@ -159,40 +213,40 @@ impl WebSocket {
                             let msg = match serde_json::from_str::<ServerMessage>(&text) {
                                 Ok(msg) => msg,
                                 Err(e) => {
-                                    eprintln!("Failed to deserialize message: {}", e);
+                                    error!("Failed to deserialize message: {}", e);
                                     continue;
                                 }
                             };
                             let mut handlers = handlers.lock().await;
                             let Some(topic_handlers) = handlers.get_mut(&msg.topic) else {
-                                println!("No handlers for topic {}", msg.topic);
+                                info!("No handlers for topic {}", msg.topic);
                                 continue;
                             };
                             for handler in topic_handlers {
                                 if let Err(e) = handler.send(msg.payload.clone()).await {
-                                    eprintln!("Failed to send message to handler: {}", e);
+                                    error!("Failed to send message to handler: {}", e);
                                 }
                             }
                             drop(handlers);
                         }
                         Ok(Message::Close(_)) => {
-                            println!("Connection closed");
+                            info!("Connection closed");
                             break;
                         }
                         Err(e) => {
-                            eprintln!("WebSocket error: {}", e);
+                            error!("WebSocket error: {}", e);
                             break;
                         }
                         _ => {}
                     }
                 }
-                dioxus::logger::tracing::info!("Receiver task finished");
+                info!("Receiver task finished");
                 stop_send.send(()).unwrap_or_else(|_| {
-                    eprintln!("Failed to send stop signal");
+                    error!("Failed to send stop signal");
                 });
             };
 
-            let handlers = handlers_arc.clone();
+            let handlers = run_data.handlers.clone();
             let sender_fut = async move {
                 loop {
                     let Some(action) = (select! {
@@ -209,13 +263,13 @@ impl WebSocket {
                             let msg = Message::Text(
                                 serde_json::to_string(&ClientMessage::Subscribe { topic })
                                     .unwrap_or_else(|e| {
-                                        eprintln!("Serialization error: {}", e);
+                                        error!("Serialization error: {}", e);
                                         String::new()
                                     })
                                     .into(),
                             );
                             sender.send(msg).await.unwrap_or_else(|e| {
-                                eprintln!("Failed to send message: {}", e);
+                                error!("Failed to send message: {}", e);
                             });
                         }
                         ClientAction::Unsubscribe(topic) => {
@@ -225,13 +279,13 @@ impl WebSocket {
                             let msg = Message::Text(
                                 serde_json::to_string(&ClientMessage::Unsubscribe { topic })
                                     .unwrap_or_else(|e| {
-                                        eprintln!("Serialization error: {}", e);
+                                        error!("Serialization error: {}", e);
                                         String::new()
                                     })
                                     .into(),
                             );
                             sender.send(msg).await.unwrap_or_else(|e| {
-                                eprintln!("Failed to send message: {}", e);
+                                error!("Failed to send message: {}", e);
                             });
                         }
                         ClientAction::Publish(topic, message) => {
@@ -241,52 +295,92 @@ impl WebSocket {
                                     payload: message,
                                 })
                                 .unwrap_or_else(|e| {
-                                    eprintln!("Serialization error: {}", e);
+                                    error!("Serialization error: {}", e);
                                     String::new()
                                 })
                                 .into(),
                             );
                             sender.send(msg).await.unwrap_or_else(|e| {
-                                eprintln!("Failed to send message: {}", e);
+                                error!("Failed to send message: {}", e);
                             });
                         }
                     }
                 }
-                dioxus::logger::tracing::info!("Send task finished");
+                info!("Send task finished");
                 rx
             };
 
+            let mut state = run_data.state.lock().await;
+            state.connected = true;
+            drop(state);
+
             let res = join!(receiver_fut, sender_fut);
-            dioxus::logger::tracing::info!("Run task finished");
+
+            let mut state = run_data.state.lock().await;
+            state.connected = false;
+            drop(state);
+
+            info!("Run task finished");
             WebSocketReconnector {
                 action_receiver: res.1,
+                handlers: run_data.handlers,
+                state: run_data.state,
             }
         }
     }
 
-    pub fn publish<T>(&self, topic: String, message: T) -> Result<(), WebSocketError>
+    pub fn publish<T>(
+        &self,
+        topic: &impl TopicTrait<T>,
+        message: T,
+    ) -> Result<(), WebSocketActionError>
     where
         T: Serialize + 'static,
     {
-        let payload = serde_json::to_value(message).map_err(WebSocketError::SerializationError)?;
+        if !self.is_connected() {
+            return Err(WebSocketActionError::Disconnected);
+        }
+        let payload =
+            serde_json::to_value(message).map_err(WebSocketActionError::SerializationError)?;
 
         self.action_sender
-            .unbounded_send(ClientAction::Publish(topic, payload))
-            .map_err(|e| WebSocketError::LocalConnectionError(e.to_string()))
+            .unbounded_send(ClientAction::Publish(topic.name().to_string(), payload))
+            .map_err(|e| WebSocketActionError::LocalConnectionError(e.into_send_error()))
     }
 
-    pub fn subscribe<F, T>(&self, topic: String, callback: F) -> Result<(), SendError>
+    pub fn subscribe_callback<T>(
+        &self,
+        topic: &impl TopicTrait<T>,
+    ) -> Result<CallbackReceiver<T>, WebSocketActionError>
+    where
+        T: DeserializeOwned + 'static,
+    {
+        if !self.is_connected() {
+            return Err(WebSocketActionError::Disconnected);
+        }
+        let (tx, rx) = unbounded();
+
+        self.action_sender
+            .unbounded_send(ClientAction::Subscribe(topic.name().to_string(), tx))
+            .map_err(|e| WebSocketActionError::LocalConnectionError(e.into_send_error()))?;
+
+        Ok(CallbackReceiver::new(rx))
+    }
+
+    pub fn subscribe<F, T>(
+        &self,
+        topic: &impl TopicTrait<T>,
+        callback: F,
+    ) -> Result<(), WebSocketActionError>
     where
         F: Fn(Result<T, serde_json::Error>) + Send + 'static,
         T: DeserializeOwned + 'static,
     {
-        let (tx, mut rx) = unbounded();
+        let CallbackReceiver {
+            receiver: mut rx, ..
+        } = self.subscribe_callback(topic)?;
 
-        self.action_sender
-            .unbounded_send(ClientAction::Subscribe(topic, tx))
-            .map_err(|e| e.into_send_error())?;
-
-        spawn_local(async move {
+        spawn_maybe_local(async move {
             while let Some(message) = rx.next().await {
                 callback(serde_json::from_value(message));
             }
@@ -295,9 +389,75 @@ impl WebSocket {
         Ok(())
     }
 
-    pub fn unsubscribe(&self, topic: String) -> Result<(), SendError> {
+    pub fn unsubscribe<T>(&self, topic: &impl TopicTrait<T>) -> Result<(), WebSocketActionError> {
+        if !self.is_connected() {
+            return Err(WebSocketActionError::Disconnected);
+        }
         self.action_sender
-            .unbounded_send(ClientAction::Unsubscribe(topic))
-            .map_err(|e| e.into_send_error())
+            .unbounded_send(ClientAction::Unsubscribe(topic.name().to_string()))
+            .map_err(|e| WebSocketActionError::LocalConnectionError(e.into_send_error()))
+    }
+
+    pub fn is_connected(&self) -> bool {
+        self.state.try_lock().map(|s| s.connected).unwrap_or(false)
+    }
+}
+
+fn exponential_backoff(retry_index: usize) -> u64 {
+    let base = 200;
+    let max_delay = 30000;
+    let delay = (retry_index + 1) * base * (2_usize.pow(retry_index as u32));
+    delay.min(max_delay) as u64
+}
+
+async fn do_auth(stream: &mut WebSocketStream, auth: &String) -> Result<(), WebSocketError> {
+    if let Err(e) = stream.send(Message::Text(auth.into())).await {
+        error!("Failed to send auth token: {}", e);
+        return Err(WebSocketError::ConnectionError(e));
+    }
+    match stream.next().await {
+        Some(Ok(Message::Text(response))) => {
+            if response != AUTH_ACK {
+                error!("Authentication failed: {}", response);
+                return Err(WebSocketError::AuthError);
+            }
+        }
+        Some(Ok(msg)) => {
+            error!("Unexpected message during authentication: {:?}", msg);
+            return Err(WebSocketError::ProtocolError("Unexpected message".into()));
+        }
+        Some(Err(e)) => {
+            error!("Failed to receive auth response: {}", e);
+            return Err(WebSocketError::ConnectionError(e));
+        }
+        None => {
+            error!("Connection closed before receiving auth response");
+            return Err(WebSocketError::ProtocolError("Connection closed".into()));
+        }
+    }
+    Ok(())
+}
+
+pub struct CallbackReceiver<T> {
+    receiver: UnboundedReceiver<serde_json::Value>,
+    _marker: std::marker::PhantomData<T>,
+}
+
+impl<T> CallbackReceiver<T>
+where
+    T: DeserializeOwned + 'static,
+{
+    pub fn new(receiver: UnboundedReceiver<serde_json::Value>) -> Self {
+        Self {
+            receiver,
+            _marker: std::marker::PhantomData,
+        }
+    }
+
+    pub async fn next(&mut self) -> Option<Result<T, serde_json::Error>> {
+        match self.receiver.next().await {
+            Some(value) => Some(serde_json::from_value(value)),
+            None => None,
+        }
     }
 }

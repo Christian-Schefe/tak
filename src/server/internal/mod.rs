@@ -3,6 +3,7 @@ pub mod cache;
 pub mod db;
 pub mod dto;
 pub mod player;
+pub mod pub_sub;
 pub mod room;
 pub mod seek;
 pub mod websocket;

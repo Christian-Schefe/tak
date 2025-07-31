@@ -60,7 +60,7 @@ directories = "6.0.0"
 tokio-tungstenite-wasm = { version = "0.6.0", features = [
     "rustls-tls-native-roots",
 ] }
-ws-pubsub = { path = "ws-pubsub", version = "*" }
+ws-pubsub = { path = "ws-pubsub", version = "*", features = ["dioxus"] }
 
 [features]
 _not_web = ["dep:tokio"]

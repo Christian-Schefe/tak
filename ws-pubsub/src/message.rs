@@ -20,3 +20,5 @@ pub struct ServerMessage {
     pub topic: String,
     pub payload: serde_json::Value,
 }
+
+pub const AUTH_ACK: &str = "auth_ack";

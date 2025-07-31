@@ -29,6 +29,17 @@ pub struct SeekSettings {
     pub creator_color: Option<TakPlayer>,
 }
 
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum SeekUpdate {
+    Created {
+        player_id: UserId,
+        settings: SeekSettings,
+    },
+    Removed {
+        player_id: UserId,
+    },
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RoomSettings {
     pub game_settings: TakGameSettings,
