@@ -3,13 +3,16 @@ use tak_core::TakTimeMode;
 
 use crate::{
     Route,
+    components::WS_CLIENT,
     server::{
-        ServerError, UserId,
+        SeekUpdate, ServerError, UserId,
         api::{accept_seek, get_seeks},
     },
 };
 
-fn on_seeks_changed() {}
+fn on_seeks_changed(update: SeekUpdate) {
+    dioxus::logger::tracing::info!("Seeks updated: {:?}", update);
+}
 
 #[component]
 pub fn Seeks() -> Element {
@@ -17,7 +20,9 @@ pub fn Seeks() -> Element {
 
     use_effect(move || {
         let _ = seeks.read();
-        on_seeks_changed();
+        WS_CLIENT.read().as_ref().map(|ws| {
+            ws.subscribe("seeks", on_seeks_changed);
+        });
     });
 
     let seek_list = use_memo(move || {

@@ -1,7 +1,5 @@
 use std::{collections::HashMap, sync::LazyLock};
 
-use ws_pubsub::StaticTopic;
-
 use crate::server::{
     PlayerInformation, SeekSettings, SeekUpdate, ServerError, ServerResult, UserId, internal::cache,
 };
@@ -30,7 +28,7 @@ impl Seeks {
     }
 }
 
-pub static SEEK_TOPIC: StaticTopic<SeekUpdate> = StaticTopic::new("seeks");
+pub static SEEK_TOPIC: &str = "seeks";
 
 pub static SEEKS: LazyLock<tokio::sync::RwLock<Seeks>> =
     LazyLock::new(|| tokio::sync::RwLock::new(Seeks::new()));
@@ -61,7 +59,7 @@ pub async fn cancel_seek(player_id: &UserId) -> ServerResult<()> {
     }
     seeks.remove_seek(player_id);
     ws_pubsub::publish_to_topic(
-        SEEK_TOPIC,
+        &SEEK_TOPIC,
         SeekUpdate::Removed {
             player_id: player_id.clone(),
         },
@@ -97,7 +95,7 @@ pub async fn accept_seek(player_id: &UserId, opponent_id: &UserId) -> ServerResu
 
     seeks.remove_seek(opponent_id);
     ws_pubsub::publish_to_topic(
-        SEEK_TOPIC,
+        &SEEK_TOPIC,
         SeekUpdate::Removed {
             player_id: player_id.clone(),
         },

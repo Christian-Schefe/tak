@@ -47,7 +47,7 @@
 }
 
 .tak-tile-light.tak-tile-highlight {
-  background-color: $clr-primary-light;
+  background-color: $clr-primary-highlight;
 }
 
 .tak-tile-dark.tak-tile-highlight {
@@ -260,7 +260,7 @@
 }
 
 .tak-piece-selector .piece-selector.piece-selector-current:active {
-  background-color: $clr-primary-light;
+  background-color: $clr-primary-highlight;
 }
 
 .tak-piece-selector .piece-selector.piece-selector-disabled {

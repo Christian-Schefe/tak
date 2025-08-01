@@ -13,3 +13,11 @@ where
 {
     tokio::task::spawn(f);
 }
+
+pub async fn sleep(duration: std::time::Duration) {
+    #[cfg(not(feature = "client-native"))]
+    gloo::timers::future::sleep(duration).await;
+
+    #[cfg(feature = "client-native")]
+    tokio::time::sleep(duration).await;
+}

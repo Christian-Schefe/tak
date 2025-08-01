@@ -8,11 +8,11 @@
     --clr-warning: #e8a01b;
 
     --clr-primary: oklch(0.6601 0.144 254.84);
-    --clr-primary-light: oklch(0.7001 0.144 254.84);
+    --clr-primary-highlight: oklch(0.7001 0.144 254.84);
 
     --clr-background: oklch(0.2049 0.0292 254.84);
     --clr-surface: oklch(0.3549 0.0292 254.84);
-    --clr-surface-light: oklch(0.5049 0.0292 254.84);
+    --clr-surface-highlight: oklch(0.5049 0.0292 254.84);
 
     --clr-board-dark: oklch(0.6756 0.0292 254.84);
     --clr-board-light: oklch(0.7049 0.0292 254.84);
@@ -31,11 +31,11 @@ $clr-error: var(--clr-error);
 $clr-warning: var(--clr-warning);
 
 $clr-primary: var(--clr-primary);
-$clr-primary-light: var(--clr-primary-light);
+$clr-primary-highlight: var(--clr-primary-highlight);
 
 $clr-background: var(--clr-background);
 $clr-surface: var(--clr-surface);
-$clr-surface-light: var(--clr-surface-light);
+$clr-surface-highlight: var(--clr-surface-highlight);
 
 $clr-board-dark: var(--clr-board-dark);
 $clr-board-light: var(--clr-board-light);

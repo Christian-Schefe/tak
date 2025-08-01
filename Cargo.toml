@@ -66,8 +66,18 @@ ws-pubsub = { path = "ws-pubsub", version = "*", features = ["dioxus"] }
 _not_web = ["dep:tokio"]
 
 web = ["dioxus/web", "tak-core/wasm", "ws-pubsub/client-wasm"]
-desktop = ["dioxus/desktop", "tak-core/wasm", "_not_web", "ws-pubsub/client"]
-mobile = ["dioxus/mobile", "tak-core/wasm", "_not_web", "ws-pubsub/client"]
+desktop = [
+    "dioxus/desktop",
+    "tak-core/wasm",
+    "_not_web",
+    "ws-pubsub/client-native",
+]
+mobile = [
+    "dioxus/mobile",
+    "tak-core/wasm",
+    "_not_web",
+    "ws-pubsub/client-native",
+]
 server = [
     "_not_web",
     "dioxus/server",

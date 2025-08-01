@@ -78,11 +78,11 @@ pub struct ColorScheme {
     pub clr_warning: String,
 
     pub clr_primary: String,
-    pub clr_primary_light: String,
+    pub clr_primary_highlight: String,
 
     pub clr_background: String,
     pub clr_surface: String,
-    pub clr_surface_light: String,
+    pub clr_surface_highlight: String,
 
     pub clr_board_dark: String,
     pub clr_board_light: String,
@@ -125,14 +125,14 @@ impl ColorScheme {
             ("clr-warning".to_string(), self.clr_warning.clone()),
             ("clr-primary".to_string(), self.clr_primary.clone()),
             (
-                "clr-primary-light".to_string(),
-                self.clr_primary_light.clone(),
+                "clr-primary-highlight".to_string(),
+                self.clr_primary_highlight.clone(),
             ),
             ("clr-background".to_string(), self.clr_background.clone()),
             ("clr-surface".to_string(), self.clr_surface.clone()),
             (
-                "clr-surface-light".to_string(),
-                self.clr_surface_light.clone(),
+                "clr-surface-highlight".to_string(),
+                self.clr_surface_highlight.clone(),
             ),
             ("clr-board-dark".to_string(), self.clr_board_dark.clone()),
             ("clr-board-light".to_string(), self.clr_board_light.clone()),

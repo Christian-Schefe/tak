@@ -1,179 +1,288 @@
-use crate::ServerMessage;
+use std::{collections::HashMap, str::Split};
 
-pub struct StaticParamsTopic<T, const N: usize, const M: usize> {
-    pub parts: [Option<(usize, usize)>; N],
-    pub path: &'static str,
-    pub _marker: std::marker::PhantomData<T>,
+pub fn topic_matches(filter: &str, topic: &str) -> bool {
+    topic_matches_iter(filter.split('/'), topic.split('/'))
 }
 
-pub mod topic_helpers {
-    pub const fn count_parts(path: &str) -> usize {
-        let mut count = 1;
-        let bytes = path.as_bytes();
-        let mut i = 0;
-        while i < bytes.len() {
-            if bytes[i] == b'/' {
-                count += 1;
-            }
-            i += 1;
+pub fn topic_matches_iter<'a, 'b, F, T>(filter: F, topic: T) -> bool
+where
+    F: IntoIterator<Item = &'a str>,
+    T: IntoIterator<Item = &'b str>,
+{
+    let mut filter = filter.into_iter().peekable();
+    let mut topic = topic.into_iter().peekable();
+
+    loop {
+        match (filter.next(), topic.next()) {
+            (None, None) => return true,
+            (Some("#"), _) => return true,
+            (Some("+"), Some(_)) => (),
+            (Some(filter), Some(topic)) if filter == topic => (),
+            _ => return false,
         }
-        count
+    }
+}
+
+#[derive(Debug)]
+struct Node<T> {
+    value: Option<(String, T)>,
+
+    children: HashMap<Box<str>, Node<T>>,
+}
+
+impl<T> Node<T> {
+    fn is_empty(&self) -> bool {
+        self.value.is_none() && self.children.is_empty()
     }
 
-    pub const fn count_wildcards(path: &str) -> usize {
-        let mut count = 0;
-        let bytes = path.as_bytes();
-        let mut i = 0;
-        while i < bytes.len() {
-            if bytes[i] == b'+'
-                && (i == 0 || bytes[i - 1] == b'/')
-                && (i + 1 == bytes.len() || bytes[i + 1] == b'/')
-            {
-                count += 1;
-            }
-            i += 1;
-        }
-        count
+    fn value_ref(&self) -> Option<(&str, &T)> {
+        self.value.as_ref().map(|(k, v)| (k.as_str(), v))
     }
 
-    pub const fn build_parts<const N: usize, const M: usize>(
-        path: &str,
-    ) -> [Option<(usize, usize)>; N] {
-        let mut arr: [Option<(usize, usize)>; N] = [None; N];
-        let bytes = path.as_bytes();
-        let mut i = 0;
-        let mut part_index = 0;
-        let mut start = 0;
-        while i < bytes.len() {
-            if bytes[i] == b'/' {
-                arr[part_index] =
-                    if i >= 1 && bytes[i - 1] == b'+' && (i == 1 || bytes[i - 2] == b'/') {
-                        None
-                    } else {
-                        Some((start, i))
-                    };
-                part_index += 1;
-                start = i + 1;
-            }
-            i += 1;
+    fn iter(&self) -> NodeIter<T> {
+        Box::new(
+            self.value
+                .iter()
+                .map(|(k, v)| (k.as_str(), v))
+                .chain(self.children.values().flat_map(|n| n.iter())),
+        )
+    }
+
+    fn iter_mut(&mut self) -> NodeIterMut<T> {
+        Box::new(
+            self.value
+                .iter_mut()
+                .map(|(k, v)| (k.as_str(), v))
+                .chain(self.children.values_mut().flat_map(|n| n.iter_mut())),
+        )
+    }
+
+    fn prune(&mut self) {
+        for node in &mut self.children.values_mut() {
+            node.shrink_to_fit();
         }
-        arr[part_index] = if i >= 1 && bytes[i - 1] == b'+' && (i == 1 || bytes[i - 2] == b'/') {
-            None
-        } else {
-            Some((start, i))
+
+        self.children.retain(|_, node| !node.is_empty());
+    }
+
+    fn shrink_to_fit(&mut self) {
+        for node in self.children.values_mut() {
+            node.shrink_to_fit();
+        }
+
+        self.children.retain(|_, node| !node.is_empty());
+        self.children.shrink_to_fit();
+    }
+}
+
+impl<T> Default for Node<T> {
+    fn default() -> Self {
+        Node {
+            value: None,
+            children: HashMap::new(),
+        }
+    }
+}
+
+type NodeIter<'a, T> = Box<dyn Iterator<Item = (&'a str, &'a T)> + 'a>;
+
+type NodeIterMut<'a, T> = Box<dyn Iterator<Item = (&'a str, &'a mut T)> + 'a>;
+
+#[derive(Debug)]
+pub struct TopicMatcher<T> {
+    root: Node<T>,
+}
+
+impl<T> TopicMatcher<T> {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.root.is_empty()
+    }
+
+    pub fn clear(&mut self) {
+        self.root = Node::default();
+    }
+
+    pub fn insert<S: Into<String>>(&mut self, filter: S, val: T) {
+        let filter = filter.into();
+        let mut curr = &mut self.root;
+
+        for field in filter.split('/') {
+            curr = curr.children.entry(field.into()).or_default()
+        }
+        curr.value = Some((filter, val));
+    }
+
+    pub fn get(&self, filter: &str) -> Option<&T> {
+        self.get_key_value(filter).map(|(_, v)| v)
+    }
+
+    pub fn get_key_value(&self, filter: &str) -> Option<(&str, &T)> {
+        let mut curr = &self.root;
+
+        for field in filter.split('/') {
+            curr = match curr.children.get(field) {
+                Some(node) => node,
+                None => return None,
+            };
+        }
+        curr.value.as_ref().map(|(k, v)| (k.as_str(), v))
+    }
+
+    pub fn get_mut(&mut self, filter: &str) -> Option<&mut T> {
+        let mut curr = &mut self.root;
+
+        for field in filter.split('/') {
+            curr = match curr.children.get_mut(field) {
+                Some(node) => node,
+                None => return None,
+            };
+        }
+        curr.value.as_mut().map(|(_, v)| v)
+    }
+
+    pub fn remove(&mut self, filter: &str) -> Option<T> {
+        let mut curr = &mut self.root;
+
+        for field in filter.split('/') {
+            curr = match curr.children.get_mut(field) {
+                Some(node) => node,
+                None => return None,
+            };
+        }
+        curr.value.take().map(|(_, v)| v)
+    }
+
+    pub fn prune(&mut self) {
+        self.root.prune()
+    }
+
+    pub fn shrink_to_fit(&mut self) {
+        self.root.shrink_to_fit()
+    }
+
+    pub fn iter(&self) -> NodeIter<T> {
+        self.root.iter()
+    }
+
+    pub fn iter_mut(&mut self) -> NodeIterMut<T> {
+        self.root.iter_mut()
+    }
+
+    pub fn matches<'a, 'b>(&'a self, topic: &'b str) -> MatchIter<'a, 'b, T> {
+        MatchIter::new(&self.root, topic)
+    }
+
+    pub fn has_match(&self, topic: &str) -> bool {
+        self.matches(topic).next().is_some()
+    }
+}
+
+impl<T: Clone> TopicMatcher<T> {
+    pub fn insert_many<S: AsRef<str>>(&mut self, filters: &[S], val: T) {
+        for filter in filters {
+            self.insert(filter.as_ref(), val.clone());
+        }
+    }
+}
+
+impl<T> Default for TopicMatcher<T> {
+    fn default() -> Self {
+        TopicMatcher {
+            root: Node::default(),
+        }
+    }
+}
+
+impl<T> From<HashMap<&str, T>> for TopicMatcher<T> {
+    fn from(mut m: HashMap<&str, T>) -> Self {
+        let mut matcher = Self::new();
+        for (filt, val) in m.drain() {
+            matcher.insert(filt, val);
+        }
+        matcher
+    }
+}
+
+impl<T> From<HashMap<String, T>> for TopicMatcher<T> {
+    fn from(mut m: HashMap<String, T>) -> Self {
+        let mut matcher = Self::new();
+        for (filt, val) in m.drain() {
+            matcher.insert(filt, val);
+        }
+        matcher
+    }
+}
+
+impl<'a, T: 'a> IntoIterator for &'a TopicMatcher<T> {
+    type Item = (&'a str, &'a T);
+    type IntoIter = NodeIter<'a, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl<'a, T: 'a> IntoIterator for &'a mut TopicMatcher<T> {
+    type Item = (&'a str, &'a mut T);
+    type IntoIter = NodeIterMut<'a, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter_mut()
+    }
+}
+
+#[derive(Debug)]
+pub struct MatchIter<'a, 'b, T> {
+    remaining: Vec<(&'a Node<T>, Split<'b, char>)>,
+}
+
+impl<'a, 'b, T> MatchIter<'a, 'b, T> {
+    fn new(node: &'a Node<T>, topic: &'b str) -> Self {
+        let fields = topic.split('/');
+        Self {
+            remaining: vec![(node, fields)],
+        }
+    }
+}
+
+impl<'a, 'b, T> Iterator for MatchIter<'a, 'b, T> {
+    type Item = (&'a str, &'a T);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let (node, mut fields) = self.remaining.pop()?;
+
+        let field = match fields.next() {
+            Some(field) => field,
+            None => {
+                return node
+                    .value
+                    .as_ref()
+                    .map(|(k, v)| (k.as_str(), v))
+                    .or_else(|| {
+                        node.children
+                            .get("#")
+                            .and_then(|child| child.value_ref())
+                            .or_else(|| self.next())
+                    });
+            }
         };
-        arr
-    }
-}
 
-#[macro_export]
-macro_rules! static_params_topic {
-    ($ty:ty, $path:expr) => {{
-        const N: usize = $crate::topic::topic_helpers::count_parts($path);
-        const M: usize = $crate::topic::topic_helpers::count_wildcards($path);
-
-        $crate::topic::StaticParamsTopic::<$ty, N, M> {
-            parts: $crate::topic::topic_helpers::build_parts::<N, M>($path),
-            path: $path,
-            _marker: std::marker::PhantomData,
+        if let Some(child) = node.children.get(field) {
+            self.remaining.push((child, fields.clone()));
         }
-    }};
-}
 
-#[macro_export]
-macro_rules! static_topic {
-    ($name:ident, $ty:ty, $path:expr) => {
-        static $name: $crate::topic::StaticParamsTopic<
-            $ty,
-            { $crate::topic::topic_helpers::count_parts($path) },
-            { $crate::topic::topic_helpers::count_wildcards($path) },
-        > = $crate::static_params_topic!($ty, $path);
-    };
-}
-
-static_topic!(test_topic3, usize, "foo/+/bar");
-
-static test_topic: StaticParamsTopic<usize, 3, 1> = static_params_topic!(usize, "foo/+/bar");
-static test_topic2: StaticParamsTopic<usize, 5, 2> = static_params_topic!(usize, "foo/+/+/++/bar");
-
-impl<T, const N: usize, const M: usize> StaticParamsTopic<T, N, M> {
-    pub fn try_extract<'a>(&self, topic: &'a str) -> Option<[&'a str; M]> {
-        let parts = topic.split('/');
-        let mut result = [""; M];
-        let mut j = 0;
-        for (i, part) in parts.enumerate() {
-            if let Some(self_part) = self.parts[i] {
-                let self_part = &self.path[self_part.0..self_part.1];
-                if part != self_part {
-                    return None;
-                }
-            } else {
-                result[j] = part;
-                j += 1;
-            }
+        if let Some(child) = node.children.get("+") {
+            self.remaining.push((child, fields));
         }
-        Some(result)
-    }
-}
 
-impl<T, const N: usize, const M: usize> TopicTrait<T> for StaticParamsTopic<T, N, M> {
-    fn name(&self) -> &str {
-        self.path
-    }
-}
-
-pub struct StaticTopic<T> {
-    pub name: &'static str,
-    _marker: std::marker::PhantomData<T>,
-}
-
-impl<T> StaticTopic<T> {
-    pub const fn new(name: &'static str) -> Self {
-        StaticTopic {
-            name,
-            _marker: std::marker::PhantomData,
+        if let Some(child) = node.children.get("#") {
+            return child.value_ref();
         }
-    }
-}
 
-impl<T> TopicTrait<T> for StaticTopic<T> {
-    fn name(&self) -> &str {
-        self.name
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Topic<T> {
-    pub name: String,
-    _marker: std::marker::PhantomData<T>,
-}
-
-impl<T> Topic<T> {
-    pub fn new(name: impl AsRef<str>) -> Self {
-        Topic {
-            name: name.as_ref().to_string(),
-            _marker: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<T> TopicTrait<T> for Topic<T> {
-    fn name(&self) -> &str {
-        &self.name
-    }
-}
-
-pub trait TopicTrait<T> {
-    fn name(&self) -> &str;
-
-    fn make_server_message(&self, payload: T) -> Result<ServerMessage, serde_json::Error>
-    where
-        T: serde::Serialize + Send + 'static,
-    {
-        let payload = serde_json::to_value(payload)?;
-        Ok(ServerMessage {
-            topic: self.name().to_string(),
-            payload,
-        })
+        self.next()
     }
 }

@@ -6,11 +6,11 @@
   "clr_warning": "#e8a01b",
 
   "clr_primary": "#57b0c1",
-  "clr_primary_light": "#4fb5c9",
+  "clr_primary_highlight": "#4fb5c9",
 
   "clr_background": "#232323",
   "clr_surface": "#a99682",
-  "clr_surface_light": "#baa793",
+  "clr_surface_highlight": "#baa793",
 
   "clr_board_dark": "#ccb9a5",
   "clr_board_light": "#d2bfaa",

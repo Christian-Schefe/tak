@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use futures::{
     StreamExt,
     channel::{
-        mpsc::{SendError, UnboundedReceiver, UnboundedSender, unbounded},
+        mpsc::{SendError, TrySendError, UnboundedReceiver, UnboundedSender, unbounded},
         oneshot,
     },
     join, select,
@@ -14,7 +14,7 @@ use serde::{Serialize, de::DeserializeOwned};
 use tokio_tungstenite_wasm::{Message, WebSocketStream};
 
 use crate::{
-    AUTH_ACK, TopicTrait, error,
+    AUTH_ACK, error,
     future::spawn_maybe_local,
     info,
     message::{ClientMessage, ServerMessage},
@@ -46,7 +46,7 @@ pub struct WebSocketState {
 }
 
 pub struct WebSocket {
-    action_sender: UnboundedSender<ClientAction>,
+    action_sender: Arc<UnboundedSender<ClientAction>>,
     state: Arc<Mutex<WebSocketState>>,
 }
 
@@ -78,7 +78,10 @@ impl WebSocket {
             .map_err(WebSocketError::ConnectionError)?;
 
         if let Some(auth) = &connection_data.auth {
-            do_auth(&mut stream, auth).await?;
+            if let Err(e) = do_auth(&mut stream, auth).await {
+                let _ = stream.close().await;
+                return Err(e);
+            }
         }
         let (tx, rx) = unbounded();
 
@@ -95,7 +98,7 @@ impl WebSocket {
         let state = run_data.state.clone();
         Ok((
             WebSocket {
-                action_sender: tx,
+                action_sender: Arc::new(tx),
                 state,
             },
             run_data,
@@ -118,7 +121,7 @@ impl WebSocket {
                 error!("Max retries exceeded");
                 return Err(WebSocketError::MaxRetriesExceeded);
             }
-            tokio::time::sleep(tokio::time::Duration::from_millis(exponential_backoff(i))).await;
+            crate::future::sleep(std::time::Duration::from_millis(exponential_backoff(i))).await;
             i += 1;
         }
     }
@@ -137,8 +140,14 @@ impl WebSocket {
 
         if let Some(auth) = &connection_data.auth {
             if let Err(e) = do_auth(&mut stream, auth).await {
+                let _ = stream.close().await;
                 return Err((e, reconnector));
             }
+        }
+
+        if let Err(e) = do_resubscribe(&mut stream, reconnector.handlers.clone()).await {
+            let _ = stream.close().await;
+            return Err((e, reconnector));
         }
 
         let run_data = WebSocketRunner {
@@ -168,7 +177,7 @@ impl WebSocket {
                 error!("Max retries exceeded");
                 return Err(WebSocketError::MaxRetriesExceeded);
             }
-            tokio::time::sleep(tokio::time::Duration::from_millis(exponential_backoff(i))).await;
+            crate::future::sleep(std::time::Duration::from_millis(exponential_backoff(i))).await;
             i += 1;
         }
     }
@@ -219,13 +228,21 @@ impl WebSocket {
                             };
                             let mut handlers = handlers.lock().await;
                             let Some(topic_handlers) = handlers.get_mut(&msg.topic) else {
-                                info!("No handlers for topic {}", msg.topic);
+                                error!("No handlers for topic {}", msg.topic);
                                 continue;
                             };
-                            for handler in topic_handlers {
-                                if let Err(e) = handler.send(msg.payload.clone()).await {
+                            let mut handlers_to_remove = vec![];
+                            for (i, handler) in topic_handlers.iter().enumerate() {
+                                if let Err(e) = handler.unbounded_send(msg.payload.clone()) {
                                     error!("Failed to send message to handler: {}", e);
+                                    handlers_to_remove.push(i);
                                 }
+                            }
+                            for i in handlers_to_remove.iter().rev() {
+                                topic_handlers.swap_remove(*i);
+                            }
+                            if topic_handlers.is_empty() {
+                                handlers.remove(&msg.topic);
                             }
                             drop(handlers);
                         }
@@ -329,11 +346,7 @@ impl WebSocket {
         }
     }
 
-    pub fn publish<T>(
-        &self,
-        topic: &impl TopicTrait<T>,
-        message: T,
-    ) -> Result<(), WebSocketActionError>
+    pub fn publish<T>(&self, topic: impl AsRef<str>, message: T) -> Result<(), WebSocketActionError>
     where
         T: Serialize + 'static,
     {
@@ -344,13 +357,13 @@ impl WebSocket {
             serde_json::to_value(message).map_err(WebSocketActionError::SerializationError)?;
 
         self.action_sender
-            .unbounded_send(ClientAction::Publish(topic.name().to_string(), payload))
+            .unbounded_send(ClientAction::Publish(topic.as_ref().to_string(), payload))
             .map_err(|e| WebSocketActionError::LocalConnectionError(e.into_send_error()))
     }
 
     pub fn subscribe_callback<T>(
         &self,
-        topic: &impl TopicTrait<T>,
+        topic: impl AsRef<str>,
     ) -> Result<CallbackReceiver<T>, WebSocketActionError>
     where
         T: DeserializeOwned + 'static,
@@ -361,7 +374,7 @@ impl WebSocket {
         let (tx, rx) = unbounded();
 
         self.action_sender
-            .unbounded_send(ClientAction::Subscribe(topic.name().to_string(), tx))
+            .unbounded_send(ClientAction::Subscribe(topic.as_ref().to_string(), tx))
             .map_err(|e| WebSocketActionError::LocalConnectionError(e.into_send_error()))?;
 
         Ok(CallbackReceiver::new(rx))
@@ -369,32 +382,35 @@ impl WebSocket {
 
     pub fn subscribe<F, T>(
         &self,
-        topic: &impl TopicTrait<T>,
+        topic: impl AsRef<str>,
         callback: F,
     ) -> Result<(), WebSocketActionError>
     where
-        F: Fn(Result<T, serde_json::Error>) + Send + 'static,
+        F: Fn(T) + Send + 'static,
         T: DeserializeOwned + 'static,
     {
         let CallbackReceiver {
             receiver: mut rx, ..
-        } = self.subscribe_callback(topic)?;
+        } = self.subscribe_callback::<T>(topic)?;
 
         spawn_maybe_local(async move {
             while let Some(message) = rx.next().await {
-                callback(serde_json::from_value(message));
+                match serde_json::from_value::<T>(message) {
+                    Ok(value) => callback(value),
+                    Err(e) => error!("Failed to deserialize message: {}", e),
+                }
             }
         });
 
         Ok(())
     }
 
-    pub fn unsubscribe<T>(&self, topic: &impl TopicTrait<T>) -> Result<(), WebSocketActionError> {
+    pub fn unsubscribe<T>(&self, topic: impl AsRef<str>) -> Result<(), WebSocketActionError> {
         if !self.is_connected() {
             return Err(WebSocketActionError::Disconnected);
         }
         self.action_sender
-            .unbounded_send(ClientAction::Unsubscribe(topic.name().to_string()))
+            .unbounded_send(ClientAction::Unsubscribe(topic.as_ref().to_string()))
             .map_err(|e| WebSocketActionError::LocalConnectionError(e.into_send_error()))
     }
 
@@ -433,6 +449,26 @@ async fn do_auth(stream: &mut WebSocketStream, auth: &String) -> Result<(), WebS
         None => {
             error!("Connection closed before receiving auth response");
             return Err(WebSocketError::ProtocolError("Connection closed".into()));
+        }
+    }
+    Ok(())
+}
+
+async fn do_resubscribe(
+    stream: &mut WebSocketStream,
+    handlers: Arc<Mutex<HashMap<String, Vec<UnboundedSender<serde_json::Value>>>>>,
+) -> Result<(), WebSocketError> {
+    let handlers = handlers.lock().await;
+    for (topic, _) in handlers.iter() {
+        let msg = ClientMessage::Subscribe {
+            topic: topic.clone(),
+        };
+        if let Err(e) = stream
+            .send(Message::Text(serde_json::to_string(&msg).unwrap().into()))
+            .await
+        {
+            error!("Failed to resubscribe to topic {}: {}", topic, e);
+            return Err(WebSocketError::ConnectionError(e));
         }
     }
     Ok(())

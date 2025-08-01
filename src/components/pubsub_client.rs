@@ -1,4 +1,7 @@
-use std::sync::{Arc, OnceLock};
+use std::{
+    cell::OnceCell,
+    sync::{Arc, OnceLock},
+};
 
 use dioxus::prelude::*;
 use ws_pubsub::WebSocket;
@@ -8,7 +11,8 @@ use crate::{
     views::{AUTH_CHANGED, AUTH_TOKEN_KEY},
 };
 
-pub static WS_CLIENT: OnceLock<Arc<ws_pubsub::WebSocket>> = OnceLock::new();
+pub static WS_CLIENT: GlobalSignal<Option<ws_pubsub::WebSocket>> = GlobalSignal::new(|| None);
+
 static IS_CONNECTING: OnceLock<()> = OnceLock::new();
 
 #[component]
@@ -40,10 +44,7 @@ pub fn PubSubClient() -> Element {
                 .await
                 .expect("Failed to connect to WebSocket server");
 
-            WS_CLIENT
-                .set(Arc::new(ws))
-                .ok()
-                .expect("Failed to set WebSocket client");
+            *WS_CLIENT.write() = Some(ws);
 
             dioxus::prelude::spawn(async move {
                 let err =

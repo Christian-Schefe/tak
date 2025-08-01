@@ -39,11 +39,11 @@ button {
   user-select: none;
 
   &:hover {
-    background-color: oklch(from $clr-surface #{"calc(l + 0.05)"} c h);
+    background-color: color-mix(in oklch, $clr-surface 50%, $clr-surface-highlight);
   }
 
   &:active {
-    background-color: oklch(from $clr-surface #{"calc(l + 0.1)"} c h);
+    background-color: $clr-surface-highlight;
   }
 }
 
@@ -52,30 +52,30 @@ button.primary-button {
   color: $clr-text;
 
   &:hover {
-    background-color: oklch(from $clr-primary #{"calc(l + 0.05)"} c h);
+    background-color: color-mix(in oklch, $clr-primary 50%, $clr-primary-highlight);
   }
 
   &:active {
-    background-color: oklch(from $clr-primary #{"calc(l + 0.1)"} c h);
+    background-color: $clr-primary-highlight;
   }
 }
 
 button.secondary-button {
-  border: 2px solid $clr-surface-light;
+  border: 2px solid $clr-surface-highlight;
 
   &:hover {
-    background-color: $clr-surface-light;
+    background-color: color-mix($clr-surface, $clr-surface-highlight 50%);
   }
 
   &:active {
-    background-color: $clr-surface-light;
+    background-color: $clr-surface-highlight;
   }
 }
 
 input {
   padding: 10px;
   outline: none;
-  border: 1px solid $clr-surface-light;
+  border: 1px solid $clr-surface-highlight;
   border-radius: $border-radius;
   background-color: $clr-background;
   color: $clr-text;

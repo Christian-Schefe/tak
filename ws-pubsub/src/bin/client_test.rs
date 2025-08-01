@@ -1,7 +1,6 @@
-use ws_pubsub::{StaticTopic, WebSocket};
+use ws_pubsub::WebSocket;
 
-static TOPIC1: StaticTopic<usize> = StaticTopic::new("test_topic");
-static TOPIC2: StaticTopic<usize> = StaticTopic::new("test_topic2");
+static TOPIC2: &str = "test_topic2";
 
 #[tokio::main]
 async fn main() {
@@ -21,13 +20,19 @@ async fn main() {
         eprintln!("WebSocket client error: {:?}", err);
     });
 
-    ws.subscribe(&TOPIC2, |value| {
+    ws.subscribe(&TOPIC2, |value: usize| {
         println!("Received value: {:?}", value);
     })
     .expect("Failed to subscribe");
 
     loop {
-        if let Err(e) = ws.publish(&TOPIC1, 5) {
+        if let Err(e) = ws.publish("test_topic/hello/hi", 5) {
+            eprintln!("Failed to publish message: {:?}", e);
+        }
+        if let Err(e) = ws.publish("test_topic/ab3/hi", 6) {
+            eprintln!("Failed to publish message: {:?}", e);
+        }
+        if let Err(e) = ws.publish("test_topic/ab3/hi/test", 7) {
             eprintln!("Failed to publish message: {:?}", e);
         }
         tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
