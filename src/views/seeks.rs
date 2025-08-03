@@ -1,29 +1,18 @@
 use dioxus::prelude::*;
 use tak_core::TakTimeMode;
+use ws_pubsub::{use_ws_topic_receive, use_ws_topic_send};
 
 use crate::{
     Route,
-    components::WS_CLIENT,
     server::{
         SeekUpdate, ServerError, UserId,
-        api::{accept_seek, get_seeks},
+        api::{MyServerFunctions, accept_seek, get_seeks},
     },
 };
-
-fn on_seeks_changed(update: SeekUpdate) {
-    dioxus::logger::tracing::info!("Seeks updated: {:?}", update);
-}
 
 #[component]
 pub fn Seeks() -> Element {
     let seeks = use_resource(|| get_seeks());
-
-    use_effect(move || {
-        let _ = seeks.read();
-        WS_CLIENT.read().as_ref().map(|ws| {
-            ws.subscribe("seeks", on_seeks_changed);
-        });
-    });
 
     let seek_list = use_memo(move || {
         seeks.read().as_ref().map(|s| match s {
@@ -32,6 +21,22 @@ pub fn Seeks() -> Element {
         })
     });
     let nav = use_navigator();
+    use_ws_topic_receive::<SeekUpdate, MyServerFunctions, _>("seeks", |x| {
+        dioxus::logger::tracing::info!("Received seek update: {:?}", x);
+        async move { () }
+    });
+
+    let seek_service = use_ws_topic_send::<String>("seeks");
+    use_future(move || {
+        let seek_service = seek_service.clone();
+        async move {
+            loop {
+                let res = seek_service.send("get_seeks".to_string()).await;
+                dioxus::logger::tracing::info!("send: {:?}", res);
+                crate::future::sleep(std::time::Duration::from_secs(1)).await;
+            }
+        }
+    });
 
     use_effect(move || match &*seeks.read() {
         Some(Ok(Err(ServerError::Unauthorized))) => {

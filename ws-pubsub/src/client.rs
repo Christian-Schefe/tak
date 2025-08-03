@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use futures::{
     StreamExt,
     channel::{
-        mpsc::{SendError, TrySendError, UnboundedReceiver, UnboundedSender, unbounded},
+        mpsc::{SendError, UnboundedReceiver, UnboundedSender, unbounded},
         oneshot,
     },
     join, select,
@@ -13,12 +13,7 @@ use futures_util::SinkExt;
 use serde::{Serialize, de::DeserializeOwned};
 use tokio_tungstenite_wasm::{Message, WebSocketStream};
 
-use crate::{
-    AUTH_ACK, error,
-    future::spawn_maybe_local,
-    info,
-    message::{ClientMessage, ServerMessage},
-};
+use crate::{error, future::spawn_maybe_local, info, message::PublishMessage};
 
 #[derive(Debug)]
 pub enum WebSocketActionError {
@@ -37,7 +32,6 @@ pub enum WebSocketError {
 
 pub enum ClientAction {
     Subscribe(String, UnboundedSender<serde_json::Value>),
-    Unsubscribe(String),
     Publish(String, serde_json::Value),
 }
 
@@ -45,6 +39,7 @@ pub struct WebSocketState {
     connected: bool,
 }
 
+#[derive(Clone)]
 pub struct WebSocket {
     action_sender: Arc<UnboundedSender<ClientAction>>,
     state: Arc<Mutex<WebSocketState>>,
@@ -145,10 +140,10 @@ impl WebSocket {
             }
         }
 
-        if let Err(e) = do_resubscribe(&mut stream, reconnector.handlers.clone()).await {
+        /*if let Err(e) = do_resubscribe(&mut stream, reconnector.handlers.clone()).await {
             let _ = stream.close().await;
             return Err((e, reconnector));
-        }
+        }*/
 
         let run_data = WebSocketRunner {
             stream,
@@ -219,7 +214,7 @@ impl WebSocket {
                 while let Some(msg) = receiver.next().await {
                     match msg {
                         Ok(Message::Text(text)) => {
-                            let msg = match serde_json::from_str::<ServerMessage>(&text) {
+                            let msg = match serde_json::from_str::<PublishMessage>(&text) {
                                 Ok(msg) => msg,
                                 Err(e) => {
                                     error!("Failed to deserialize message: {}", e);
@@ -277,37 +272,10 @@ impl WebSocket {
                             let mut handlers = handlers.lock().await;
                             handlers.entry(topic.clone()).or_default().push(callback);
                             drop(handlers);
-                            let msg = Message::Text(
-                                serde_json::to_string(&ClientMessage::Subscribe { topic })
-                                    .unwrap_or_else(|e| {
-                                        error!("Serialization error: {}", e);
-                                        String::new()
-                                    })
-                                    .into(),
-                            );
-                            sender.send(msg).await.unwrap_or_else(|e| {
-                                error!("Failed to send message: {}", e);
-                            });
-                        }
-                        ClientAction::Unsubscribe(topic) => {
-                            let mut handlers = handlers.lock().await;
-                            handlers.remove(&topic);
-                            drop(handlers);
-                            let msg = Message::Text(
-                                serde_json::to_string(&ClientMessage::Unsubscribe { topic })
-                                    .unwrap_or_else(|e| {
-                                        error!("Serialization error: {}", e);
-                                        String::new()
-                                    })
-                                    .into(),
-                            );
-                            sender.send(msg).await.unwrap_or_else(|e| {
-                                error!("Failed to send message: {}", e);
-                            });
                         }
                         ClientAction::Publish(topic, message) => {
                             let msg = Message::Text(
-                                serde_json::to_string(&ClientMessage::Publish {
+                                serde_json::to_string(&PublishMessage {
                                     topic,
                                     payload: message,
                                 })
@@ -405,15 +373,6 @@ impl WebSocket {
         Ok(())
     }
 
-    pub fn unsubscribe<T>(&self, topic: impl AsRef<str>) -> Result<(), WebSocketActionError> {
-        if !self.is_connected() {
-            return Err(WebSocketActionError::Disconnected);
-        }
-        self.action_sender
-            .unbounded_send(ClientAction::Unsubscribe(topic.as_ref().to_string()))
-            .map_err(|e| WebSocketActionError::LocalConnectionError(e.into_send_error()))
-    }
-
     pub fn is_connected(&self) -> bool {
         self.state.try_lock().map(|s| s.connected).unwrap_or(false)
     }
@@ -433,7 +392,7 @@ async fn do_auth(stream: &mut WebSocketStream, auth: &String) -> Result<(), WebS
     }
     match stream.next().await {
         Some(Ok(Message::Text(response))) => {
-            if response != AUTH_ACK {
+            if response != "AUTH_ACK" {
                 error!("Authentication failed: {}", response);
                 return Err(WebSocketError::AuthError);
             }
@@ -449,26 +408,6 @@ async fn do_auth(stream: &mut WebSocketStream, auth: &String) -> Result<(), WebS
         None => {
             error!("Connection closed before receiving auth response");
             return Err(WebSocketError::ProtocolError("Connection closed".into()));
-        }
-    }
-    Ok(())
-}
-
-async fn do_resubscribe(
-    stream: &mut WebSocketStream,
-    handlers: Arc<Mutex<HashMap<String, Vec<UnboundedSender<serde_json::Value>>>>>,
-) -> Result<(), WebSocketError> {
-    let handlers = handlers.lock().await;
-    for (topic, _) in handlers.iter() {
-        let msg = ClientMessage::Subscribe {
-            topic: topic.clone(),
-        };
-        if let Err(e) = stream
-            .send(Message::Text(serde_json::to_string(&msg).unwrap().into()))
-            .await
-        {
-            error!("Failed to resubscribe to topic {}: {}", topic, e);
-            return Err(WebSocketError::ConnectionError(e));
         }
     }
     Ok(())

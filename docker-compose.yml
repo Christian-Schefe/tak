@@ -4,6 +4,7 @@ services:
     container_name: surrealdb
     restart: always
     command: start --user "$SURREALDB_USER" --pass "$SURREALDB_PASS" rocksdb:/data/database.db
+    user: root
     env_file:
       - .env
     ports:

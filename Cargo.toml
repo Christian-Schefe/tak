@@ -36,7 +36,7 @@ gloo-worker = { version = "0.5.0", features = ["futures"] }
 axum = { version = "0.7.9", features = ["ws"], optional = true }
 axum-extra = { version = "0.9.6", features = ["typed-header"] }
 futures-util = { version = "0.3.31" }
-uuid = { version = "1.17.0", features = ["v4"], optional = true }
+uuid = { version = "1.17.0", features = ["v4", "js"] }
 dioxus-fullstack = { version = "0.6.3" }
 dioxus-cli-config = { version = "0.6.3", optional = true }
 serde_json = "1.0.140"
@@ -61,6 +61,7 @@ tokio-tungstenite-wasm = { version = "0.6.0", features = [
     "rustls-tls-native-roots",
 ] }
 ws-pubsub = { path = "ws-pubsub", version = "*", features = ["dioxus"] }
+async-trait = "0.1.88"
 
 [features]
 _not_web = ["dep:tokio"]
@@ -86,7 +87,6 @@ server = [
 
     "dep:surrealdb",
     "dep:axum",
-    "dep:uuid",
     "dioxus-cli-config",
 
     "dep:moka",

@@ -115,3 +115,44 @@ pub async fn get_auth() -> Result<ServerResult<UserId>, ServerFnError> {
     let user_id = bail_api!(authorize().await);
     Ok(Ok(user_id))
 }
+
+#[server(client=AuthClient)]
+pub async fn post_pubsub_subscribe(topic: String) -> Result<ServerResult<String>, ServerFnError> {
+    let user_id = bail_api!(authorize().await);
+    Ok(ws_pubsub::client_subscribe(&topic, &user_id)
+        .await
+        .ok_or(ServerError::NotFound))
+}
+
+#[server(client=AuthClient)]
+pub async fn post_pubsub_unsubscribe(
+    subscription_id: String,
+) -> Result<ServerResult<()>, ServerFnError> {
+    let user_id = bail_api!(authorize().await);
+    Ok(Ok(ws_pubsub::client_unsubscribe(
+        &user_id,
+        &subscription_id,
+    )
+    .await))
+}
+
+pub struct MyServerFunctions;
+
+#[async_trait::async_trait]
+impl ws_pubsub::ServerFunctions for MyServerFunctions {
+    type Error = Result<ServerError, ServerFnError>;
+    async fn subscribe(topic: String) -> Result<String, Self::Error> {
+        match post_pubsub_subscribe(topic).await {
+            Ok(Ok(subscription_id)) => Ok(subscription_id),
+            Ok(Err(e)) => Err(Ok(e)),
+            Err(e) => Err(Err(e)),
+        }
+    }
+    async fn unsubscribe(subscription_id: String) -> Result<(), Self::Error> {
+        match post_pubsub_unsubscribe(subscription_id).await {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(e)) => Err(Ok(e)),
+            Err(e) => Err(Err(e)),
+        }
+    }
+}
