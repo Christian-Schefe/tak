@@ -1,7 +1,4 @@
 #[cfg(feature = "client")]
-mod client;
-
-#[cfg(feature = "client")]
 mod client3;
 mod future;
 mod logger;
@@ -15,8 +12,6 @@ pub mod topic;
 pub use server::*;
 
 #[cfg(feature = "client")]
-pub use client::*;
-#[cfg(feature = "client")]
 pub use client3::*;
 pub use message::*;
 pub use topic::*;
@@ -27,3 +22,5 @@ pub trait ServerFunctions {
     async fn subscribe(topic: String) -> Result<String, Self::Error>;
     async fn unsubscribe(subscription_id: String) -> Result<(), Self::Error>;
 }
+
+pub type Topic = String;

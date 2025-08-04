@@ -1,9 +1,9 @@
 use crate::{
-    server::{
-        api::{get_room, join_room, leave_room},
-        ServerError, ROOM_ID_LEN,
-    },
     Route,
+    server::{
+        ServerError,
+        api::{cancel_seek, get_match_id, get_seek},
+    },
 };
 use dioxus::prelude::*;
 
@@ -11,40 +11,30 @@ use dioxus::prelude::*;
 pub fn Home() -> Element {
     let nav = use_navigator();
 
-    let mut room = use_resource(|| get_room());
+    let player_match = use_resource(|| get_match_id());
+    let mut seek = use_resource(|| get_seek());
 
     let on_click_create = move |_| {
         nav.push(Route::CreateRoomOnline {});
     };
 
-    let mut room_id_input = use_signal(|| String::new());
-
-    let join_valid = use_memo(move || {
-        let room_id = room_id_input.read().trim().to_ascii_uppercase();
-        room_id.len() == ROOM_ID_LEN && room_id.chars().all(|c| c.is_ascii_alphanumeric())
-    });
-
-    let on_click_join = move |_| {
-        let room_id = room_id_input.read().trim().to_ascii_uppercase();
-        if !*join_valid.read() {
-            return;
-        }
+    let on_click_cancel = move |_| {
         spawn(async move {
-            let res = join_room(room_id, false).await;
-            match res {
-                Ok(Err(ServerError::Unauthorized)) => {
-                    nav.push(Route::Auth {});
-                }
+            match cancel_seek().await {
                 Ok(Ok(())) => {
-                    nav.push(Route::PlayOnline {});
+                    dioxus::logger::tracing::info!("Seek cancelled successfully");
+                }
+                Ok(Err(ServerError::Unauthorized)) => {
+                    nav.replace(Route::Auth {});
                 }
                 Ok(Err(e)) => {
-                    dioxus::logger::tracing::error!("Failed to join room: {}", e);
+                    dioxus::logger::tracing::warn!("Failed to cancel seek: {:?}", e);
                 }
                 Err(e) => {
-                    dioxus::logger::tracing::error!("Failed to join room: {}", e);
+                    dioxus::logger::tracing::error!("Failed to cancel seek: {:?}", e);
                 }
             }
+            seek.restart();
         });
     };
 
@@ -55,65 +45,42 @@ pub fn Home() -> Element {
         nav.push(Route::CreateRoomLocal {});
     };
 
-    let on_click_leave = move |_| {
-        spawn(async move {
-            let res = leave_room().await;
-            match res {
-                Ok(Err(ServerError::Unauthorized)) => {
-                    nav.push(Route::Auth {});
-                }
-                Ok(Ok(_)) => {
-                    room.restart();
-                }
-                Ok(Err(e)) => {
-                    dioxus::logger::tracing::error!("Failed to leave room: {}", e);
-                }
-                Err(e) => {
-                    dioxus::logger::tracing::error!("Failed to leave room: {}", e);
-                }
-            }
-        });
-    };
+    let is_logged_out = use_memo(move || {
+        matches!(
+            &*player_match.read(),
+            Some(Ok(Err(ServerError::Unauthorized)))
+        )
+    });
 
-    let is_logged_out =
-        use_memo(move || matches!(&*room.read(), Some(Ok(Err(ServerError::Unauthorized)))));
-
-    let is_loading = use_memo(move || room.read().is_none());
+    let is_loading = use_memo(move || player_match.read().is_none());
 
     rsx! {
         div { id: "home-view",
             div { class: "home-options",
                 if !*is_loading.read() {
                     if !*is_logged_out.read() {
-                        if let Some(Ok(Ok((_, _)))) = &*room.read() {
+                        if let Some(Ok(Ok(match_id))) = player_match.read().clone() {
                             button {
+                                class: "primary-button",
                                 onclick: move |_| {
-                                    nav.push(Route::PlayOnline {});
+                                    nav.push(Route::PlayOnline {
+                                        match_id: match_id.clone(),
+                                    });
                                 },
-                                "Rejoin Room"
+                                "Rejoin Match"
                             }
-                            button { onclick: on_click_leave, "Leave Room" }
+                        } else if let Some(Ok(Ok(_))) = seek.read().clone() {
+                            button {
+                                class: "primary-button",
+                                onclick: on_click_cancel,
+                                "Cancel Seek"
+                            }
                         } else {
-                            div { id: "home-join-bar",
-                                input {
-                                    id: "home-room-id-input",
-                                    r#type: "text",
-                                    value: "{room_id_input}",
-                                    maxlength: ROOM_ID_LEN,
-                                    oninput: move |e| {
-                                        let new_str = e.value().trim().to_ascii_uppercase();
-                                        let truncated_str = new_str.chars().take(ROOM_ID_LEN).collect::<String>();
-                                        room_id_input.set(truncated_str);
-                                    },
-                                }
-                                button {
-                                    class: "primary-button",
-                                    onclick: on_click_join,
-                                    disabled: !*join_valid.read(),
-                                    "Join"
-                                }
+                            button {
+                                class: "primary-button",
+                                onclick: on_click_create,
+                                "Create Seek"
                             }
-                            button { onclick: on_click_create, "Create Room" }
                         }
                     } else {
                         button {
@@ -124,9 +91,9 @@ pub fn Home() -> Element {
                             "Login"
                         }
                     }
+                } else {
+                    button { class: "primary-button", disabled: true, "Loading..." }
                 }
-            }
-            div { class: "home-options",
                 button { onclick: on_click_play_computer, "Play Computer" }
                 button { onclick: on_click_play_local, "Play Local" }
             }

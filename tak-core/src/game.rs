@@ -103,6 +103,10 @@ impl TakGameSettings {
             start_position,
         }
     }
+
+    pub fn validate(&self) -> bool {
+        TakGame::new(self.clone()).is_some()
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -174,6 +178,9 @@ impl TakGame {
     pub fn new(settings: TakGameSettings) -> Option<Self> {
         let size = settings.size;
         if size < 3 || size > 8 {
+            return None;
+        }
+        if settings.stones.stones == 0 {
             return None;
         }
         let board = TakBoard::try_from_partial_tps(&settings.start_position.position)?;

@@ -12,7 +12,7 @@ use serde::{Serialize, de::DeserializeOwned};
 use tokio_tungstenite_wasm::{Message, WebSocketStream};
 
 use crate::{
-    AuthResponse, PublishMessage, ServerFunctions,
+    AuthResponse, PublishMessage, ServerFunctions, Topic,
     future::{Service, run_service},
 };
 
@@ -25,8 +25,8 @@ pub struct WsConnector {
     ws_sink: Signal<Option<SplitSink<WebSocketStream, Message>>>,
     pub url: Signal<Option<String>>,
     pub token: Signal<Option<String>>,
-    pub send_service: Service<serde_json::Value, Result<(), String>>,
-    pub handlers: Arc<WsHandlers>,
+    send_service: Service<serde_json::Value, Result<(), String>>,
+    handlers: Arc<WsHandlers>,
 }
 
 pub struct WsHandlers {
@@ -249,20 +249,15 @@ pub fn use_ws_connection() -> WsConnector {
     connector
 }
 
-pub fn use_ws_topic_receive<T: DeserializeOwned + 'static, ServerFut: ServerFunctions, Fut>(
-    topic: &str,
-    handler: impl Fn(T) -> Fut + 'static,
-) where
-    Fut: Future<Output = ()>,
-{
-    let topic_clone = topic.to_string();
-    let connector = WS_CLIENT.resolve();
+fn use_ws_topic_subscription<ServerFut: ServerFunctions>(
+    connector: WsConnector,
+    topic: String,
+) -> Resource<Option<String>> {
     let mut retry_subscribe = use_signal(|| 0);
-    let connector_clone = connector.clone();
-    let sub_id = use_resource(move || {
-        let connector = connector_clone.clone();
+    use_resource(move || {
+        let connector = connector.clone();
         let retry_count = *retry_subscribe.read();
-        let topic = topic_clone.clone();
+        let topic = topic.clone();
         dioxus::logger::tracing::info!("Subscribing to topic: {}", topic);
         async move {
             if connector.ws_connection.read().is_none() {
@@ -286,8 +281,43 @@ pub fn use_ws_topic_receive<T: DeserializeOwned + 'static, ServerFut: ServerFunc
                 }
             }
         }
+    })
+}
+
+#[allow(unused)]
+fn use_ws_topic_drop_subscription<ServerFut: ServerFunctions>(
+    topic: String,
+    sub_id: Resource<Option<String>>,
+    local_sub_id: Signal<Option<String>>,
+    connector: WsConnector,
+) {
+    use_drop(move || {
+        dioxus::logger::tracing::info!("Unsubscribing from topic: {}", topic);
+        let sub_id = sub_id.read().clone();
+        if let Some(Some(subscription_id)) = sub_id {
+            spawn(async move {
+                if let Err(e) = ServerFut::unsubscribe(subscription_id).await {
+                    dioxus::logger::tracing::error!("Failed to unsubscribe: {:?}", e);
+                }
+            });
+        }
+        if let Some(local_sub) = local_sub_id.read().clone() {
+            connector.handlers.remove_handler(&topic, &local_sub);
+        }
     });
-    let topic_clone = topic.to_string();
+}
+
+pub fn use_ws_topic_receive<T: DeserializeOwned + 'static, ServerFut: ServerFunctions, Fut>(
+    topic: impl Into<Topic>,
+    handler: impl Fn(T) -> Fut + 'static,
+) where
+    Fut: Future<Output = ()>,
+{
+    let topic = topic.into();
+    let topic_clone = topic.clone();
+    let connector = WS_CLIENT.resolve();
+    #[allow(unused)]
+    let sub_id = use_ws_topic_subscription::<ServerFut>(connector.clone(), topic_clone.clone());
     let handler = Arc::new(handler);
     let mut local_sub_id = use_signal(|| None);
     let connector_clone = connector.clone();
@@ -298,8 +328,8 @@ pub fn use_ws_topic_receive<T: DeserializeOwned + 'static, ServerFut: ServerFunc
         let (tx, mut rx) = futures::channel::mpsc::unbounded();
         let local_sub = connector.handlers.add_handler(topic.clone(), tx);
         let handler = handler.clone();
-        local_sub_id.set(Some(local_sub.clone()));
         async move {
+            local_sub_id.set(Some(local_sub.clone()));
             while let Some(message) = rx.next().await {
                 dioxus::logger::tracing::info!(
                     "Received message on topic {}: {:?}",
@@ -318,30 +348,20 @@ pub fn use_ws_topic_receive<T: DeserializeOwned + 'static, ServerFut: ServerFunc
             }
         }
     });
-    let topic_clone = topic.to_string();
-    use_drop(move || {
-        #[cfg(not(feature = "server"))]
-        {
-            let topic = topic_clone.clone();
-            dioxus::logger::tracing::info!("Unsubscribing from topic: {}", topic);
-            let sub_id = sub_id.read().clone();
-            if let Some(Some(subscription_id)) = sub_id {
-                spawn(async move {
-                    if let Err(e) = ServerFut::unsubscribe(subscription_id).await {
-                        dioxus::logger::tracing::error!("Failed to unsubscribe: {:?}", e);
-                    }
-                });
-            }
-            if let Some(local_sub) = local_sub_id.read().clone() {
-                connector.handlers.remove_handler(&topic, &local_sub);
-            }
-        }
-    });
+    #[cfg(not(feature = "server"))]
+    use_ws_topic_drop_subscription::<ServerFut>(
+        topic,
+        sub_id,
+        local_sub_id.clone(),
+        connector.clone(),
+    );
 }
 
-pub fn use_ws_topic_send<T: Serialize + 'static>(topic: &str) -> Service<T, Result<(), String>> {
+pub fn use_ws_topic_send<T: Serialize + 'static>(
+    topic: impl Into<Topic>,
+) -> Service<T, Result<(), String>> {
     let connector = WS_CLIENT.resolve();
-    let topic_clone = topic.to_string();
+    let topic_clone = topic.into();
     let service = use_hook(|| crate::future::Service::<T, Result<(), String>>::new());
     let service_clone = service.clone();
     use_future(move || {
@@ -357,7 +377,10 @@ pub fn use_ws_topic_send<T: Serialize + 'static>(topic: &str) -> Service<T, Resu
                 .unwrap();
                 let send_service = send_service.clone();
                 async move {
-                    let res = send_service.send(value).await;
+                    let res = send_service
+                        .send(value)
+                        .await
+                        .unwrap_or(Err("Service not running".to_string()));
                     (res, ())
                 }
             })

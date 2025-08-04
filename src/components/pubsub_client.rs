@@ -2,7 +2,7 @@ use dioxus::prelude::*;
 use ws_pubsub::use_ws_connection;
 
 use crate::{
-    server::api::get_auth,
+    server::api::get_user_id,
     views::{AUTH_CHANGED, AUTH_TOKEN_KEY},
 };
 
@@ -15,7 +15,7 @@ pub fn PubSubClient() -> Element {
         let _ = connector.token.read();
         let _ = connector.url.read();
         dioxus::logger::tracing::info!("Fetching auth for WebSocket connection");
-        get_auth().await
+        get_user_id().await
     });
 
     use_effect(move || {
@@ -34,22 +34,6 @@ pub fn PubSubClient() -> Element {
         }
         if connector.token.peek().as_ref() != token.as_ref() {
             connector.token.set(token);
-        }
-    });
-
-    use_future(move || {
-        let connector = connector.clone();
-        async move {
-            loop {
-                let res = connector
-                    .send_service
-                    .send(serde_json::json!({
-                        "test": "test",
-                    }))
-                    .await;
-                dioxus::logger::tracing::info!("WebSocket send result: {:?}", res);
-                crate::future::sleep(std::time::Duration::from_secs(1)).await;
-            }
         }
     });
 

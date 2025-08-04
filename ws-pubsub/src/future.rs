@@ -6,27 +6,11 @@ use futures::{
     channel::{mpsc, oneshot},
 };
 
-#[cfg(feature = "client-wasm")]
-pub fn spawn_maybe_local<F>(f: F)
-where
-    F: std::future::Future<Output = ()> + 'static,
-{
-    wasm_bindgen_futures::spawn_local(f);
-}
-
-#[cfg(not(feature = "client-wasm"))]
-pub fn spawn_maybe_local<F>(f: F)
-where
-    F: std::future::Future<Output = ()> + Send + 'static,
-{
-    tokio::task::spawn(f);
-}
-
 pub async fn sleep(duration: std::time::Duration) {
     #[cfg(all(feature = "client-wasm", not(feature = "client-native")))]
     gloo::timers::future::sleep(duration).await;
 
-    #[cfg(feature = "client-native")]
+    #[cfg(any(feature = "server", feature = "client-native"))]
     tokio::time::sleep(duration).await;
 }
 
@@ -53,10 +37,17 @@ impl<T, R> Service<T, R> {
         }
     }
 
-    pub async fn send(&self, msg: T) -> R {
+    pub async fn send(&self, msg: T) -> Option<R> {
+        if !self.is_running() {
+            return None;
+        }
         let (tx, rx) = oneshot::channel();
         self.sender.unbounded_send((msg, tx)).unwrap();
-        rx.await.unwrap()
+        Some(rx.await.unwrap())
+    }
+
+    pub fn is_running(&self) -> bool {
+        self.receiver.try_borrow().is_err()
     }
 }
 
@@ -72,8 +63,15 @@ pub async fn run_service<T: 'static, R: 'static, Input, Fut>(
         return;
     };
     while let Some((msg, reply)) = receiver.next().await {
+        dioxus::logger::tracing::info!(
+            "Service received message: {}, {}",
+            std::any::type_name::<T>(),
+            std::any::type_name::<R>()
+        );
         let (res, new_input) = handler(input, msg).await;
         input = new_input;
-        let _ = reply.send(res);
+        if let Err(_) = reply.send(res) {
+            dioxus::logger::tracing::error!("Failed to send reply: receiver has been dropped");
+        }
     }
 }

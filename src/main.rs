@@ -1,5 +1,6 @@
 use crate::{
     components::{ColorApplier, PubSubClient},
+    server::MatchId,
     views::Auth,
 };
 use dioxus::prelude::*;
@@ -43,8 +44,8 @@ enum Route {
     PlayComputer {},
     #[route("/play/local")]
     PlayLocal {},
-    #[route("/play/online")]
-    PlayOnline {},
+    #[route("/play/online/:match_id")]
+    PlayOnline { match_id: MatchId },
 
     #[route("/create/online")]
     CreateRoomOnline {},

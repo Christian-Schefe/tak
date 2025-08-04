@@ -53,7 +53,7 @@ dashmap = { version = "6.1.0", optional = true }
 tak-core = { path = "tak-core", version = "*", features = ["serde"] }
 takumi = { path = "takumi", version = "*", features = ["serde"] }
 moka = { version = "0.12.10", features = ["future"], optional = true }
-fixed-map = "0.9.5"
+fixed-map = { version = "0.9.5", features = ["serde"] }
 chrono = { version = "0.4.41", features = ["serde"] }
 jsonwebtoken = { version = "9.3.1", optional = true }
 directories = "6.0.0"

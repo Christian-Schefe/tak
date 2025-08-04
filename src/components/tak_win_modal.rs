@@ -3,12 +3,12 @@ use tak_core::{TakGameState, TakPlayer, TakWinReason};
 use web_sys::window;
 
 use crate::{
+    Route,
     components::tak_board_state::{GameType, TakBoardState},
     server::{
-        api::{agree_rematch, leave_room},
         ServerError,
+        api::{agree_rematch, leave_room},
     },
-    Route,
 };
 
 #[component]
@@ -97,7 +97,6 @@ pub fn TakWinModal(is_local: bool) -> Element {
     let on_click_rematch = move |_| {
         if is_local {
             state_clone.reset();
-            state_clone.has_started.set(true);
             return;
         }
         spawn(async move {

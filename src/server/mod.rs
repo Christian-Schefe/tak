@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use tak_core::{TakGameSettings, TakPlayer};
+use tak_core::{TakGame, TakGameSettings, TakPlayer};
 
 pub mod api;
 
@@ -10,6 +10,7 @@ pub mod internal;
 pub type UserId = String;
 pub type GameId = String;
 pub type RoomId = String;
+pub type MatchId = String;
 
 pub type JWTToken = String;
 
@@ -32,12 +33,47 @@ pub struct SeekSettings {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum SeekUpdate {
     Created {
-        player_id: UserId,
+        player_info: PlayerInformation,
         settings: SeekSettings,
     },
     Removed {
         player_id: UserId,
     },
+}
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum MatchUpdate {
+    Created {
+        player_info: PlayerInformation,
+        opponent_info: PlayerInformation,
+        match_id: MatchId,
+        settings: MatchInstance,
+    },
+    Removed {
+        match_id: MatchId,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum RematchColor {
+    Keep,
+    Alternate,
+    Random,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct MatchInstance {
+    pub player_id: UserId,
+    pub opponent_id: UserId,
+    pub game_settings: TakGameSettings,
+    pub rated: bool,
+    pub creator_color: TakPlayer,
+    pub rematch_color: RematchColor,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct MatchData {
+    pub game: TakGame,
+    pub player_mapping: fixed_map::Map<TakPlayer, UserId>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

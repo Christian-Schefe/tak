@@ -1,4 +1,4 @@
-use crate::server::api::get_players;
+use crate::server::api::get_match_info;
 use crate::views::ClientGameMessage;
 use dioxus::logger::tracing;
 use dioxus::prelude::{Readable, Signal, Writable, WritableVecExt};
@@ -12,7 +12,6 @@ use tak_core::{
 #[derive(Clone)]
 pub struct TakBoardState {
     game: Arc<Mutex<Option<TakUIState>>>,
-    pub has_started: Signal<bool>,
     pub on_change: Signal<bool>,
 
     pub selected_piece_type: Signal<TakPieceVariant>,
@@ -55,7 +54,6 @@ impl TakBoardState {
     pub fn new(player_info: HashMap<TakPlayer, PlayerInfo>) -> Self {
         TakBoardState {
             game: Arc::new(Mutex::new(None)),
-            has_started: Signal::new(false),
             on_change: Signal::new(false),
             player_info: Signal::new(player_info),
             selected_piece_type: Signal::new(TakPieceVariant::Flat),
@@ -130,7 +128,6 @@ impl TakBoardState {
     }
 
     pub fn reset(&mut self) {
-        self.has_started.set(false);
         self.selected_piece_type.set(TakPieceVariant::Flat);
         let mut game_lock = self.game.lock().unwrap();
         game_lock.as_mut().map(|x| x.reset());
@@ -143,28 +140,34 @@ impl TakBoardState {
         .expect("Game should exist to set time remaining");
     }
 
-    pub async fn update_player_info(&mut self) {
-        let Ok(res) = get_players().await else {
+    pub async fn update_from_remote(&mut self) {
+        let Ok(res) = get_match_info().await else {
             tracing::error!("Failed to fetch player info");
             return;
         };
         match res {
-            Ok(players) => {
+            Ok((player_id, player_info, opponent_info, _, match_data)) => {
                 let mut map = self.player_info.write();
-                for (info, player, is_local) in players {
+                for info in [player_info, opponent_info] {
                     map.insert(
-                        player,
-                        PlayerInfo {
-                            name: info.username,
-                            player_type: if is_local {
+                        match_data
+                            .player_mapping
+                            .iter()
+                            .find_map(|(p, id)| if *id == info.user_id { Some(p) } else { None })
+                            .expect("Player ID should match"),
+                        PlayerInfo::new(
+                            info.username,
+                            if info.user_id == player_id {
                                 PlayerType::Local
                             } else {
                                 PlayerType::Remote
                             },
-                            rating: Some(info.rating),
-                        },
+                            Some(info.rating),
+                        ),
                     );
                 }
+                drop(map);
+                self.set_from_game(match_data.game);
             }
             _ => {}
         };
@@ -177,7 +180,6 @@ impl TakBoardState {
 
     pub fn check_ongoing_game(&mut self) -> bool {
         self.has_game()
-            && *self.has_started.read()
             && self
                 .with_game_mut(|game| {
                     game.check_timeout();

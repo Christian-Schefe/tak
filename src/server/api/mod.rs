@@ -2,10 +2,12 @@ use dioxus::prelude::*;
 use serde::{Deserialize, Serialize};
 
 mod auth_client;
+mod matches;
 mod room;
 mod seek;
 
 pub use auth_client::*;
+pub use matches::*;
 pub use room::*;
 pub use seek::*;
 
@@ -111,7 +113,7 @@ pub async fn post_change_password(
 }
 
 #[server(client=AuthClient)]
-pub async fn get_auth() -> Result<ServerResult<UserId>, ServerFnError> {
+pub async fn get_user_id() -> Result<ServerResult<UserId>, ServerFnError> {
     let user_id = bail_api!(authorize().await);
     Ok(Ok(user_id))
 }

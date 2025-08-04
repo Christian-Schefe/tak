@@ -1,6 +1,6 @@
 use crate::Route;
 use crate::server::UserId;
-use crate::server::api::{get_auth, post_login, post_register};
+use crate::server::api::{get_user_id, post_login, post_register};
 use crate::server::{ServerError, ServerResult};
 use dioxus::core_macro::{component, rsx};
 use dioxus::dioxus_core::Element;
@@ -241,7 +241,7 @@ fn do_check_login(
     callback: impl FnOnce(Result<ServerResult<String>, ServerFnError>) + Send + 'static,
 ) {
     spawn(async move {
-        let res = get_auth().await;
+        let res = get_user_id().await;
         callback(res);
     });
 }

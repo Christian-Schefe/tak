@@ -18,30 +18,8 @@
   gap: 10px;
   padding: 10px;
   max-width: 220px;
-  min-height: 110px;
 
   button {
     width: 100%;
   }
-}
-
-#home-join-bar {
-  @include flex-row-center;
-  flex-wrap: wrap;
-
-  width: 100%;
-  gap: 10px;
-
-  button {
-    width: auto;
-    flex-grow: 1;
-  }
-}
-
-#home-room-id-input {
-  font-family: monospace;
-  text-align: left;
-  width: 100px;
-  padding: 10px;
-  letter-spacing: 0.15em;
 }

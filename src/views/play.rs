@@ -1,8 +1,8 @@
 use crate::Route;
 use crate::components::tak_board_state::{PlayerInfo, PlayerType, TakBoardState};
 use crate::components::{TakBoard, TakEngine, TakWebSocket, TakWinModal};
-use crate::server::ServerError;
-use crate::server::api::get_room;
+use crate::server::api::get_match;
+use crate::server::{MatchId, ServerError};
 use crate::views::LOCAL_SETTINGS;
 use dioxus::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -49,7 +49,6 @@ pub fn PlayComputer() -> Element {
         state
             .try_set_from_settings(settings.game_settings)
             .expect("Settings should be valid");
-        state.has_started.set(true);
     });
 
     let show_board = use_memo(move || {
@@ -103,7 +102,6 @@ pub fn PlayLocal() -> Element {
         state
             .try_set_from_settings(settings.game_settings)
             .expect("Settings should be valid");
-        state.has_started.set(true);
         state.trigger_change();
     });
 
@@ -124,8 +122,9 @@ pub fn PlayLocal() -> Element {
 }
 
 #[component]
-pub fn PlayOnline() -> Element {
-    let room = use_resource(|| get_room());
+pub fn PlayOnline(match_id: MatchId) -> Element {
+    let match_id_clone = match_id.clone();
+    let player_match = use_resource(move || get_match(match_id_clone.clone()));
 
     let nav = use_navigator();
 
@@ -136,24 +135,16 @@ pub fn PlayOnline() -> Element {
     use_effect(move || {
         let mut board = board_clone.clone();
         spawn(async move {
-            board.update_player_info().await;
+            board.update_from_remote().await;
         });
-    });
-
-    let room_id = use_memo(move || {
-        if let Some(Ok(Ok((id, _)))) = room.read().as_ref() {
-            Some(id.clone())
-        } else {
-            None
-        }
     });
 
     let mut board_clone = board.clone();
     use_effect(move || {
-        dioxus::logger::tracing::info!("room: {:?}", room.read());
-        match room.read().as_ref() {
-            Some(Ok(Ok((_, settings)))) => {
-                board_clone.try_set_from_settings(settings.game_settings.clone());
+        dioxus::logger::tracing::info!("room: {:?}", player_match.read());
+        match player_match.read().as_ref() {
+            Some(Ok(Ok(instance))) => {
+                board_clone.try_set_from_settings(instance.game_settings.clone());
             }
             Some(Ok(Err(ServerError::Unauthorized))) => {
                 nav.replace(Route::Auth {});
@@ -173,13 +164,12 @@ pub fn PlayOnline() -> Element {
 
     rsx! {
         div { id: "play-view",
-            if let Some(room) = room_id.read().as_ref() {
-                h3 { "Room ID: {room}" }
+            if let Some(_) = player_match.read().as_ref() {
                 if *show_board.read() {
                     TakBoard {
                     }
                     TakWinModal { is_local: false }
-                    TakWebSocket {}
+                    TakWebSocket {match_id: match_id.clone() }
                 }
             } else {
                 h2 { "No room found or not connected." }

@@ -6,7 +6,6 @@ mod navbar;
 mod play;
 mod puzzles;
 mod review_board;
-mod rooms;
 mod seeks;
 
 pub use auth::*;

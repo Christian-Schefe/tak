@@ -7,16 +7,17 @@ use axum::extract::ws::{Message, WebSocket};
 use dashmap::{DashMap, mapref::one::RefMut};
 use futures_util::{SinkExt, StreamExt, stream::SplitSink};
 
-use crate::{AuthResponse, PublishMessage, TopicMatcher};
+use crate::{AuthResponse, PublishMessage, Topic, TopicMatcher};
 use tokio::sync::{
     Mutex,
     mpsc::{UnboundedReceiver, UnboundedSender},
 };
 
-pub type Topic = String;
 pub type SubscriptionId = String;
 pub type UserId = String;
 pub type ConnectionId = String;
+
+pub type ServerHandler = UnboundedSender<(UserId, serde_json::Value)>;
 
 pub struct ClientInfo {
     subscriptions: HashMap<SubscriptionId, Topic>,
@@ -76,7 +77,7 @@ struct PubSub {
     client_info: DashMap<UserId, ClientInfo>,
 
     connections: DashMap<UserId, HashMap<ConnectionId, SplitSink<WebSocket, Message>>>,
-    handlers: Arc<Mutex<TopicMatcher<Vec<UnboundedSender<serde_json::Value>>>>>,
+    handlers: Arc<Mutex<TopicMatcher<Vec<ServerHandler>>>>,
 }
 
 impl PubSub {
@@ -174,11 +175,7 @@ impl PubSub {
         None
     }
 
-    async fn add_handler(
-        &self,
-        topic: impl AsRef<str>,
-        handler: UnboundedSender<serde_json::Value>,
-    ) {
+    async fn add_handler(&self, topic: impl AsRef<str>, handler: ServerHandler) {
         let mut lock = self.handlers.lock().await;
         if let Some(existing) = lock.get_mut(topic.as_ref()) {
             existing.push(handler);
@@ -192,7 +189,7 @@ impl PubSub {
     async fn with_handlers(
         &self,
         topic: impl AsRef<str>,
-        callback: impl FnOnce(Vec<&UnboundedSender<serde_json::Value>>),
+        callback: impl FnOnce(Vec<&ServerHandler>),
     ) {
         let lock = self.handlers.lock().await;
         let mut handlers = Vec::new();
@@ -272,7 +269,7 @@ async fn process_socket(mut rx: futures::stream::SplitStream<WebSocket>, user_id
             SERVER
                 .with_handlers(&topic, |handlers| {
                     for handler in handlers {
-                        if let Err(e) = handler.send(payload.clone()) {
+                        if let Err(e) = handler.send((user_id.clone(), payload.clone())) {
                             eprintln!(
                                 "Failed to send message to handler for topic {}: {}",
                                 topic, e
@@ -289,23 +286,25 @@ async fn process_socket(mut rx: futures::stream::SplitStream<WebSocket>, user_id
     }
 }
 
-pub async fn subscribe_to_topic(topic: impl AsRef<str>) -> UnboundedReceiver<serde_json::Value> {
+pub async fn subscribe_to_topic(
+    topic: impl Into<Topic>,
+) -> UnboundedReceiver<(UserId, serde_json::Value)> {
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-    SERVER.add_handler(topic.as_ref().to_string(), tx).await;
+    SERVER.add_handler(topic.into(), tx).await;
     rx
 }
 
 pub fn handle_subscribe_to_topic<T, Fut>(
-    topic: impl AsRef<str>,
-    handler: impl (Fn(T) -> Fut) + Send + 'static,
+    topic: impl Into<Topic>,
+    handler: impl (Fn(UserId, Topic, T) -> Fut) + Send + 'static,
 ) where
     T: serde::de::DeserializeOwned + Send + 'static,
     Fut: Future<Output = ()> + Send,
 {
-    let topic = topic.as_ref().to_string();
+    let topic = topic.into();
     tokio::spawn(async move {
-        let mut rx = subscribe_to_topic(topic).await;
-        while let Some(value) = rx.recv().await {
+        let mut rx = subscribe_to_topic(&topic).await;
+        while let Some((player_id, value)) = rx.recv().await {
             let value = match serde_json::from_value(value) {
                 Ok(value) => value,
                 Err(e) => {
@@ -313,20 +312,21 @@ pub fn handle_subscribe_to_topic<T, Fut>(
                     continue;
                 }
             };
-            handler(value).await;
+            handler(player_id, topic.clone(), value).await;
         }
     });
 }
 
-pub async fn publish_to_topic<T>(topic: impl AsRef<str>, payload: T)
+pub async fn publish_to_topic<T>(topic: impl Into<Topic>, payload: T)
 where
     T: serde::Serialize + Send + 'static,
 {
+    let topic = topic.into();
     let msg = PublishMessage {
-        topic: topic.as_ref().to_string(),
+        topic: topic.clone(),
         payload: serde_json::to_value(payload).unwrap(),
     };
-    for user_id in SERVER.get_subscribers(topic.as_ref()) {
+    for user_id in SERVER.get_subscribers(&topic) {
         if let Some(mut connections) = SERVER.get_connections(&user_id) {
             for tx in connections.values_mut() {
                 if let Err(e) = tx
