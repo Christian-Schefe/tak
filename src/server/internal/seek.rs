@@ -68,6 +68,7 @@ pub async fn create_seek(player_id: &UserId, settings: SeekSettings) -> ServerRe
         },
     )
     .await;
+    log::info!("Seek created for player: {}", player_id);
     Ok(())
 }
 
@@ -83,6 +84,7 @@ pub async fn cancel_seek(player_id: &UserId) -> ServerResult<()> {
         },
     )
     .await;
+    log::info!("Seek cancelled for player: {}", player_id);
     Ok(())
 }
 
@@ -126,6 +128,12 @@ pub async fn accept_seek(player_id: &UserId, opponent_id: &UserId) -> ServerResu
     } else {
         TakPlayer::Black
     };
+
+    log::info!(
+        "Accepting seek for player: {}, opponent: {}",
+        player_id,
+        opponent_id
+    );
 
     let match_id = matches::create_match(MatchInstance {
         player_id: player_id.clone(),

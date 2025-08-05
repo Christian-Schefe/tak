@@ -1,10 +1,11 @@
-use std::{cell::RefCell, rc::Rc, sync::Arc};
+use std::sync::Arc;
 
 use dioxus::hooks::UnboundedSender;
 use futures::{
     StreamExt,
     channel::{mpsc, oneshot},
 };
+use futures_intrusive::sync::Mutex;
 
 pub async fn sleep(duration: std::time::Duration) {
     #[cfg(all(feature = "client-wasm", not(feature = "client-native")))]
@@ -16,7 +17,7 @@ pub async fn sleep(duration: std::time::Duration) {
 
 pub struct Service<T, R> {
     pub sender: Arc<UnboundedSender<(T, oneshot::Sender<R>)>>,
-    pub receiver: Rc<RefCell<mpsc::UnboundedReceiver<(T, oneshot::Sender<R>)>>>,
+    pub receiver: Arc<Mutex<mpsc::UnboundedReceiver<(T, oneshot::Sender<R>)>>>,
 }
 
 impl<T, R> Clone for Service<T, R> {
@@ -33,7 +34,7 @@ impl<T, R> Service<T, R> {
         let (sender, receiver) = mpsc::unbounded();
         Self {
             sender: Arc::new(sender),
-            receiver: Rc::new(RefCell::new(receiver)),
+            receiver: Arc::new(Mutex::new(receiver, true)),
         }
     }
 
@@ -47,7 +48,7 @@ impl<T, R> Service<T, R> {
     }
 
     pub fn is_running(&self) -> bool {
-        self.receiver.try_borrow().is_err()
+        self.receiver.try_lock().is_none()
     }
 }
 
@@ -58,7 +59,7 @@ pub async fn run_service<T: 'static, R: 'static, Input, Fut>(
 ) where
     Fut: std::future::Future<Output = (R, Input)>,
 {
-    let Ok(mut receiver) = service.receiver.try_borrow_mut() else {
+    let Some(mut receiver) = service.receiver.try_lock() else {
         dioxus::logger::tracing::error!("Failed to get mutable reference to receiver");
         return;
     };

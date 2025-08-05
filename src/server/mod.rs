@@ -74,6 +74,8 @@ pub struct MatchInstance {
 pub struct MatchData {
     pub game: TakGame,
     pub player_mapping: fixed_map::Map<TakPlayer, UserId>,
+    pub rematch_agree: Vec<UserId>,
+    pub has_left: Vec<UserId>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

@@ -11,3 +11,4 @@ certs/
 *.pem
 *.key
 .env
+logs

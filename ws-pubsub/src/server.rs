@@ -17,7 +17,7 @@ pub type SubscriptionId = String;
 pub type UserId = String;
 pub type ConnectionId = String;
 
-pub type ServerHandler = UnboundedSender<(UserId, serde_json::Value)>;
+pub type ServerHandler = UnboundedSender<(UserId, Topic, serde_json::Value)>;
 
 pub struct ClientInfo {
     subscriptions: HashMap<SubscriptionId, Topic>,
@@ -269,7 +269,9 @@ async fn process_socket(mut rx: futures::stream::SplitStream<WebSocket>, user_id
             SERVER
                 .with_handlers(&topic, |handlers| {
                     for handler in handlers {
-                        if let Err(e) = handler.send((user_id.clone(), payload.clone())) {
+                        if let Err(e) =
+                            handler.send((user_id.clone(), topic.clone(), payload.clone()))
+                        {
                             eprintln!(
                                 "Failed to send message to handler for topic {}: {}",
                                 topic, e
@@ -288,7 +290,7 @@ async fn process_socket(mut rx: futures::stream::SplitStream<WebSocket>, user_id
 
 pub async fn subscribe_to_topic(
     topic: impl Into<Topic>,
-) -> UnboundedReceiver<(UserId, serde_json::Value)> {
+) -> UnboundedReceiver<(UserId, Topic, serde_json::Value)> {
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     SERVER.add_handler(topic.into(), tx).await;
     rx
@@ -304,7 +306,7 @@ pub fn handle_subscribe_to_topic<T, Fut>(
     let topic = topic.into();
     tokio::spawn(async move {
         let mut rx = subscribe_to_topic(&topic).await;
-        while let Some((player_id, value)) = rx.recv().await {
+        while let Some((player_id, actual_topic, value)) = rx.recv().await {
             let value = match serde_json::from_value(value) {
                 Ok(value) => value,
                 Err(e) => {
@@ -312,7 +314,7 @@ pub fn handle_subscribe_to_topic<T, Fut>(
                     continue;
                 }
             };
-            handler(player_id, topic.clone(), value).await;
+            handler(player_id, actual_topic.clone(), value).await;
         }
     });
 }

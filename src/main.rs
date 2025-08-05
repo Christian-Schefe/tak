@@ -4,6 +4,10 @@ use crate::{
     views::Auth,
 };
 use dioxus::prelude::*;
+use flexi_logger::{
+    DeferredNow,
+    filter::{LogLineFilter, LogLineWriter},
+};
 use views::{
     Colors, CreateRoomComputer, CreateRoomLocal, CreateRoomOnline, History, Home, More, Navbar,
     PlayComputer, PlayLocal, PlayOnline, Puzzles, ReviewBoard, Rules, Seeks, Settings, Stats,
@@ -61,6 +65,24 @@ enum Route {
     PageNotFound { route: Vec<String> },
 }
 
+pub struct NoDioxusFilter;
+impl LogLineFilter for NoDioxusFilter {
+    fn write(
+        &self,
+        now: &mut DeferredNow,
+        record: &log::Record,
+        log_line_writer: &dyn LogLineWriter,
+    ) -> std::io::Result<()> {
+        if !record
+            .module_path()
+            .is_some_and(|x| x.starts_with("dioxus_signals"))
+        {
+            log_line_writer.write(now, record)?;
+        }
+        Ok(())
+    }
+}
+
 const _MAIN_HTML: Asset = asset!("/index.html");
 const FAVICON: Asset = asset!("/assets/favicon.ico");
 const MAIN_CSS: Asset = asset!("/assets/styling/main.scss");
@@ -93,28 +115,36 @@ fn main() {
 async fn main() {
     check_features();
     use dioxus_fullstack::server::DioxusRouterExt;
+    use flexi_logger::{Cleanup, Criterion, FileSpec, Logger, Naming, WriteMode};
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     use tokio::spawn;
 
-    println!("Starting server...");
+    let _logger = Logger::try_with_str("info, my::critical::module=trace")
+        .expect("Failed to initialize logger")
+        .log_to_file(FileSpec::default().directory("logs"))
+        .write_mode(WriteMode::Async)
+        .filter(Box::new(NoDioxusFilter))
+        .rotate(
+            Criterion::Size(10 * 1024 * 1024),
+            Naming::Timestamps,
+            Cleanup::KeepLogFiles(7),
+        )
+        .start()
+        .expect("Failed to start logger");
+
+    log::info!("Server starting...");
 
     spawn(async move {
         let db_url = std::env::var("DB_URL").unwrap_or_else(|_| "localhost:8000".to_string());
-        let Ok(db_user) = std::env::var("SURREALDB_USER") else {
-            eprintln!("SURREALDB_USER not set");
-            return;
-        };
-        let Ok(db_pass) = std::env::var("SURREALDB_PASS") else {
-            eprintln!("SURREALDB_PASS not set");
-            return;
-        };
+        let db_user = std::env::var("SURREALDB_USER").expect("SURREALDB_USER not set");
+        let db_pass = std::env::var("SURREALDB_PASS").expect("SURREALDB_PASS not set");
 
         if let Err(e) = server::internal::db::connect_db(&db_url, &db_user, &db_pass).await {
-            eprintln!("Failed to connect to database: {}", e);
+            log::error!("Failed to connect to database: {}", e);
             return;
         }
         if let Err(e) = server::internal::dto::setup_db().await {
-            eprintln!("Failed to set up database: {}", e);
+            log::error!("Failed to set up database: {}", e);
             return;
         }
     });
@@ -141,7 +171,7 @@ async fn main() {
         .nest_service("/webworker", tower_http::services::ServeDir::new("workers"))
         .into_make_service_with_connect_info::<SocketAddr>();
 
-    println!("Server running at {}", address);
+    log::info!("Server running at: {}", address);
 
     let listener = tokio::net::TcpListener::bind(address).await.unwrap();
     axum::serve(listener, router).await.unwrap();

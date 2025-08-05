@@ -13,6 +13,7 @@ use crate::{
 };
 
 pub struct Matches {
+    match_end_senders: Arc<DashMap<MatchId, tokio::sync::oneshot::Sender<TakGameState>>>,
     match_data: Arc<DashMap<MatchId, MatchData>>,
     matches: Arc<DashMap<MatchId, MatchInstance>>,
     players: Arc<DashMap<UserId, MatchId>>,
@@ -28,7 +29,16 @@ fn new_match_data(instance: MatchInstance) -> ServerResult<MatchData> {
     Ok(MatchData {
         game,
         player_mapping,
+        rematch_agree: Vec::new(),
+        has_left: Vec::new(),
     })
+}
+
+fn reset_match_data(data: &mut MatchData) {
+    data.game.reset();
+    data.rematch_agree.clear();
+    data.has_left.clear();
+    data.player_mapping.clear();
 }
 
 impl Matches {
@@ -37,6 +47,7 @@ impl Matches {
             matches: Arc::new(DashMap::new()),
             players: Arc::new(DashMap::new()),
             match_data: Arc::new(DashMap::new()),
+            match_end_senders: Arc::new(DashMap::new()),
         }
     }
 
@@ -62,19 +73,47 @@ impl Matches {
         }
     }
 
-    fn add_match(
-        &self,
-        player_id: UserId,
-        opponent_id: UserId,
-        settings: MatchInstance,
-    ) -> ServerResult<MatchId> {
-        let match_id = uuid::Uuid::new_v4().to_string();
+    fn check_game_over(&self, match_id: &MatchId) -> Option<bool> {
+        self.with_match_data(match_id, |match_data| {
+            match_data.game.check_timeout();
+            if match_data.game.game_state == TakGameState::Ongoing {
+                return false;
+            }
+            let Some((_, sender)) = self.match_end_senders.remove(match_id) else {
+                return true;
+            };
+            if let Err(_) = sender.send(match_data.game.game_state.clone()) {
+                eprintln!("Failed to send game end notification for match: {match_id}");
+            };
+            true
+        })
+    }
+
+    async fn add_match(&self, match_id: MatchId, settings: MatchInstance) -> ServerResult<()> {
         let match_data = new_match_data(settings.clone())?;
+        self.players
+            .insert(settings.player_id.clone(), match_id.clone());
+        self.players
+            .insert(settings.opponent_id.clone(), match_id.clone());
         self.matches.insert(match_id.clone(), settings);
-        self.players.insert(player_id, match_id.clone());
-        self.players.insert(opponent_id, match_id.clone());
         self.match_data.insert(match_id.clone(), match_data);
-        Ok(match_id)
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.match_end_senders.insert(match_id.clone(), tx);
+        tokio::spawn(check_match_finished_task(rx, match_id.clone()));
+        tokio::spawn(check_match_timeout_task(match_id.clone()));
+        Ok(())
+    }
+
+    fn remove_match(&self, match_id: &MatchId) -> ServerResult<MatchInstance> {
+        if let Some((_, match_instance)) = self.matches.remove(match_id) {
+            self.players.remove(&match_instance.player_id);
+            self.players.remove(&match_instance.opponent_id);
+            self.match_data.remove(match_id);
+            self.match_end_senders.remove(match_id);
+            Ok(match_instance)
+        } else {
+            Err(ServerError::NotFound)
+        }
     }
 }
 
@@ -89,16 +128,19 @@ pub fn get_match_data(match_id: &MatchId) -> ServerResult<MatchData> {
 pub static MATCHES: LazyLock<Matches> = LazyLock::new(|| Matches::new());
 
 pub async fn create_match(instance: MatchInstance) -> ServerResult<MatchId> {
-    let player_id = &instance.player_id;
-    let opponent_id = &instance.opponent_id;
-    if MATCHES.has_match(player_id) {
+    if MATCHES.has_match(&instance.player_id) || MATCHES.has_match(&instance.opponent_id) {
         return Err(ServerError::Conflict(
             "Match already exists for this player".to_string(),
         ));
     }
-    let player_info = cache::get_or_retrieve_player_info(player_id).await?;
-    let opponent_info = cache::get_or_retrieve_player_info(opponent_id).await?;
-    let match_id = MATCHES.add_match(player_id.clone(), opponent_id.clone(), instance.clone())?;
+    let player_id = instance.player_id.clone();
+    let opponent_id = instance.opponent_id.clone();
+    let player_info = cache::get_or_retrieve_player_info(&instance.player_id).await?;
+    let opponent_info = cache::get_or_retrieve_player_info(&instance.opponent_id).await?;
+    let match_id = uuid::Uuid::new_v4().to_string();
+    MATCHES
+        .add_match(match_id.clone(), instance.clone())
+        .await?;
     ws_pubsub::publish_to_topic(
         MATCHES_TOPIC,
         MatchUpdate::Created {
@@ -114,7 +156,37 @@ pub async fn create_match(instance: MatchInstance) -> ServerResult<MatchId> {
         ServerGameMessage::StartGame,
     )
     .await;
+
+    log::info!(
+        "Match created: {}, player: {}, opponent: {}",
+        match_id,
+        player_id,
+        opponent_id
+    );
     Ok(match_id)
+}
+
+pub async fn restart_match(match_id: &MatchId) -> ServerResult<()> {
+    let instance = MATCHES.remove_match(match_id)?;
+
+    let player_id = instance.player_id.clone();
+    let opponent_id = instance.opponent_id.clone();
+
+    MATCHES.add_match(match_id.clone(), instance).await?;
+
+    ws_pubsub::publish_to_topic(
+        format!("{}/{}", MATCHES_TOPIC, match_id),
+        ServerGameMessage::StartGame,
+    )
+    .await;
+
+    log::info!(
+        "Match created: {}, player: {}, opponent: {}",
+        match_id,
+        player_id,
+        opponent_id
+    );
+    Ok(())
 }
 
 pub async fn get_matches()
@@ -147,6 +219,38 @@ pub async fn get_match(match_id: &MatchId) -> ServerResult<MatchInstance> {
     }
 }
 
+pub async fn agree_rematch(match_id: &MatchId, player_id: &UserId) -> ServerResult<()> {
+    MATCHES
+        .with_match_data(match_id, |match_data| {
+            if match_data.game.game_state == TakGameState::Ongoing {
+                return Err(ServerError::Conflict(
+                    "Cannot agree to rematch while game is ongoing".to_string(),
+                ));
+            }
+            if match_data.rematch_agree.contains(player_id) {
+                return Err(ServerError::Conflict(
+                    "Already agreed to rematch".to_string(),
+                ));
+            }
+            match_data.rematch_agree.push(player_id.clone());
+            if match_data.rematch_agree.len() == 2 {
+                // Both players agreed, create a new match
+                let instance = MATCHES
+                    .matches
+                    .get(match_id)
+                    .as_ref()
+                    .ok_or(ServerError::NotFound)?;
+                tokio::spawn(async move {
+                    if let Err(e) = create_match(instance).await {
+                        log::error!("Failed to create rematch: {:?}", e);
+                    }
+                });
+            }
+            Ok(())
+        })
+        .unwrap_or(Err(ServerError::NotFound))
+}
+
 pub async fn handle_player_publish(player_id: &UserId, topic: String, message: ClientGameMessage) {
     let match_id = topic
         .strip_prefix(&format!("{}/", MATCHES_TOPIC))
@@ -154,6 +258,9 @@ pub async fn handle_player_publish(player_id: &UserId, topic: String, message: C
         .to_string();
 
     let ClientGameMessage::Move(action_str) = message;
+
+    log::info!("Received action for match: {match_id}, player: {player_id}, action: {action_str}");
+    MATCHES.check_game_over(&match_id);
 
     let payload = MATCHES
         .with_match_data(&match_id, |match_data| {
@@ -165,19 +272,19 @@ pub async fn handle_player_publish(player_id: &UserId, topic: String, message: C
                 .expect("Player not found in match data");
 
             if match_data.game.game_state != TakGameState::Ongoing {
-                println!("Game is not ongoing");
+                log::warn!("Game is not ongoing");
                 return None;
             }
             if match_data.game.check_timeout() {
-                println!("Game has timed out");
+                log::warn!("Game has timed out");
                 return None;
             }
             if match_data.game.current_player != tak_player {
-                println!("Not your turn");
+                log::warn!("Not your turn");
                 return None;
             }
             let Some(action) = TakAction::from_ptn(&action_str) else {
-                println!("Invalid action: {action_str}");
+                log::warn!("Invalid action: {action_str}");
                 return None;
             };
 
@@ -212,5 +319,75 @@ pub async fn handle_player_publish(player_id: &UserId, topic: String, message: C
 
     if let Some(msg) = payload {
         ws_pubsub::publish_to_topic(format!("{}/{}", MATCHES_TOPIC, match_id), msg).await;
+    } else {
+        log::warn!("Failed to process action for match: {match_id}");
+    }
+
+    MATCHES.check_game_over(&match_id);
+}
+
+async fn check_match_timeout_task(match_id: MatchId) {
+    loop {
+        tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+        match MATCHES.check_game_over(&match_id) {
+            Some(true) => break,
+            Some(false) => {}
+            None => {
+                log::error!("Match data not found for match: {match_id}");
+                break;
+            }
+        }
+    }
+    log::info!("Match timeout check completed for match: {match_id}");
+}
+
+async fn check_match_finished_task(
+    game_end_receiver: tokio::sync::oneshot::Receiver<TakGameState>,
+    match_id: MatchId,
+) {
+    let game_state = match game_end_receiver.await {
+        Ok(state) => state,
+        Err(_) => {
+            log::error!("Game end receiver was dropped, stopping gameover check");
+            return;
+        }
+    };
+
+    log::info!("Match {match_id} finished with state: {game_state:?}");
+
+    let match_data = MATCHES
+        .with_match_data(&match_id, |match_data| {
+            if match_data.game.game_state != game_state {
+                log::warn!(
+                    "Game state mismatch: expected {:?}, got {:?}",
+                    match_data.game.game_state,
+                    game_state
+                );
+                return None;
+            }
+            Some(match_data.clone())
+        })
+        .flatten();
+
+    let Some(match_data) = match_data else {
+        log::warn!("Match data not found for match: {match_id}");
+        return;
+    };
+
+    let msg = ServerGameMessage::GameOver(game_state.clone());
+
+    ws_pubsub::publish_to_topic(format!("{}/{}", MATCHES_TOPIC, match_id), msg).await;
+
+    let game = match_data.game;
+    let player_mapping = match_data.player_mapping;
+
+    if game.game_state == TakGameState::Canceled {
+        log::info!("Game was canceled, not saving game record");
+        return;
+    }
+    if let Err(e) = super::player::add_game(game, player_mapping).await {
+        log::error!("Failed to add game: {:?}", e);
+    } else {
+        log::info!("Game added successfully for match: {match_id}");
     }
 }
