@@ -4,8 +4,8 @@ use dashmap::DashMap;
 use tak_core::TakPlayer;
 
 use crate::server::{
-    MatchId, MatchInstance, PlayerInformation, RematchColor, SeekSettings, SeekUpdate, ServerError,
-    ServerResult, UserId,
+    MatchId, MatchInstance, NOTIFICATION_TOPIC, PlayerInformation, RematchColor,
+    SEEK_ACCEPTED_SUBTOPIC, SeekSettings, SeekUpdate, ServerError, ServerResult, UserId,
     api::SEEK_TOPIC,
     internal::{cache, matches},
 };
@@ -144,6 +144,15 @@ pub async fn accept_seek(player_id: &UserId, opponent_id: &UserId) -> ServerResu
         rematch_color: RematchColor::Alternate,
     })
     .await?;
+
+    ws_pubsub::publish_to_topic(
+        format!(
+            "{}/{}/{}",
+            NOTIFICATION_TOPIC, opponent_id, SEEK_ACCEPTED_SUBTOPIC
+        ),
+        match_id.clone(),
+    )
+    .await;
 
     Ok(match_id)
 }

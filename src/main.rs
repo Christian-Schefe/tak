@@ -122,6 +122,7 @@ async fn main() {
     let _logger = Logger::try_with_str("info, my::critical::module=trace")
         .expect("Failed to initialize logger")
         .log_to_file(FileSpec::default().directory("logs"))
+        .duplicate_to_stderr(flexi_logger::Duplicate::All)
         .write_mode(WriteMode::Async)
         .filter(Box::new(NoDioxusFilter))
         .rotate(
@@ -162,11 +163,7 @@ async fn main() {
         .serve_dioxus_application(config, App)
         .route(
             "/ws",
-            axum::routing::any(server::internal::websocket::ws_handler),
-        )
-        .route(
-            "/ws2",
-            axum::routing::any(server::internal::websocket::ws_test_handler),
+            axum::routing::any(server::internal::pub_sub::ws_handler),
         )
         .nest_service("/webworker", tower_http::services::ServeDir::new("workers"))
         .into_make_service_with_connect_info::<SocketAddr>();

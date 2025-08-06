@@ -1,5 +1,6 @@
 mod color_applier;
 mod nav_button;
+mod notifications;
 mod pubsub_client;
 mod tak_board;
 pub mod tak_board_state;
@@ -14,6 +15,7 @@ mod tak_win_modal;
 
 pub use color_applier::*;
 pub use nav_button::*;
+pub use notifications::*;
 pub use pubsub_client::*;
 pub use tak_board::*;
 pub use tak_clock::*;

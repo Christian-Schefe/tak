@@ -3,14 +3,14 @@ use serde::{Deserialize, Serialize};
 
 mod auth_client;
 mod matches;
-mod room;
 mod seek;
 
 pub use auth_client::*;
 pub use matches::*;
-pub use room::*;
 pub use seek::*;
 
+use crate::server::GameId;
+use crate::server::GameInformation;
 use crate::server::JWTToken;
 use crate::server::UserId;
 use crate::server::error::{ServerError, ServerResult};
@@ -50,12 +50,6 @@ macro_rules! bail_api_with_user {
         }
     };
 }
-
-pub fn accept<T>(result: T, user_id: UserId) -> Result<AuthServerResult<T>, ServerFnError> {
-    Ok(Ok((result, user_id)))
-}
-
-pub type AuthServerResult<T> = ServerResult<(T, UserId)>;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct StatsData {
@@ -116,6 +110,38 @@ pub async fn post_change_password(
 pub async fn get_user_id() -> Result<ServerResult<UserId>, ServerFnError> {
     let user_id = bail_api!(authorize().await);
     Ok(Ok(user_id))
+}
+
+#[server(client=AuthClient)]
+pub async fn get_game(game_id: GameId) -> Result<ServerResult<GameInformation>, ServerFnError> {
+    let game_record = bail_api!(player::get_game(&game_id).await);
+    let game = GameInformation {
+        game_id: game_record.game_id,
+        white_player: game_record.white_player,
+        black_player: game_record.black_player,
+        ptn: game_record.ptn,
+        timestamp: game_record.timestamp.into(),
+    };
+    Ok(Ok(game))
+}
+
+#[server(client=AuthClient)]
+pub async fn get_history(
+    pagination: Option<(usize, usize)>,
+) -> Result<ServerResult<(UserId, Vec<GameInformation>)>, ServerFnError> {
+    let user_id = bail_api!(authorize().await);
+    let games = bail_api!(player::get_games_of_player(&user_id, pagination).await);
+    let game_info: Vec<GameInformation> = games
+        .into_iter()
+        .map(|game_record| GameInformation {
+            game_id: game_record.game_id,
+            white_player: game_record.white_player,
+            black_player: game_record.black_player,
+            ptn: game_record.ptn,
+            timestamp: game_record.timestamp.into(),
+        })
+        .collect();
+    Ok(Ok((user_id, game_info)))
 }
 
 #[server(client=AuthClient)]

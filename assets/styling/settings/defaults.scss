@@ -45,6 +45,11 @@ button {
   &:active {
     background-color: $clr-surface-highlight;
   }
+
+  &:disabled {
+    background-color: color-mix(in oklch, $clr-background 20%, $clr-surface);
+    cursor: not-allowed;
+  }
 }
 
 button.primary-button {
@@ -57,6 +62,11 @@ button.primary-button {
 
   &:active {
     background-color: $clr-primary-highlight;
+  }
+
+  &:disabled {
+    background-color: color-mix(in oklch, $clr-background 20%, $clr-primary);
+    cursor: not-allowed;
   }
 }
 

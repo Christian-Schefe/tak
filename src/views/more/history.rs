@@ -40,7 +40,7 @@ pub fn History() -> Element {
 
     rsx! {
         div { id: "history-view",
-            if let Some((data, user_id)) = &*data.read() {
+            if let Some((user_id, data)) = &*data.read() {
                 for game in data {
                     div { class: "history-game-entry",
                         p {

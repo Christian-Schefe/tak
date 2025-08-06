@@ -1,6 +1,6 @@
 use crate::Route;
 use crate::components::tak_board_state::{PlayerInfo, PlayerType, TakBoardState};
-use crate::components::{TakBoard, TakEngine, TakWebSocket, TakWinModal};
+use crate::components::{TakBoard, TakEngine, TakWebSocket, TakWinModal, TakWinModalLocal};
 use crate::server::api::get_match;
 use crate::server::{MatchId, ServerError};
 use crate::views::LOCAL_SETTINGS;
@@ -60,7 +60,7 @@ pub fn PlayComputer() -> Element {
         div { id: "play-view",
             if *show_board.read() {
                 TakBoard {}
-                TakWinModal { is_local: true }
+                TakWinModalLocal {}
                 TakEngine {}
             }
         }
@@ -114,7 +114,7 @@ pub fn PlayLocal() -> Element {
         div { id: "play-view",
             if *show_board.read() {
                 TakBoard {}
-                TakWinModal { is_local: true }
+                TakWinModalLocal {}
                 TakEngine {}
             }
         }
@@ -168,8 +168,8 @@ pub fn PlayOnline(match_id: MatchId) -> Element {
                 if *show_board.read() {
                     TakBoard {
                     }
-                    TakWinModal { is_local: false }
-                    TakWebSocket {match_id: match_id.clone() }
+                    TakWinModal { match_id: match_id.clone() }
+                    TakWebSocket { match_id: match_id.clone() }
                 }
             } else {
                 h2 { "No room found or not connected." }

@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 use tak_core::TakTimeMode;
-use ws_pubsub::{use_ws_topic_receive, use_ws_topic_send};
+use ws_pubsub::use_ws_topic_receive;
 
 use crate::{
     Route,
@@ -86,18 +86,6 @@ pub fn Seeks() -> Element {
             }
         }
         async move { () }
-    });
-
-    let seek_service = use_ws_topic_send::<String>("seeks");
-    use_future(move || {
-        let seek_service = seek_service.clone();
-        async move {
-            loop {
-                let res = seek_service.send("get_seeks".to_string()).await;
-                dioxus::logger::tracing::info!("send: {:?}", res);
-                crate::future::sleep(std::time::Duration::from_secs(1)).await;
-            }
-        }
     });
 
     use_effect(move || match &*seeks.read() {

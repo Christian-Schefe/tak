@@ -14,8 +14,6 @@ pub type MatchId = String;
 
 pub type JWTToken = String;
 
-pub const ROOM_ID_LEN: usize = 4;
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PlayerInformation {
     pub user_id: UserId,
@@ -102,3 +100,6 @@ pub struct GameInformation {
 }
 
 pub use error::{ServerError, ServerResult};
+
+pub const NOTIFICATION_TOPIC: &str = "notifications";
+pub const SEEK_ACCEPTED_SUBTOPIC: &str = "seek_accepted";

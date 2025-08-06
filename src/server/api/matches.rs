@@ -7,7 +7,8 @@ use crate::{
 
 use crate::server::error::ServerResult;
 
-pub static MATCHES_TOPIC: &str = "matches";
+pub const MATCHES_TOPIC: &str = "matches";
+pub const REMATCH_SUBTOPIC: &str = "rematch";
 
 #[cfg(feature = "server")]
 use crate::server::api::authorize;
@@ -59,4 +60,23 @@ pub async fn get_match_info() -> Result<
         instance,
         match_data,
     )))
+}
+
+#[server(client=AuthClient)]
+pub async fn agree_rematch() -> Result<ServerResult<()>, ServerFnError> {
+    let player_id = bail_api!(authorize().await);
+    Ok(matches::agree_rematch(&player_id).await)
+}
+
+#[server(client=AuthClient)]
+pub async fn retract_rematch() -> Result<ServerResult<()>, ServerFnError> {
+    let player_id = bail_api!(authorize().await);
+    Ok(matches::retract_rematch(&player_id).await)
+}
+
+#[server(client=AuthClient)]
+pub async fn leave_match() -> Result<ServerResult<()>, ServerFnError> {
+    let player_id = bail_api!(authorize().await);
+    bail_api!(matches::leave_match(&player_id).await);
+    Ok(Ok(()))
 }

@@ -21,7 +21,7 @@ pub fn PubSubClient() -> Element {
     use_effect(move || {
         let _ = AUTH_CHANGED.read();
 
-        let url = option_env!("WEBSOCKET_URL").unwrap_or("ws://localhost:8080/ws2");
+        let url = option_env!("WEBSOCKET_URL").unwrap_or("ws://localhost:8080/ws");
         let mut token = crate::storage::get(AUTH_TOKEN_KEY).unwrap_or(None::<String>);
         let is_auth = match auth.read().as_ref() {
             Some(Ok(Ok(_user_id))) => true,

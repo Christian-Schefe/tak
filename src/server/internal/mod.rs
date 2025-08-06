@@ -5,6 +5,4 @@ pub mod dto;
 pub mod matches;
 pub mod player;
 pub mod pub_sub;
-pub mod room;
 pub mod seek;
-pub mod websocket;

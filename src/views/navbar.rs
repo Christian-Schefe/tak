@@ -1,5 +1,5 @@
 use crate::Route;
-use crate::components::{NavButton, NavButtonIcon};
+use crate::components::{NavButton, NavButtonIcon, Notifications};
 use dioxus::prelude::*;
 use dioxus_free_icons::Icon;
 use dioxus_free_icons::icons::fa_solid_icons::FaChessBoard;
@@ -37,5 +37,7 @@ pub fn Navbar() -> Element {
                 icon: NavButtonIcon::More,
             }
         }
+
+        Notifications {}
     }
 }

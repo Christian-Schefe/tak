@@ -7,7 +7,9 @@ use crate::{
     components::ServerGameMessage,
     server::{
         MatchData, MatchId, MatchInstance, MatchUpdate, PlayerInformation, ServerError,
-        ServerResult, UserId, api::MATCHES_TOPIC, internal::cache,
+        ServerResult, UserId,
+        api::{MATCHES_TOPIC, REMATCH_SUBTOPIC},
+        internal::cache,
     },
     views::ClientGameMessage,
 };
@@ -32,13 +34,6 @@ fn new_match_data(instance: MatchInstance) -> ServerResult<MatchData> {
         rematch_agree: Vec::new(),
         has_left: Vec::new(),
     })
-}
-
-fn reset_match_data(data: &mut MatchData) {
-    data.game.reset();
-    data.rematch_agree.clear();
-    data.has_left.clear();
-    data.player_mapping.clear();
 }
 
 impl Matches {
@@ -205,7 +200,7 @@ pub async fn get_matches()
 
 pub async fn get_match_id(player_id: &UserId) -> ServerResult<MatchId> {
     if let Some(match_id) = MATCHES.players.get(player_id) {
-        Ok(match_id.clone())
+        Ok(match_id.value().clone())
     } else {
         Err(ServerError::NotFound)
     }
@@ -213,15 +208,21 @@ pub async fn get_match_id(player_id: &UserId) -> ServerResult<MatchId> {
 
 pub async fn get_match(match_id: &MatchId) -> ServerResult<MatchInstance> {
     if let Some(instance) = MATCHES.matches.get(match_id) {
-        Ok(instance.clone())
+        Ok(instance.value().clone())
     } else {
         Err(ServerError::NotFound)
     }
 }
 
-pub async fn agree_rematch(match_id: &MatchId, player_id: &UserId) -> ServerResult<()> {
-    MATCHES
-        .with_match_data(match_id, |match_data| {
+pub async fn agree_rematch(player_id: &UserId) -> ServerResult<()> {
+    let match_id = MATCHES
+        .players
+        .get(player_id)
+        .map(|x| x.value().clone())
+        .ok_or_else(|| ServerError::NotFound)?;
+
+    let should_rematch = MATCHES
+        .with_match_data(&match_id, |match_data| {
             if match_data.game.game_state == TakGameState::Ongoing {
                 return Err(ServerError::Conflict(
                     "Cannot agree to rematch while game is ongoing".to_string(),
@@ -233,22 +234,98 @@ pub async fn agree_rematch(match_id: &MatchId, player_id: &UserId) -> ServerResu
                 ));
             }
             match_data.rematch_agree.push(player_id.clone());
-            if match_data.rematch_agree.len() == 2 {
-                // Both players agreed, create a new match
-                let instance = MATCHES
-                    .matches
-                    .get(match_id)
-                    .as_ref()
-                    .ok_or(ServerError::NotFound)?;
-                tokio::spawn(async move {
-                    if let Err(e) = create_match(instance).await {
-                        log::error!("Failed to create rematch: {:?}", e);
-                    }
-                });
+            Ok(match_data.rematch_agree.len() == 2 && match_data.has_left.is_empty())
+        })
+        .unwrap_or(Err(ServerError::NotFound))?;
+
+    ws_pubsub::publish_to_topic(
+        format!("{}/{}/{}", MATCHES_TOPIC, match_id, REMATCH_SUBTOPIC),
+        (),
+    )
+    .await;
+
+    log::info!(
+        "Player {} agreed to rematch for match: {}",
+        player_id,
+        match_id
+    );
+
+    if should_rematch {
+        restart_match(&match_id).await?;
+        log::info!("Match rematch started for match: {}", match_id);
+    }
+    Ok(())
+}
+
+pub async fn retract_rematch(player_id: &UserId) -> ServerResult<()> {
+    let match_id = MATCHES
+        .players
+        .get(player_id)
+        .map(|x| x.value().clone())
+        .ok_or_else(|| ServerError::NotFound)?;
+
+    MATCHES
+        .with_match_data(&match_id, |match_data| {
+            if match_data.game.game_state == TakGameState::Ongoing {
+                return Err(ServerError::Conflict(
+                    "Cannot retract rematch while game is ongoing".to_string(),
+                ));
             }
+            if !match_data.rematch_agree.contains(player_id) {
+                return Err(ServerError::Conflict(
+                    "Hasn't agreed to rematch".to_string(),
+                ));
+            }
+            match_data.rematch_agree.retain(|x| x != player_id);
             Ok(())
         })
-        .unwrap_or(Err(ServerError::NotFound))
+        .unwrap_or(Err(ServerError::NotFound))?;
+
+    ws_pubsub::publish_to_topic(
+        format!("{}/{}/{}", MATCHES_TOPIC, match_id, REMATCH_SUBTOPIC),
+        (),
+    )
+    .await;
+
+    Ok(())
+}
+
+pub async fn leave_match(player_id: &UserId) -> ServerResult<()> {
+    let match_id = MATCHES
+        .players
+        .get(player_id)
+        .map(|x| x.value().clone())
+        .ok_or_else(|| ServerError::NotFound)?;
+
+    let should_remove = MATCHES
+        .with_match_data(&match_id, |match_data| {
+            if match_data.game.game_state == TakGameState::Ongoing {
+                return Err(ServerError::Conflict(
+                    "Cannot leave match while game is ongoing".to_string(),
+                ));
+            }
+            if match_data.has_left.contains(player_id) {
+                return Err(ServerError::Conflict("Already left match".to_string()));
+            }
+            match_data.has_left.push(player_id.clone());
+            match_data.rematch_agree.clear();
+            Ok(match_data.has_left.len() == 2)
+        })
+        .unwrap_or(Err(ServerError::NotFound))?;
+
+    ws_pubsub::publish_to_topic(
+        format!("{}/{}/{}", MATCHES_TOPIC, match_id, REMATCH_SUBTOPIC),
+        (),
+    )
+    .await;
+
+    log::info!("Player {} left match: {}", player_id, match_id);
+
+    if should_remove {
+        MATCHES.remove_match(&match_id)?;
+        log::info!("Match removed: {match_id}");
+    }
+    Ok(())
 }
 
 pub async fn handle_player_publish(player_id: &UserId, topic: String, message: ClientGameMessage) {
