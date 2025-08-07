@@ -1,24 +1,21 @@
-use rand::Rng;
-
 pub type ZobristTable = ([([[u64; 2]; 64], [u64; 2]); 64], [u64; 2]);
 
 fn generate_zobrist_table() -> ZobristTable {
     let mut table = ([([[0u64; 2]; 64], [0u64; 2]); 64], [0u64; 2]);
-    let mut rng = rand::rng();
 
     for i in 0..64 {
         for j in 0..64 {
             for k in 0..2 {
-                table.0[i].0[j][k] = rng.random();
+                table.0[i].0[j][k] = rand::random();
             }
         }
         for k in 0..2 {
-            table.0[i].1[k] = rng.random();
+            table.0[i].1[k] = rand::random();
         }
     }
 
     for i in 0..2 {
-        table.1[i] = rng.random();
+        table.1[i] = rand::random();
     }
 
     table

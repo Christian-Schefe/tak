@@ -9,7 +9,7 @@ pub fn Navbar() -> Element {
     rsx! {
         div { id: "navbar-top",
             div { id: "navbar-logo",
-                Icon { icon: FaChessBoard }
+                Icon { icon: FaChessBoard, width: 20, height: 20 }
                 "Tak"
             }
         }

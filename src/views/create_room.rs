@@ -45,8 +45,8 @@ pub fn CreateRoomView(is_local: Option<bool>) -> Element {
     let blitz_modes = vec![(3, 0), (3, 2), (5, 0)];
     let rapid_modes = vec![(10, 0), (15, 10), (30, 0)];
     let categories: Vec<(_, Element, _)> = vec![
-        ("Blitz", rsx! {Icon {icon: FaBolt}}, blitz_modes),
-        ("Rapid", rsx! {Icon {icon: FaClock}}, rapid_modes),
+        ("Blitz", rsx! {Icon {icon: FaBolt, width: 20, height: 20}}, blitz_modes),
+        ("Rapid", rsx! {Icon {icon: FaClock, width: 20, height: 20}}, rapid_modes),
     ];
 
     let nav = use_navigator();
@@ -112,7 +112,7 @@ pub fn CreateRoomView(is_local: Option<bool>) -> Element {
             h1 { "Create Seek" }
             div { id: "board-size-chooser",
                 div { class: "category-header",
-                    Icon { icon: FaChessBoard }
+                    Icon { icon: FaChessBoard, width: 20, height: 20 }
                     "Board Size"
                 }
                 div { class: "category-container",
@@ -150,7 +150,7 @@ pub fn CreateRoomView(is_local: Option<bool>) -> Element {
             }
             div { id: "komi-chooser",
                 div { class: "category-header",
-                    Icon { icon: FaPlusMinus }
+                    Icon { icon: FaPlusMinus, width: 20, height: 20 }
                     "Komi"
                 }
                 div { class: "category-container",
@@ -172,7 +172,7 @@ pub fn CreateRoomView(is_local: Option<bool>) -> Element {
             }
             div { id: "color-chooser",
                 div { class: "category-header",
-                    Icon { icon: FaPalette }
+                    Icon { icon: FaPalette, width: 20, height: 20 }
                     "Color"
                 }
                 div { class: "category-container",

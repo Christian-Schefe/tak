@@ -5,9 +5,9 @@ use crate::server::{JWTToken, UserId};
 use argon2::password_hash::SaltString;
 use argon2::password_hash::rand_core::OsRng;
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
+use axum::RequestPartsExt;
 use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
-use axum::{RequestPartsExt, async_trait};
 use axum_extra::TypedHeader;
 use headers::Authorization;
 use headers::authorization::Bearer;
@@ -51,23 +51,28 @@ pub struct Claims {
     exp: usize,
 }
 
-#[async_trait]
 impl<S> FromRequestParts<S> for Claims
 where
     S: Send + Sync,
 {
     type Rejection = ();
 
-    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        let TypedHeader(Authorization(bearer)) = parts
-            .extract::<TypedHeader<Authorization<Bearer>>>()
-            .await
-            .map_err(|_| ())?;
+    fn from_request_parts(
+        parts: &mut Parts,
+        _state: &S,
+    ) -> impl Future<Output = Result<Self, Self::Rejection>> {
+        async move {
+            let TypedHeader(Authorization(bearer)) = parts
+                .extract::<TypedHeader<Authorization<Bearer>>>()
+                .await
+                .map_err(|_| ())?;
 
-        let token_data = decode::<Claims>(bearer.token(), &KEYS.decoding, &Validation::default())
-            .map_err(|_| ())?;
+            let token_data =
+                decode::<Claims>(bearer.token(), &KEYS.decoding, &Validation::default())
+                    .map_err(|_| ())?;
 
-        Ok(token_data.claims)
+            Ok(token_data.claims)
+        }
     }
 }
 

@@ -2,7 +2,7 @@
 members = ["tak-core", "takumi", "takumi-worker", "ws-pubsub"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 authors = ["Christian-Schefe <schefechristian@gmail.com>"]
 
@@ -13,8 +13,8 @@ authors.workspace = true
 edition.workspace = true
 
 [dependencies]
-dioxus = { version = "0.6.3", features = ["router", "fullstack"] }
-dioxus-free-icons = { version = "0.9", features = [
+dioxus = { version = "0.7.0-alpha.3", features = ["router", "fullstack"] }
+dioxus-free-icons = { version = "0.10.0-alpha.1", features = [
     "font-awesome-solid",
     "ionicons",
 ] }
@@ -33,12 +33,12 @@ tokio = { version = "1.45.1", features = [
 ], optional = true }
 gloo = { version = "0.11.0", features = ["timers", "futures"] }
 gloo-worker = { version = "0.5.0", features = ["futures"] }
-axum = { version = "0.7.9", features = ["ws"], optional = true }
-axum-extra = { version = "0.9.6", features = ["typed-header"] }
+axum = { version = "0.8.4", features = ["ws"], optional = true }
+axum-extra = { version = "0.10.1", features = ["typed-header"] }
 futures-util = { version = "0.3.31" }
 uuid = { version = "1.17.0", features = ["v4", "js"] }
-dioxus-fullstack = { version = "0.6.3" }
-dioxus-cli-config = { version = "0.6.3", optional = true }
+dioxus-fullstack = { version = "0.7.0-alpha.3" }
+dioxus-cli-config = { version = "0.7.0-alpha.3", optional = true }
 serde_json = "1.0.140"
 serde = { version = "1.0.219", features = ["derive"] }
 wasm-bindgen-futures = "0.4.50"

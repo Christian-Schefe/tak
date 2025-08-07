@@ -150,7 +150,7 @@ pub fn Seeks() -> Element {
                     if let Some(Ok(Ok(user_id))) = user_id.read().as_ref() && seeks.read().is_some() {
                         for (opponent_info , seek_settings) in seek_list.read().iter() {
                             SeekItem {
-                                key: opponent_info.user_id.clone(),
+                                key: "{opponent_info.user_id.clone()}",
                                 opponent_info: opponent_info.clone(),
                                 seek_settings: seek_settings.clone(),
                                 user_id: user_id.clone(),
@@ -169,7 +169,7 @@ pub fn Seeks() -> Element {
                     if let Some(Ok(Ok(_))) = user_id.read().as_ref() && matches.read().is_some() {
                         for data in matches_list.iter() {
                             MatchItem {
-                                key: data.0.clone(),
+                                key: "{data.0.clone()}",
                                 player_info: data.1.clone(),
                                 opponent_info: data.2.clone(),
                                 settings: data.3.clone(),

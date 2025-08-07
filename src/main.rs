@@ -114,7 +114,7 @@ fn main() {
 #[tokio::main]
 async fn main() {
     check_features();
-    use dioxus_fullstack::server::DioxusRouterExt;
+    use dioxus_fullstack::DioxusRouterExt;
     use flexi_logger::{Cleanup, Criterion, FileSpec, Logger, Naming, WriteMode};
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     use tokio::spawn;

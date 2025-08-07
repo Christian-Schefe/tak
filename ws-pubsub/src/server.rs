@@ -217,7 +217,9 @@ pub async fn handle_socket<F: FnOnce(&str) -> Option<String> + Send + Sync>(
         println!("Unauthorized access with token: {token}");
         let _ = tx
             .send(Message::Text(
-                serde_json::to_string(&AuthResponse::Failure).unwrap(),
+                serde_json::to_string(&AuthResponse::Failure)
+                    .unwrap()
+                    .into(),
             ))
             .await;
         let _ = tx.close().await;
@@ -227,7 +229,9 @@ pub async fn handle_socket<F: FnOnce(&str) -> Option<String> + Send + Sync>(
     let connection_id = uuid::Uuid::new_v4().to_string();
     if let Err(e) = tx
         .send(Message::Text(
-            serde_json::to_string(&AuthResponse::Success(connection_id.clone())).unwrap(),
+            serde_json::to_string(&AuthResponse::Success(connection_id.clone()))
+                .unwrap()
+                .into(),
         ))
         .await
     {
@@ -332,7 +336,7 @@ where
         if let Some(mut connections) = SERVER.get_connections(&user_id) {
             for tx in connections.values_mut() {
                 if let Err(e) = tx
-                    .send(Message::Text(serde_json::to_string(&msg).unwrap()))
+                    .send(Message::Text(serde_json::to_string(&msg).unwrap().into()))
                     .await
                 {
                     println!("Failed to send message to subscriber {}: {}", user_id, e);

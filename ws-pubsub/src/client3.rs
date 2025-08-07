@@ -1,14 +1,15 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
-
+#[cfg(not(feature = "server"))]
+use dioxus::core::use_drop;
 use dioxus::prelude::*;
 use futures::{
     SinkExt, StreamExt,
     stream::{SplitSink, SplitStream},
 };
 use serde::{Serialize, de::DeserializeOwned};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 use tokio_tungstenite_wasm::{Message, WebSocketStream};
 
 use crate::{

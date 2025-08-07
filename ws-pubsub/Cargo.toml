@@ -20,7 +20,7 @@ tokio = { version = "*", features = [
 ], optional = true }
 futures-intrusive = { version = "*" }
 wasm-bindgen-futures = { version = "*", optional = true }
-dioxus = { version = "*", optional = true }
+dioxus = { version = "0.7.0-alpha.3", optional = true }
 gloo = { version = "*", optional = true, features = ["timers"] }
 
 [features]
