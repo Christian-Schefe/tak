@@ -135,11 +135,11 @@ async fn main() {
 
     log::info!("Server starting...");
 
-    spawn(async move {
-        let db_url = std::env::var("DB_URL").unwrap_or_else(|_| "localhost:8000".to_string());
-        let db_user = std::env::var("SURREALDB_USER").expect("SURREALDB_USER not set");
-        let db_pass = std::env::var("SURREALDB_PASS").expect("SURREALDB_PASS not set");
+    let db_url = std::env::var("DB_URL").unwrap_or_else(|_| "localhost:8000".to_string());
+    let db_user = std::env::var("SURREALDB_USER").expect("SURREALDB_USER not set");
+    let db_pass = std::env::var("SURREALDB_PASS").expect("SURREALDB_PASS not set");
 
+    spawn(async move {
         if let Err(e) = server::internal::db::connect_db(&db_url, &db_user, &db_pass).await {
             log::error!("Failed to connect to database: {}", e);
             return;

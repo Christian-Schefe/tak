@@ -50,6 +50,10 @@ button {
     background-color: color-mix(in oklch, $clr-background 20%, $clr-surface);
     cursor: not-allowed;
   }
+
+  &.current {
+    outline: 2px solid $clr-primary;
+  }
 }
 
 button.primary-button {
@@ -67,18 +71,6 @@ button.primary-button {
   &:disabled {
     background-color: color-mix(in oklch, $clr-background 20%, $clr-primary);
     cursor: not-allowed;
-  }
-}
-
-button.secondary-button {
-  border: 2px solid $clr-surface-highlight;
-
-  &:hover {
-    background-color: color-mix($clr-surface, $clr-surface-highlight 50%);
-  }
-
-  &:active {
-    background-color: $clr-surface-highlight;
   }
 }
 

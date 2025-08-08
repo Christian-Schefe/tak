@@ -130,19 +130,21 @@ pub fn Seeks() -> Element {
 
     rsx! {
         div { class: "seeks-view",
-            button {
-                class: "primary-button",
-                onclick: move |_| {
-                    show_seeks.set(true);
-                },
-                "Seeks"
-            }
-            button {
-                class: "primary-button",
-                onclick: move |_| {
-                    show_seeks.set(false);
-                },
-                "Matches"
+            div { class: "seeks-tabs",
+                button {
+                    class: if *show_seeks.read() { "current" } else { "" },
+                    onclick: move |_| {
+                        show_seeks.set(true);
+                    },
+                    "Seeks"
+                }
+                button {
+                    class: if !*show_seeks.read() { "current" } else { "" },
+                    onclick: move |_| {
+                        show_seeks.set(false);
+                    },
+                    "Matches"
+                }
             }
             if *show_seeks.read() {
                 button { class: "primary-button", onclick: on_click_create, "Create Seek" }
