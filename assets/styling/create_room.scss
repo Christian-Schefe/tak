@@ -1,4 +1,4 @@
-@import "settings/colors";
+@use "settings/colors";
 
 #create-room-view {
     display: flex;
@@ -22,7 +22,7 @@
     flex-grow: 1;
 
     &.current {
-        outline: 2px solid $clr-primary;
+        outline: 2px solid colors.$clr-primary;
     }
 }
 
@@ -98,7 +98,7 @@
     padding: 0;
     -webkit-appearance: none;
     appearance: none;
-    background: $clr-surface;
+    background: colors.$clr-surface;
     border-radius: 5px;
     outline: none;
     border: none;
@@ -108,7 +108,7 @@
         appearance: none;
         width: 25px;
         height: 25px;
-        background: $clr-primary;
+        background: colors.$clr-primary;
         border-radius: 5px;
         cursor: pointer;
     }
@@ -116,7 +116,7 @@
     &::-moz-range-thumb {
         width: 25px;
         height: 25px;
-        background: $clr-primary;
+        background: colors.$clr-primary;
         border-radius: 5px;
         cursor: pointer;
     }

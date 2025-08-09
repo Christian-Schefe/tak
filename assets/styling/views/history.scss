@@ -1,8 +1,8 @@
-@import "../settings/colors";
-@import "../settings/defaults";
+@use "../settings/colors";
+@use "../settings/defaults";
 
 #history-view {
-    @include flex-col-container;
+    @include defaults.flex-col-container;
     width: 100%;
     padding: 10px;
     gap: 10px;
@@ -14,13 +14,13 @@
     align-items: center;
     padding: 10px;
     border-radius: 5px;
-    background-color: $clr-surface;
+    background-color: colors.$clr-surface;
     width: 100%;
     max-width: 400px;
 
     a {
         text-decoration: none;
-        color: $clr-primary;
+        color: colors.$clr-primary;
         font-weight: bold;
     }
 }

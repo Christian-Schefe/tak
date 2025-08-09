@@ -79,7 +79,7 @@ pub async fn add_game_result(
             player2.losses += 1;
             1.0
         }
-        TakGameState::Draw => {
+        TakGameState::Draw(_) => {
             player1.draws += 1;
             player2.draws += 1;
             0.5

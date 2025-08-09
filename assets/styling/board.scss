@@ -1,5 +1,5 @@
-@import "settings/colors";
-@import "settings/params";
+@use "settings/colors";
+@use "settings/params";
 
 #play-view {
   width: 100%;
@@ -33,48 +33,48 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background-color $animation-speed ease-in-out;
+  transition: background-color params.$animation-speed ease-in-out;
   width: 100%;
   height: 100%;
 }
 
 .tak-tile-light {
-  background-color: $clr-board-light;
+  background-color: colors.$clr-board-light;
 }
 
 .tak-tile-dark {
-  background-color: $clr-board-dark;
+  background-color: colors.$clr-board-dark;
 }
 
 .tak-tile-light.tak-tile-highlight {
-  background-color: $clr-primary-highlight;
+  background-color: colors.$clr-primary-highlight;
 }
 
 .tak-tile-dark.tak-tile-highlight {
-  background-color: $clr-primary;
+  background-color: colors.$clr-primary;
 }
 
 .tak-tile-light.tak-tile-selected {
-  background-color: color-mix(in oklab, $clr-board-light 60%, $clr-board-highlight);
+  background-color: color-mix(in oklab, colors.$clr-board-light 60%, colors.$clr-board-highlight);
 }
 
 .tak-tile-dark.tak-tile-selected {
-  background-color: color-mix(in oklab, $clr-board-dark 60%, $clr-board-highlight);
+  background-color: color-mix(in oklab, colors.$clr-board-dark 60%, colors.$clr-board-highlight);
 }
 
 .tak-tile-light.tak-tile-selected.tak-tile-highlight {
   background-color: color-mix(
     in oklab,
-    color-mix(in oklab, $clr-board-light 60%, $clr-board-highlight) 60%,
-    $clr-primary
+    color-mix(in oklab, colors.$clr-board-light 60%, colors.$clr-board-highlight) 60%,
+    colors.$clr-primary
   );
 }
 
 .tak-tile-dark.tak-tile-selected.tak-tile-highlight {
   background-color: color-mix(
     in oklab,
-    color-mix(in oklab, $clr-board-dark 60%, $clr-board-highlight) 60%,
-    $clr-primary
+    color-mix(in oklab, colors.$clr-board-dark 60%, colors.$clr-board-highlight) 60%,
+    colors.$clr-primary
   );
 }
 
@@ -88,13 +88,13 @@
 .tak-tile-label-rank {
   bottom: 0;
   right: 3px;
-  color: $clr-piece-light;
+  color: colors.$clr-piece-light;
 }
 
 .tak-tile-label-file {
   top: 0;
   left: 3px;
-  color: $clr-piece-light;
+  color: colors.$clr-piece-light;
 }
 
 .tak-piece {
@@ -102,29 +102,29 @@
   pointer-events: none;
   filter: drop-shadow(0 5px 5px rgb(0, 0, 0, 0.1));
   transition:
-    transform $animation-speed ease-in-out,
-    filter $animation-speed ease-in-out;
+    transform params.$animation-speed ease-in-out,
+    filter params.$animation-speed ease-in-out;
 }
 
 .tak-piece-wrapper {
   width: 100%;
   height: 100%;
-  animation: scaleIn $animation-speed ease-out forwards;
+  animation: scaleIn params.$animation-speed ease-out forwards;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .tak-piece-deleted {
-  animation: scaleOut $animation-speed ease-out forwards;
+  animation: scaleOut params.$animation-speed ease-out forwards;
 }
 
 .tak-piece-inner {
   transition:
-    width $animation-speed ease-in-out,
-    height $animation-speed ease-in-out,
-    transform $animation-speed ease-in-out,
-    opacity $animation-speed ease-in-out;
+    width params.$animation-speed ease-in-out,
+    height params.$animation-speed ease-in-out,
+    transform params.$animation-speed ease-in-out,
+    opacity params.$animation-speed ease-in-out;
   opacity: 1;
 }
 
@@ -133,13 +133,13 @@
 }
 
 .tak-piece-inner-light {
-  background-color: $clr-piece-light;
-  outline: $clr-piece-dark solid 1px;
+  background-color: colors.$clr-piece-light;
+  outline: colors.$clr-piece-dark solid 1px;
 }
 
 .tak-piece-inner-dark {
-  background-color: $clr-piece-dark;
-  outline: $clr-piece-light solid 1px;
+  background-color: colors.$clr-piece-dark;
+  outline: colors.$clr-piece-light solid 1px;
 }
 
 .tak-piece-inner-hidden {
@@ -213,18 +213,18 @@
   padding: 5px 10px;
   font-size: 14px;
   font-weight: bold;
-  color: $clr-white;
+  color: colors.$clr-white;
   border-radius: 5px;
-  background-color: $clr-background;
+  background-color: colors.$clr-background;
   margin: 0;
   min-width: 40px;
   text-align: center;
-  outline: 2px solid $clr-piece-dark;
-  transition: outline $animation-speed ease-in-out;
+  outline: 2px solid colors.$clr-piece-dark;
+  transition: outline params.$animation-speed ease-in-out;
 }
 
 .tak-piece-hand-container .tak-piece-hand.tak-piece-hand-current {
-  outline: 2px solid $clr-primary;
+  outline: 2px solid colors.$clr-primary;
 }
 
 .tak-piece-selector {
@@ -239,7 +239,7 @@
 }
 
 .tak-piece-selector .piece-selector {
-  background-color: $clr-board-dark;
+  background-color: colors.$clr-board-dark;
   border: none;
   cursor: pointer;
   padding: 5px;
@@ -248,23 +248,23 @@
   height: 40px;
   user-select: none;
   flex-grow: 1;
-  transition: background-color $animation-speed ease-in-out;
+  transition: background-color params.$animation-speed ease-in-out;
 }
 
 .tak-piece-selector .piece-selector:active {
-  background-color: $clr-board-light;
+  background-color: colors.$clr-board-light;
 }
 
 .tak-piece-selector .piece-selector.piece-selector-current {
-  background-color: $clr-primary;
+  background-color: colors.$clr-primary;
 }
 
 .tak-piece-selector .piece-selector.piece-selector-current:active {
-  background-color: $clr-primary-highlight;
+  background-color: colors.$clr-primary-highlight;
 }
 
 .tak-piece-selector .piece-selector.piece-selector-disabled {
-  background-color: $clr-piece-dark;
+  background-color: colors.$clr-piece-dark;
 }
 
 .tak-game-info {
@@ -300,13 +300,13 @@
 }
 
 .clock-light {
-  background-color: $clr-piece-light;
-  color: $clr-black;
+  background-color: colors.$clr-piece-light;
+  color: colors.$clr-black;
 }
 
 .clock-dark {
-  background-color: $clr-piece-dark;
-  color: $clr-white;
+  background-color: colors.$clr-piece-dark;
+  color: colors.$clr-white;
 }
 
 .flats-counter {
@@ -322,7 +322,7 @@
 }
 
 .flats-bar {
-  transition: flex-grow $animation-speed ease-in-out;
+  transition: flex-grow params.$animation-speed ease-in-out;
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -339,24 +339,24 @@
 }
 
 .flats-bar.flats-bar-light {
-  background-color: $clr-piece-light;
-  color: $clr-black;
+  background-color: colors.$clr-piece-light;
+  color: colors.$clr-black;
   min-width: 10px;
   align-items: end;
   padding-right: 5px;
 }
 
 .flats-bar.flats-bar-dark {
-  background-color: $clr-piece-dark;
-  color: $clr-white;
+  background-color: colors.$clr-piece-dark;
+  color: colors.$clr-white;
   align-items: start;
   padding-left: 5px;
   min-width: 10px;
 }
 
 .flats-bar.flats-bar-komi {
-  background-color: $clr-board-dark;
-  color: $clr-white;
+  background-color: colors.$clr-board-dark;
+  color: colors.$clr-white;
   align-items: start;
   padding-left: 5px;
   min-width: 10px;
@@ -371,7 +371,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   text-wrap: nowrap;
-  transition: color $animation-speed ease-in-out;
+  transition: color params.$animation-speed ease-in-out;
 }
 
 .tak-game-info p.tak-player-info.left {
@@ -383,12 +383,12 @@
 }
 
 .tak-game-info p.tak-player-info.current-player {
-  color: $clr-primary;
+  color: colors.$clr-primary;
 }
 
 .tak-game-info p.tak-player-info span {
   font-weight: normal;
-  color: $clr-board-light;
+  color: colors.$clr-board-light;
 }
 
 .tak-bridge {
@@ -402,9 +402,9 @@
   left: $long-size;
   right: $long-size;
   transition:
-    opacity $animation-speed ease-in-out,
-    background-color $animation-speed ease-in-out,
-    border-radius $animation-speed ease-in-out;
+    opacity params.$animation-speed ease-in-out,
+    background-color params.$animation-speed ease-in-out,
+    border-radius params.$animation-speed ease-in-out;
 
   &.tak-bridge-up {
     top: 0;
@@ -442,12 +442,12 @@
   }
 
   &.tak-bridge-light {
-    background-color: $clr-piece-light;
+    background-color: colors.$clr-piece-light;
     opacity: 20%;
   }
 
   &.tak-bridge-dark {
-    background-color: $clr-piece-dark;
+    background-color: colors.$clr-piece-dark;
     opacity: 20%;
   }
 }
@@ -463,11 +463,11 @@
   justify-content: center;
   background-color: rgba(0, 0, 0, 0.5);
   z-index: 1000;
-  animation: fadeIn $animation-speed ease-out forwards;
+  animation: fadeIn params.$animation-speed ease-out forwards;
 }
 
 .tak-win-modal-content {
-  background-color: $clr-background;
+  background-color: colors.$clr-background;
   padding: 20px;
   border-radius: 10px;
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);

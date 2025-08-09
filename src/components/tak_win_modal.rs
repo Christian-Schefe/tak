@@ -44,15 +44,13 @@ pub fn TakWinModal(match_id: String) -> Element {
 
     let rematch_data = use_memo(move || match match_data.read().as_ref() {
         Some(Ok(Ok((player_id, _, _, _, data)))) => {
-            if !data.has_left.is_empty() {
-                return ("Opponent left", true);
-            }
             if data.rematch_agree.contains(player_id) {
                 ("Cancel", false)
             } else {
                 ("Rematch", false)
             }
         }
+        Some(Ok(Err(ServerError::NotFound))) => ("Opponent left", true),
         Some(_) => ("Loading...", true),
         None => ("Rematch", false),
     });
@@ -74,14 +72,21 @@ pub fn TakWinModal(match_id: String) -> Element {
                 TakWinReason::Flat => format!("{} wins by flats!", player_str),
                 TakWinReason::Road => format!("{} wins by road!", player_str),
                 TakWinReason::Timeout => format!("{} wins by timeout!", player_str),
+                TakWinReason::Resignation => {
+                    format!("{} wins by resignation!", player_str)
+                }
             }
         }
-        TakGameState::Draw => "It's a draw!".to_string(),
+        TakGameState::Draw(_) => "It's a draw!".to_string(),
         TakGameState::Canceled => "The game was canceled.".to_string(),
         TakGameState::Ongoing => unreachable!(),
     };
 
     let on_click_leave = move |_| {
+        if let Some(Ok(Err(ServerError::NotFound))) = match_data.read().as_ref() {
+            nav.push(Route::Home {});
+            return;
+        }
         spawn(async move {
             let res = leave_match().await;
             match res {
@@ -186,9 +191,10 @@ pub fn TakWinModalLocal() -> Element {
                 TakWinReason::Flat => format!("{} wins by flats!", player_str),
                 TakWinReason::Road => format!("{} wins by road!", player_str),
                 TakWinReason::Timeout => format!("{} wins by timeout!", player_str),
+                TakWinReason::Resignation => format!("{} wins by resignation!", player_str),
             }
         }
-        TakGameState::Draw => "It's a draw!".to_string(),
+        TakGameState::Draw(_) => "It's a draw!".to_string(),
         TakGameState::Canceled => "The game was canceled.".to_string(),
         TakGameState::Ongoing => unreachable!(),
     };

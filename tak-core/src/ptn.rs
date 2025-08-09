@@ -1,5 +1,6 @@
 use crate::{
-    TakGameSettings, TakGameState, TakKomi, TakPlayer, TakStones, TakTimeMode, TakTps, TakWinReason,
+    TakDrawReason, TakGameSettings, TakGameState, TakKomi, TakPlayer, TakStones, TakTimeMode,
+    TakTps, TakWinReason,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -175,7 +176,9 @@ impl TakPtn {
             TakGameState::Win(TakPlayer::Black, TakWinReason::Flat) => "0-F".to_string(),
             TakGameState::Win(TakPlayer::White, TakWinReason::Timeout) => "1-0".to_string(),
             TakGameState::Win(TakPlayer::Black, TakWinReason::Timeout) => "0-1".to_string(),
-            TakGameState::Draw => "1/2-1/2".to_string(),
+            TakGameState::Win(TakPlayer::White, TakWinReason::Resignation) => "1-0".to_string(),
+            TakGameState::Win(TakPlayer::Black, TakWinReason::Resignation) => "0-1".to_string(),
+            TakGameState::Draw(_) => "1/2-1/2".to_string(),
             TakGameState::Ongoing => "".to_string(),
             TakGameState::Canceled => "".to_string(),
         }
@@ -227,7 +230,7 @@ impl TakPtn {
                     "0-F" => Some(TakGameState::Win(TakPlayer::Black, TakWinReason::Flat)),
                     "1-0" => Some(TakGameState::Win(TakPlayer::White, TakWinReason::Timeout)),
                     "0-1" => Some(TakGameState::Win(TakPlayer::Black, TakWinReason::Timeout)),
-                    "1/2-1/2" => Some(TakGameState::Draw),
+                    "1/2-1/2" => Some(TakGameState::Draw(TakDrawReason::Flat)),
                     _ => None,
                 });
                 if let Some(result) = maybe_result {

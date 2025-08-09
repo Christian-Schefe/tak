@@ -8,7 +8,7 @@ use crate::{
     server::{
         MatchData, MatchId, MatchInstance, MatchUpdate, PlayerInformation, ServerError,
         ServerResult, UserId,
-        api::{MATCHES_TOPIC, REMATCH_SUBTOPIC},
+        api::{DRAW_SUBTOPIC, MATCHES_TOPIC, REMATCH_SUBTOPIC},
         internal::cache,
     },
     views::ClientGameMessage,
@@ -32,7 +32,8 @@ fn new_match_data(instance: MatchInstance) -> ServerResult<MatchData> {
         game,
         player_mapping,
         rematch_agree: Vec::new(),
-        has_left: Vec::new(),
+        draw_agree: Vec::new(),
+        has_ended: false,
     })
 }
 
@@ -75,13 +76,34 @@ impl Matches {
                 return false;
             }
             let Some((_, sender)) = self.match_end_senders.remove(match_id) else {
-                return true;
+                return false;
             };
             if let Err(_) = sender.send(match_data.game.game_state.clone()) {
                 eprintln!("Failed to send game end notification for match: {match_id}");
             };
             true
         })
+    }
+
+    fn with_ongoing_game<T>(
+        &self,
+        match_id: &MatchId,
+        f: impl FnOnce(&mut MatchData) -> T,
+    ) -> ServerResult<Option<T>> {
+        self.with_match_data(match_id, |match_data| {
+            match_data.game.check_timeout();
+            if match_data.game.game_state != TakGameState::Ongoing {
+                let Some((_, sender)) = self.match_end_senders.remove(match_id) else {
+                    return None;
+                };
+                if let Err(_) = sender.send(match_data.game.game_state.clone()) {
+                    eprintln!("Failed to send game end notification for match: {match_id}");
+                };
+                return None;
+            }
+            Some(f(match_data))
+        })
+        .ok_or(ServerError::NotFound)
     }
 
     async fn add_match(&self, match_id: MatchId, settings: MatchInstance) -> ServerResult<()> {
@@ -214,6 +236,42 @@ pub async fn get_match(match_id: &MatchId) -> ServerResult<MatchInstance> {
     }
 }
 
+pub async fn offer_draw(player_id: &UserId) -> ServerResult<()> {
+    let match_id = MATCHES
+        .players
+        .get(player_id)
+        .map(|x| x.value().clone())
+        .ok_or_else(|| ServerError::NotFound)?;
+
+    let did_draw = MATCHES
+        .with_ongoing_game(&match_id, |match_data| {
+            if match_data.draw_agree.contains(player_id) {
+                return Err(ServerError::Conflict("Already offered draw".to_string()));
+            }
+            match_data.draw_agree.push(player_id.clone());
+            if match_data.draw_agree.len() == 2 {
+                match_data.game.abort(None);
+                Ok(true)
+            } else {
+                Ok(false)
+            }
+        })?
+        .unwrap_or(Err(ServerError::NotAllowed("Game has ended".to_string())))?;
+
+    ws_pubsub::publish_to_topic(
+        format!("{}/{}/{}", MATCHES_TOPIC, match_id, DRAW_SUBTOPIC),
+        (),
+    )
+    .await;
+
+    if did_draw {
+        MATCHES.check_game_over(&match_id);
+    }
+
+    log::info!("Player {} offered draw for match: {}", player_id, match_id);
+    Ok(())
+}
+
 pub async fn agree_rematch(player_id: &UserId) -> ServerResult<()> {
     let match_id = MATCHES
         .players
@@ -223,7 +281,7 @@ pub async fn agree_rematch(player_id: &UserId) -> ServerResult<()> {
 
     let should_rematch = MATCHES
         .with_match_data(&match_id, |match_data| {
-            if match_data.game.game_state == TakGameState::Ongoing {
+            if !match_data.has_ended {
                 return Err(ServerError::Conflict(
                     "Cannot agree to rematch while game is ongoing".to_string(),
                 ));
@@ -234,7 +292,7 @@ pub async fn agree_rematch(player_id: &UserId) -> ServerResult<()> {
                 ));
             }
             match_data.rematch_agree.push(player_id.clone());
-            Ok(match_data.rematch_agree.len() == 2 && match_data.has_left.is_empty())
+            Ok(match_data.rematch_agree.len() == 2)
         })
         .unwrap_or(Err(ServerError::NotFound))?;
 
@@ -266,9 +324,9 @@ pub async fn retract_rematch(player_id: &UserId) -> ServerResult<()> {
 
     MATCHES
         .with_match_data(&match_id, |match_data| {
-            if match_data.game.game_state == TakGameState::Ongoing {
+            if !match_data.has_ended {
                 return Err(ServerError::Conflict(
-                    "Cannot retract rematch while game is ongoing".to_string(),
+                    "Cannot retract rematch while game hasn't ended".to_string(),
                 ));
             }
             if !match_data.rematch_agree.contains(player_id) {
@@ -297,19 +355,15 @@ pub async fn leave_match(player_id: &UserId) -> ServerResult<()> {
         .map(|x| x.value().clone())
         .ok_or_else(|| ServerError::NotFound)?;
 
-    let should_remove = MATCHES
+    MATCHES
         .with_match_data(&match_id, |match_data| {
-            if match_data.game.game_state == TakGameState::Ongoing {
+            if !match_data.has_ended {
                 return Err(ServerError::Conflict(
-                    "Cannot leave match while game is ongoing".to_string(),
+                    "Cannot leave match while game hasn't ended".to_string(),
                 ));
             }
-            if match_data.has_left.contains(player_id) {
-                return Err(ServerError::Conflict("Already left match".to_string()));
-            }
-            match_data.has_left.push(player_id.clone());
             match_data.rematch_agree.clear();
-            Ok(match_data.has_left.len() == 2)
+            Ok(())
         })
         .unwrap_or(Err(ServerError::NotFound))?;
 
@@ -321,10 +375,8 @@ pub async fn leave_match(player_id: &UserId) -> ServerResult<()> {
 
     log::info!("Player {} left match: {}", player_id, match_id);
 
-    if should_remove {
-        MATCHES.remove_match(&match_id)?;
-        log::info!("Match removed: {match_id}");
-    }
+    MATCHES.remove_match(&match_id)?;
+    log::info!("Match removed: {match_id}");
     Ok(())
 }
 
@@ -442,6 +494,11 @@ async fn check_match_finished_task(
                 );
                 return None;
             }
+            if match_data.has_ended {
+                log::warn!("Match {match_id} has already ended");
+                return None;
+            }
+            match_data.has_ended = true;
             Some(match_data.clone())
         })
         .flatten();

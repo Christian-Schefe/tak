@@ -1,8 +1,8 @@
-@import "../settings/colors";
-@import "../settings/defaults";
+@use "../settings/colors";
+@use "../settings/defaults";
 
 #stats-view {
-    @include flex-col-container;
+    @include defaults.flex-col-container;
     width: 100%;
     padding: 10px;
     gap: 10px;

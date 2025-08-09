@@ -12,6 +12,8 @@ pub enum ServerError {
     BadRequest(String),
     #[error("Conflict: {0}")]
     Conflict(String),
+    #[error("Not Allowed: {0}")]
+    NotAllowed(String),
 }
 
 pub type ServerResult<T> = Result<T, ServerError>;

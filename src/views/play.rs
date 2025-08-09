@@ -1,6 +1,6 @@
 use crate::Route;
 use crate::components::tak_board_state::{PlayerInfo, PlayerType, TakBoardState};
-use crate::components::{TakBoard, TakEngine, TakWebSocket, TakWinModal, TakWinModalLocal};
+use crate::components::{GameActionsOnline, TakBoard, TakEngine, TakWebSocket, TakWinModal, TakWinModalLocal};
 use crate::server::api::get_match;
 use crate::server::{MatchId, ServerError};
 use crate::views::LOCAL_SETTINGS;
@@ -115,7 +115,6 @@ pub fn PlayLocal() -> Element {
             if *show_board.read() {
                 TakBoard {}
                 TakWinModalLocal {}
-                TakEngine {}
             }
         }
     }
@@ -166,8 +165,8 @@ pub fn PlayOnline(match_id: MatchId) -> Element {
         div { id: "play-view",
             if let Some(_) = player_match.read().as_ref() {
                 if *show_board.read() {
-                    TakBoard {
-                    }
+                    TakBoard {}
+                    GameActionsOnline {}
                     TakWinModal { match_id: match_id.clone() }
                     TakWebSocket { match_id: match_id.clone() }
                 }

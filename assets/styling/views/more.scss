@@ -1,8 +1,8 @@
-@import "../settings/colors";
-@import "../settings/defaults";
+@use "../settings/colors";
+@use "../settings/defaults";
 
 #more-view {
-    @include flex-col-container;
+    @include defaults.flex-col-container;
     width: 100%;
     padding: 10px;
     gap: 10px;
@@ -18,7 +18,7 @@
     gap: 10px;
 
     svg {
-        fill: $clr-text;
+        fill: colors.$clr-text;
         width: 24px;
         height: 24px;
     }

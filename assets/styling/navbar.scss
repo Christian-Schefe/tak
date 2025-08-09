@@ -1,16 +1,17 @@
-@import "settings/defaults";
+@use "settings/defaults";
+@use "settings/colors";
 
 #navbar-top {
-  @include flex-row-center;
+  @include defaults.flex-row-center;
   justify-content: start;
   width: 100%;
   height: 30px;
   min-height: 30px;
-  background-color: $clr-background;
+  background-color: colors.$clr-background;
 }
 
 #navbar-logo {
-  @include flex-col-center;
+  @include defaults.flex-col-center;
   text-align: center;
   position: absolute;
   height: 30px;
@@ -20,12 +21,12 @@
   font-weight: bold;
   flex-direction: row;
   gap: 5px;
-  color: $clr-board-light;
-  fill: $clr-board-light;
+  color: colors.$clr-board-light;
+  fill: colors.$clr-board-light;
 }
 
 #navbar-content {
-  @include flex-col-container;
+  @include defaults.flex-col-container;
   -ms-overflow-style: none; /* Internet Explorer 10+ */
   scrollbar-width: none; /* Firefox, Safari 18.2+, Chromium 121+ */
   overflow-y: scroll;
@@ -45,7 +46,7 @@
   height: 60px;
 
   a {
-    @include flex-col-center;
+    @include defaults.flex-col-center;
     text-decoration: none;
     font-size: 14px;
     height: 100%;
@@ -53,39 +54,39 @@
     border-radius: 5px;
     min-width: 60px;
     user-select: none;
-      cursor: pointer;
+    cursor: pointer;
 
     &.nav-button {
-      color: $clr-board-light;
+      color: colors.$clr-board-light;
       text-decoration: none;
 
       svg {
-        fill: $clr-board-light;
+        fill: colors.$clr-board-light;
       }
     }
 
     &.nav-button-active {
-      color: $clr-primary;
+      color: colors.$clr-primary;
 
       svg {
-        fill: $clr-primary;
+        fill: colors.$clr-primary;
       }
     }
 
     &:hover {
       cursor: pointer;
-      color: oklch(from $clr-primary #{"calc(l + 0.05)"} c h);
+      color: color-mix(in oklch, colors.$clr-primary 50%, colors.$clr-primary-highlight);
 
       svg {
-        fill: oklch(from $clr-primary #{"calc(l + 0.05)"} c h);
+        fill: color-mix(in oklch, colors.$clr-primary 50%, colors.$clr-primary-highlight);
       }
     }
     &:active {
       cursor: pointer;
-      color: oklch(from $clr-primary #{"calc(l + 0.1)"} c h);
+      color: colors.$clr-primary-highlight;
 
       svg {
-        fill: oklch(from $clr-primary #{"calc(l + 0.1)"} c h);
+        fill: colors.$clr-primary-highlight;
       }
     }
   }

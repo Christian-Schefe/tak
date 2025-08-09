@@ -1,5 +1,5 @@
 #[cfg(feature = "client")]
-mod client3;
+mod client;
 mod future;
 mod logger;
 mod message;
@@ -12,7 +12,7 @@ pub mod topic;
 pub use server::*;
 
 #[cfg(feature = "client")]
-pub use client3::*;
+pub use client::*;
 pub use message::*;
 pub use topic::*;
 

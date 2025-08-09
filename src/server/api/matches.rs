@@ -9,6 +9,7 @@ use crate::server::error::ServerResult;
 
 pub const MATCHES_TOPIC: &str = "matches";
 pub const REMATCH_SUBTOPIC: &str = "rematch";
+pub const DRAW_SUBTOPIC: &str = "draw";
 
 #[cfg(feature = "server")]
 use crate::server::api::authorize;

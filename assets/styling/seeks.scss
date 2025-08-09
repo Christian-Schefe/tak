@@ -1,5 +1,5 @@
-@import "settings/colors";
-@import "settings/params";
+@use "settings/colors";
+@use "settings/params";
 
 .seeks-view {
     width: 100%;
@@ -41,12 +41,12 @@
     width: 100%;
     max-width: 600px;
     padding: 10px;
-    border: 1px solid $clr-surface-highlight;
-    border-radius: $border-radius;
-    background-color: $clr-background;
+    border: 1px solid colors.$clr-surface-highlight;
+    border-radius: params.$border-radius;
+    background-color: colors.$clr-background;
 
     &:hover {
-        border-color: $clr-primary;
+        border-color: colors.$clr-primary;
     }
 }
 
@@ -65,6 +65,6 @@
     p {
         padding: 0 10px;
         border-radius: 1000px;
-        background-color: $clr-surface;
+        background-color: colors.$clr-surface;
     }
 }

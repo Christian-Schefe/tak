@@ -10,10 +10,11 @@
 @use "views/stats";
 @use "views/review_board";
 @use "views/history";
-@use "views/colors";
+@use "views/themes";
 
-@import "settings/colors";
-@import "settings/params";
+
+@use "settings/colors";
+@use "settings/params";
 
 html {
   width: 100%;
@@ -21,9 +22,9 @@ html {
 }
 
 body {
-  background-color: $clr-background;
-  color: $clr-text;
-  font-family: $font-stack;
+  background-color: colors.$clr-background;
+  color: colors.$clr-text;
+  font-family: params.$font-stack;
   width: 100%;
   height: 100%;
 }

@@ -7,6 +7,7 @@ pub enum TakActionRecord {
         pos: TakCoord,
         variant: TakPieceVariant,
         player: TakPlayer,
+        time_remaining: Option<u64>,
     },
     MovePiece {
         pos: TakCoord,
@@ -14,6 +15,7 @@ pub enum TakActionRecord {
         take: usize,
         drops: Vec<usize>,
         flattened: bool,
+        time_remaining: Option<u64>,
     },
 }
 
@@ -33,12 +35,41 @@ pub enum TakAction {
 }
 
 impl TakActionRecord {
+    pub fn time_remaining(&self) -> Option<u64> {
+        match self {
+            TakActionRecord::PlacePiece { time_remaining, .. } => time_remaining.clone(),
+            TakActionRecord::MovePiece { time_remaining, .. } => time_remaining.clone(),
+        }
+    }
+
+    pub fn to_action(&self) -> TakAction {
+        match self {
+            TakActionRecord::PlacePiece { pos, variant, .. } => TakAction::PlacePiece {
+                pos: *pos,
+                variant: *variant,
+            },
+            TakActionRecord::MovePiece {
+                pos,
+                dir,
+                take,
+                drops,
+                ..
+            } => TakAction::MovePiece {
+                pos: *pos,
+                dir: *dir,
+                take: *take,
+                drops: drops.clone(),
+            },
+        }
+    }
+
     pub fn to_ptn(&self) -> String {
         match self {
             Self::PlacePiece {
                 pos,
                 variant,
                 player: _,
+                time_remaining: _,
             } => {
                 let prefix = match variant {
                     TakPieceVariant::Flat => "",
@@ -55,6 +86,7 @@ impl TakActionRecord {
                 take,
                 drops,
                 flattened,
+                time_remaining: _,
             } => {
                 let take_str = if *take == 1 {
                     String::new()
@@ -185,6 +217,7 @@ mod tests {
                     pos: TakCoord::new(0, 0),
                     variant: TakPieceVariant::Flat,
                     player: TakPlayer::White,
+                    time_remaining: None,
                 },
                 "a1",
                 TakAction::PlacePiece {
@@ -199,6 +232,7 @@ mod tests {
                     take: 3,
                     drops: vec![2, 1],
                     flattened: false,
+                    time_remaining: None,
                 },
                 "3b4+21",
                 TakAction::MovePiece {

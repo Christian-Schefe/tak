@@ -7,6 +7,7 @@ mod ptn;
 mod time;
 mod tps;
 mod ui;
+mod history;
 
 pub use action::*;
 pub use board::*;
@@ -17,6 +18,7 @@ pub use ptn::*;
 pub use time::*;
 pub use tps::*;
 pub use ui::*;
+pub use history::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, fixed_map::Key)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -87,6 +89,14 @@ pub enum TakWinReason {
     Road,
     Flat,
     Timeout,
+    Resignation,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum TakDrawReason {
+    Flat,
+    Agreement,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -94,6 +104,6 @@ pub enum TakWinReason {
 pub enum TakGameState {
     Ongoing,
     Win(TakPlayer, TakWinReason),
-    Draw,
+    Draw(TakDrawReason),
     Canceled,
 }

@@ -1,5 +1,5 @@
 use crate::{
-    TakAction, TakActionRecord, TakBoard, TakClock, TakCoord, TakDir, TakGameState,
+    TakAction, TakActionRecord, TakBoard, TakClock, TakCoord, TakDir, TakDrawReason, TakGameState,
     TakInvalidActionError, TakInvalidMoveError, TakInvalidPlaceError, TakPieceVariant, TakPlayer,
     TakPtn, TakPtnAttr, TakTimeMode, TakTimestamp, TakTps, TakWinReason,
 };
@@ -219,15 +219,15 @@ impl TakGame {
         })
     }
 
-    pub fn abort(&mut self, winner: TakPlayer) {
+    pub fn abort(&mut self, winner: Option<TakPlayer>) {
         self.check_timeout();
         if self.game_state != TakGameState::Ongoing {
             return;
         }
-        self.game_state = TakGameState::Win(winner, TakWinReason::Timeout);
-        if let Some(clock) = &mut self.clock {
-            clock.set_time_remaining(winner.other(), 0);
-        }
+        self.game_state = match winner {
+            Some(winner) => TakGameState::Win(winner, TakWinReason::Resignation),
+            None => TakGameState::Draw(TakDrawReason::Agreement),
+        };
     }
 
     pub fn reset(&mut self) {
@@ -296,7 +296,7 @@ impl TakGame {
             if let Some(winner) = self.settings.komi.determine_winner(counts) {
                 self.game_state = TakGameState::Win(winner, TakWinReason::Flat);
             } else {
-                self.game_state = TakGameState::Draw;
+                self.game_state = TakGameState::Draw(TakDrawReason::Flat);
             }
         }
 
@@ -320,19 +320,20 @@ impl TakGame {
 
     pub fn try_do_action(&mut self, action: TakAction) -> Result<(), TakInvalidActionError> {
         let current_player = self.current_player;
-        let now = if let Some(clock) = &mut self.clock {
+        let (now, time_remaining) = if let Some(clock) = &mut self.clock {
             let now = TakTimestamp::now();
-            if clock.get_time_remaining_at(current_player, now) == 0 {
+            let time_remaining = clock.get_time_remaining_at(current_player, now);
+            if time_remaining == 0 {
                 self.game_state = TakGameState::Win(current_player.other(), TakWinReason::Timeout);
                 clock.set_time_remaining(current_player, 0);
             }
-            Some(now)
+            (Some(now), Some(time_remaining))
         } else {
-            None
+            (None, None)
         };
         match action {
             TakAction::PlacePiece { pos, variant } => self
-                .try_place(pos, variant)
+                .try_place(pos, variant, time_remaining)
                 .map_err(TakInvalidActionError::InvalidPlace),
             TakAction::MovePiece {
                 pos,
@@ -340,12 +341,40 @@ impl TakGame {
                 take,
                 drops,
             } => self
-                .try_move(pos, dir, take, &drops)
+                .try_move(pos, dir, take, &drops, time_remaining)
                 .map_err(TakInvalidActionError::InvalidMove),
         }?;
         if let Some(clock) = &mut self.clock {
             clock.update(now.expect("Should have now timestamp"), current_player);
         }
+        Ok(())
+    }
+
+    pub fn try_do_action_record(
+        &mut self,
+        record: &TakActionRecord,
+    ) -> Result<(), TakInvalidActionError> {
+        let action = record.to_action();
+        let time_remaining = record.time_remaining();
+        if let Some(clock) = &mut self.clock {
+            clock.set_time_remaining(
+                self.current_player,
+                time_remaining.expect("Should have time remaining"),
+            );
+        }
+        match action {
+            TakAction::PlacePiece { pos, variant } => self
+                .try_place(pos, variant, time_remaining)
+                .map_err(TakInvalidActionError::InvalidPlace),
+            TakAction::MovePiece {
+                pos,
+                dir,
+                take,
+                drops,
+            } => self
+                .try_move(pos, dir, take, &drops, time_remaining)
+                .map_err(TakInvalidActionError::InvalidMove),
+        }?;
         Ok(())
     }
 
@@ -357,6 +386,7 @@ impl TakGame {
         &mut self,
         pos: TakCoord,
         variant: TakPieceVariant,
+        time_remaining: Option<u64>,
     ) -> Result<(), TakInvalidPlaceError> {
         if self.game_state != TakGameState::Ongoing {
             return Err(TakInvalidPlaceError::NotAllowed);
@@ -380,6 +410,7 @@ impl TakGame {
             pos,
             variant,
             player,
+            time_remaining,
         };
         self.on_end_move(record);
         Ok(())
@@ -391,6 +422,7 @@ impl TakGame {
         dir: TakDir,
         take: usize,
         drops: &[usize],
+        time_remaining: Option<u64>,
     ) -> Result<(), TakInvalidMoveError> {
         if self.game_state != TakGameState::Ongoing {
             return Err(TakInvalidMoveError::NotAllowed);
@@ -406,6 +438,7 @@ impl TakGame {
             take,
             drops: drops.to_vec(),
             flattened,
+            time_remaining,
         };
         self.on_end_move(record);
         Ok(())

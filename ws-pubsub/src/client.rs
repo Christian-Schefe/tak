@@ -260,7 +260,7 @@ fn use_ws_topic_subscription<ServerFut: ServerFunctions>(
 
     let drop_subscription = move |sub_id: Option<String>| {
         if let Some(subscription_id) = sub_id {
-            dioxus::logger::tracing::info!("Dropping old subscription");
+            dioxus::logger::tracing::info!("Dropping old subscription: {}", subscription_id);
             spawn(async move {
                 if let Err(e) = ServerFut::unsubscribe(subscription_id).await {
                     dioxus::logger::tracing::error!("Failed to unsubscribe: {:?}", e);
@@ -276,7 +276,6 @@ fn use_ws_topic_subscription<ServerFut: ServerFunctions>(
 
     #[cfg(not(feature = "server"))]
     use_drop(move || {
-        dioxus::logger::tracing::info!("Dropping old subscription on dismount");
         let sub_id = cur_sub.read().clone();
         drop_subscription(sub_id);
     });
@@ -328,7 +327,11 @@ fn use_ws_topic_local_subscription<T: DeserializeOwned + 'static, ServerFut: Ser
     let connector_handlers = connector.handlers.clone();
     let drop_subscription = move |sub_id: Option<(String, String)>| {
         if let Some((subscription_topic, subscription_id)) = sub_id {
-            dioxus::logger::tracing::info!("Dropping old local subscription");
+            dioxus::logger::tracing::info!(
+                "Dropping old local subscription: {} {}",
+                subscription_topic,
+                subscription_id
+            );
             connector_handlers.remove_handler(&subscription_topic, &subscription_id);
         }
     };
@@ -341,7 +344,6 @@ fn use_ws_topic_local_subscription<T: DeserializeOwned + 'static, ServerFut: Ser
 
     #[cfg(not(feature = "server"))]
     use_drop(move || {
-        dioxus::logger::tracing::info!("Dropping old subscription on dismount");
         let sub_id = cur_sub.read().clone();
         drop_subscription(sub_id);
     });
